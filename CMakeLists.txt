@@ -25,6 +25,8 @@ add_executable(RenderEngine
         src/main.cpp
         src/Window.cpp
         src/Window.h
+        src/Application.cpp
+        src/Application.h
 )
 
 target_link_libraries(RenderEngine

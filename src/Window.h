@@ -21,13 +21,13 @@ namespace Engine
 
         void initWindow();
         void createWindowSurface(VkInstance Instance, VkSurfaceKHR* Surface);
+        bool shouldClose() {return glfwWindowShouldClose(window);}
 
     private:
         static void errorCallback(int error, const char* description);
 
         std::string title;
-        static constexpr int WIDTH = 800;
-        static constexpr int HEIGHT = 600;
+        int width, height;
 
         GLFWwindow* window;
     };

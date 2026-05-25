@@ -4,29 +4,45 @@
 
 #include "Window.h"
 
-
+#include <iostream>
 
 using namespace Engine;
 
+
+Window::Window(int width, int height, std::string title):width(width), height(height), title(title)
+{
+    initWindow();
+}
+
+Window::~Window()
+{
+    glfwDestroyWindow(window);
+    glfwTerminate();
+}
+
 void Window::initWindow()
 {
-    if (!glfwVulkanSupported())
+    if (!glfwInit())
     {
-        throw std::runtime_error("Window: glfw doesnt support vulkan API");
+        throw std::runtime_error("Window: glfwInit failed");
     }
 
-    if (!glfwInit)
-    {
-        throw std::runtime_error("Window: Window initialization failed");
-    }
     glfwSetErrorCallback(errorCallback);
+    int vulkanSupported = glfwVulkanSupported();
+
+    if (!vulkanSupported)
+    {
+        glfwTerminate();
+        throw std::runtime_error("Window: glfw doesnt support vulkan API");
+    }
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
-    window = glfwCreateWindow(WIDTH, HEIGHT, title.c_str(), nullptr, nullptr);
+    window = glfwCreateWindow(width, height, title.c_str(), nullptr, nullptr);
     if (!window)
     {
+        glfwTerminate();
         throw std::runtime_error("Window: Window creation failed");
     }
 
