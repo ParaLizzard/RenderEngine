@@ -1,0 +1,135 @@
+# Auto detect text files and normalize line endings to LF
+* text=auto
+
+# Source code - enforce LF
+*.cpp text eol=lf
+*.h text eol=lf
+*.hpp text eol=lf
+*.c text eol=lf
+*.cc text eol=lf
+*.cxx text eol=lf
+*.c++ text eol=lf
+*.h++ text eol=lf
+*.inl text eol=lf
+
+# Shaders - enforce LF
+*.glsl text eol=lf
+*.vert text eol=lf
+*.frag text eol=lf
+*.geom text eol=lf
+*.tesc text eol=lf
+*.tese text eol=lf
+*.comp text eol=lf
+*.hlsl text eol=lf
+*.cso text eol=lf
+
+# Build and scripting - enforce LF
+*.cmake text eol=lf
+CMakeLists.txt text eol=lf
+*.sh text eol=lf
+*.bash text eol=lf
+*.py text eol=lf
+*.lua text eol=lf
+Makefile text eol=lf
+
+# Configuration - enforce LF
+*.yaml text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+*.toml text eol=lf
+*.xml text eol=lf
+*.ini text eol=lf
+*.conf text eol=lf
+.editorconfig text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+
+# Documentation - enforce LF
+*.md text eol=lf
+*.txt text eol=lf
+*.rst text eol=lf
+README* text eol=lf
+LICENSE* text eol=lf
+CHANGELOG* text eol=lf
+AUTHORS* text eol=lf
+
+# Binary files - no conversion
+*.o binary
+*.a binary
+*.lib binary
+*.dll binary
+*.so binary
+*.dylib binary
+*.exe binary
+*.out binary
+
+# Graphics and assets - binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.bmp binary
+*.tga binary
+*.exr binary
+*.hdr binary
+*.ktx binary
+*.ktx2 binary
+*.astc binary
+*.dds binary
+
+# 3D assets - binary
+*.glb binary
+*.gltf text eol=lf
+*.fbx binary
+*.obj text eol=lf
+*.mtl text eol=lf
+*.blend binary
+*.usdz binary
+*.usd text eol=lf
+
+# Audio - binary
+*.mp3 binary
+*.wav binary
+*.flac binary
+*.ogg binary
+*.aac binary
+*.m4a binary
+
+# Archives - binary
+*.zip binary
+*.rar binary
+*.7z binary
+*.tar binary
+*.gz binary
+*.bz2 binary
+
+# Build directories - don't track diffs
+build/** -text
+bin/** -text
+lib/** -text
+out/** -text
+.vs/** -text
+.vscode/** -text
+cmake-build-*/** -text
+
+# Dependency files - binary
+*.vcxproj text eol=lf
+*.vcxproj.filters text eol=lf
+*.sln text eol=lf
+*.sln.DotSettings text eol=lf
+
+# IDE - binary/don't track diffs
+.idea/** -text
+*.swp binary
+*.swo binary
+*~ binary
+
+# CMake generated - binary
+*.cmake.user -text
+CMakeCache.txt -text
+
+# Vulkan-specific
+*.spv binary
+vk_swapchain.cpp text eol=lf
+vk_*.h text eol=lf
+vk_*.hpp text eol=lf
