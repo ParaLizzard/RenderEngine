@@ -31,6 +31,7 @@ add_executable(RenderEngine
         src/Device.h
         src/Buffer.cpp
         src/Buffer.h
+        src/ResourceHeap.cpp
 )
 
 target_link_libraries(RenderEngine

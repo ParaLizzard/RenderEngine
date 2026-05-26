@@ -375,17 +375,25 @@ namespace Engine
             queueCreateInfos.push_back(queueCreateInfo);
         }
 
-        VkPhysicalDeviceVulkan13Features vulkan13Features{
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
-            .synchronization2 = VK_TRUE,
-            .dynamicRendering = VK_TRUE
-        };
+        VkPhysicalDeviceVulkan13Features vulkan13Features{};
+        vulkan13Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+        vulkan13Features.synchronization2 = VK_TRUE;
+        vulkan13Features.dynamicRendering = VK_TRUE;
 
-        VkPhysicalDeviceFeatures2 deviceFeatures2{
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-            .pNext = &vulkan13Features,
-            .features = {.samplerAnisotropy = VK_TRUE}
-        };
+
+        VkPhysicalDeviceVulkan12Features vulkan12Features{};
+        vulkan12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+        vulkan12Features.pNext = &vulkan13Features;
+        vulkan12Features.descriptorIndexing = VK_TRUE;
+        vulkan12Features.runtimeDescriptorArray = VK_TRUE;
+        vulkan12Features.descriptorBindingPartiallyBound = VK_TRUE;
+        vulkan12Features.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+
+        VkPhysicalDeviceFeatures2 deviceFeatures2{};
+        deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+        deviceFeatures2.pNext = &vulkan12Features;
+        deviceFeatures2.features = {.samplerAnisotropy = VK_TRUE};
+
 
         VkDeviceCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;

@@ -2,6 +2,7 @@
 
 #include "Window.h"
 #include "Device.h"
+#include "ResourceHeap.h"
 
 namespace Engine
 {
@@ -21,5 +22,6 @@ namespace Engine
     private:
         Window window{WIDTH,HEIGHT,"Render Engine"};
         Device device{window};
+        ResourceHeap resourceHeap{device};
     };
 }
