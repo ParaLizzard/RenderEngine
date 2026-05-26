@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Window.h"
+#include "Device.h"
 
 namespace Engine
 {
@@ -19,6 +20,6 @@ namespace Engine
         void run();
     private:
         Window window{WIDTH,HEIGHT,"Render Engine"};
-
+        Device device{window};
     };
 }

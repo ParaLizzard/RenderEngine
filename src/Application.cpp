@@ -1,18 +1,16 @@
-//
-// Created by Jan Varga on 25.05.2026.
-//
-
 #include "Application.h"
 
-Engine::Application::Application()
+using namespace Engine;
+
+Application::Application()
 {
 }
 
-Engine::Application::~Application()
+Application::~Application()
 {
 }
 
-void Engine::Application::run()
+void Application::run()
 {
     while(!window.shouldClose())
     {

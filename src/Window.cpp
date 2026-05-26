@@ -1,7 +1,3 @@
-//
-// Created by Jan Varga on 25.05.2026.
-//
-
 #include "Window.h"
 
 #include <iostream>
@@ -53,7 +49,7 @@ void Window::createWindowSurface(VkInstance Instance, VkSurfaceKHR* Surface)
 {
     if (glfwCreateWindowSurface(Instance, window, nullptr, Surface) != VK_SUCCESS)
     {
-        throw std::runtime_error("failed to create window surface");
+        throw std::runtime_error("Window: failed to create window surface");
     }
 }
 
