@@ -33,11 +33,10 @@ namespace Engine
         Device(Device const&) = delete;
         Device& operator=(Device const&) = delete;
 
-        uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
         VkFormat findSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling,
                                      VkFormatFeatureFlags features);
         void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
-                          VmaMemoryUsage memUsage, VkBuffer& buffer, VmaAllocation& allocation);
+                          VmaMemoryUsage memUsage, VkBuffer& buffer, VmaAllocation& allocation, VmaAllocationInfo* pResultInfo);
         VkCommandBuffer beginSingleTimeCommands();
         void endSingleTimeCommands(VkCommandBuffer commandBuffer);
         void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
