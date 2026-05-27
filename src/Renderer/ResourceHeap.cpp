@@ -1,7 +1,5 @@
 #include "ResourceHeap.h"
 
-#include <cassert>
-
 namespace Engine
 {
     ResourceHeap::ResourceHeap(Device& device, uint32_t maxTextures) : device(device), maxDescriptors(maxTextures)

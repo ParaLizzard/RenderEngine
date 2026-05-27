@@ -3,6 +3,11 @@
 #include <vector>
 #include <vulkan/vulkan.h>
 #include "vma/vk_mem_alloc.h"
+#include <iostream>
+#include <set>
+#include <stdexcept>
+#include <unordered_set>
+#include "GLFW/glfw3.h"
 
 #include "Window.h"
 
@@ -41,6 +46,7 @@ namespace Engine
         void hasGflwRequiredInstanceExtensions();
         VkPhysicalDeviceProperties getDeviceProperties();
         VkFormatProperties getFormatProperties(VkFormat format);
+        SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice physicalDevice);
 
         VkDevice getDevice(){return device;}
         VkInstance getInstance(){return instance;}
@@ -48,6 +54,12 @@ namespace Engine
         VkCommandPool getCommandPool(){return commandPool;}
         VmaAllocator getAllocator(){return allocator;}
         float getMaxAnisotoropy();
+        uint32_t getGraphicsFamilyIndex() {return indices.graphicsFamily;}
+        uint32_t getPresentFamilyIndex() {return indices.presentFamily;}
+        VkQueue getGraphicsQueue() {return graphicsQueue_;}
+        VkQueue getPresentQueue() {return presentQueue_;}
+        VkSurfaceKHR getSurface() {return surface_;}
+
 
     private:
         bool enableValidationLayers = true;
@@ -60,6 +72,7 @@ namespace Engine
         Window &window;
         VkDebugUtilsMessengerEXT debugMessenger;
 
+        QueueFamilyIndices indices;
         VkSurfaceKHR surface_;
         VkQueue graphicsQueue_;
         VkQueue presentQueue_;
@@ -73,7 +86,7 @@ namespace Engine
         bool isDeviceSuitable(VkPhysicalDevice device);
         QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
         bool checkDeviceExtensionSupport(VkPhysicalDevice device);
-        SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice physicalDevice);
+
         void createLogicalDevice();
         void createCommandPool();
         void createAllocator();

@@ -2,9 +2,11 @@
 
 #include "Window.h"
 #include "Device.h"
-#include "RenderGraph.h"
-#include "ResourceHeap.h"
-#include "Texture.h"
+#include "Renderer/Renderer.h"
+#include "Renderer/RenderGraph.h"
+#include "Renderer/ResourceHeap.h"
+#include "Scene/Texture.h"
+#include <format>
 
 namespace Engine
 {
@@ -26,5 +28,6 @@ namespace Engine
         Device device{window};
         ResourceHeap resourceHeap{device};
         RenderGraph renderGraph{};
+        Renderer renderer{window,device};
     };
 }

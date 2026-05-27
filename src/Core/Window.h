@@ -4,6 +4,7 @@
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
 #include <stdexcept>
+#include <iostream>
 
 
 
@@ -22,7 +23,7 @@ namespace Engine
         void initWindow();
         void createWindowSurface(VkInstance Instance, VkSurfaceKHR* Surface);
         bool shouldClose() {return glfwWindowShouldClose(window);}
-
+        VkExtent2D getExtent() {return VkExtent2D(width, height);};
     private:
         static void errorCallback(int error, const char* description);
 

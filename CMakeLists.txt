@@ -33,28 +33,38 @@ FetchContent_MakeAvailable(ktx)
 
 find_package(Vulkan REQUIRED)
 
+# Core sources
+set(CORE_SOURCES
+        src/Core/main.cpp
+        src/Core/Window.cpp
+        src/Core/Application.cpp
+        src/Core/Device.cpp
+        src/Core/Buffer.cpp
+)
+
+# Renderer sources
+set(RENDERER_SOURCES
+        src/Renderer/Renderer.cpp
+        src/Renderer/Swapchain.cpp
+        src/Renderer/RenderGraph.cpp
+        src/Renderer/ResourceHeap.cpp
+)
+
+# Scene sources
+set(SCENE_SOURCES
+        src/Scene/Texture.cpp
+)
+
 add_executable(RenderEngine
-        src/main.cpp
-        src/Window.cpp
-        src/Window.h
-        src/Application.cpp
-        src/Application.h
-        src/Device.cpp
-        src/Device.h
-        src/Buffer.cpp
-        src/Buffer.h
-        src/ResourceHeap.cpp
-        src/ResourceHeap.h
-        src/Texture.cpp
-        src/Texture.h
-        src/RenderPassNode.h
-        src/FrameInfo.h
-        src/RenderGraph.cpp
-        src/RenderGraph.h
-        src/Renderer.cpp
-        src/Renderer.h
-        src/Swapchain.cpp
-        src/Swapchain.h
+        ${CORE_SOURCES}
+        ${RENDERER_SOURCES}
+        ${SCENE_SOURCES}
+)
+
+# Add include directories (from project root)
+# Now you can use: #include "Core/Window.h" instead of #include "../Core/Window.h"
+target_include_directories(RenderEngine PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 target_link_libraries(RenderEngine

@@ -1,8 +1,8 @@
 #pragma once
 #include <cstdint>
 #include <mutex>
-
-#include "Device.h"
+#include <cassert>
+#include "Core/Device.h"
 #include <vector>
 
 namespace Engine

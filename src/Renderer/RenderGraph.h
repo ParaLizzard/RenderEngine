@@ -4,7 +4,6 @@
 #include <unordered_map>
 #include <vector>
 #include <vulkan/vulkan.h>
-
 #include "RenderPassNode.h"
 
 namespace Engine

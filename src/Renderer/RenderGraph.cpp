@@ -1,7 +1,3 @@
-//
-// Created by Jan Varga on 27.05.2026.
-//
-
 #include "RenderGraph.h"
 
 namespace Engine

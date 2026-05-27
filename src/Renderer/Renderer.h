@@ -1,8 +1,8 @@
 #pragma once
 #include <cassert>
 #include <memory>
-#include "Device.h"
-#include "Window.h"
+#include "Core/Device.h"
+#include "Core/Window.h"
 #include "Swapchain.h"
 #include <vulkan/vulkan.h>
 
@@ -20,7 +20,7 @@ namespace Engine
     class Renderer
     {
     public:
-        static constexpr int MAX_FRAMES_IN_FLIGHT = 2;
+        static constexpr size_t MAX_FRAMES_IN_FLIGHT = 2;
         Renderer(Window& window, Device& device);
         ~Renderer();
 

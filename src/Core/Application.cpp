@@ -1,7 +1,5 @@
 #include "Application.h"
 
-#include <format>
-
 namespace Engine
 {
     Application::Application()
@@ -24,15 +22,23 @@ namespace Engine
 
     void Application::run()
     {
+        FrameInfo info{};
+
         while (!window.shouldClose())
         {
             glfwPollEvents();
 
-            VkCommandBuffer cb = device.beginSingleTimeCommands();
+            VkCommandBuffer cmd = renderer.beginFrame();
 
-            // Clear the screen
+            renderGraph.addPass({});
 
-            device.endSingleTimeCommands(cb);
+            renderGraph.compile();
+
+            renderGraph.execute(cmd, info);
+
+            renderGraph.clear();
+
+            renderer.endFrame();
         }
     }
 }

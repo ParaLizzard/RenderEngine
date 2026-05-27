@@ -1,13 +1,13 @@
 #pragma once
 
-#include "Device.h"
+#include "Core/Device.h"
 #include <ktxvulkan.h>
 #include <filesystem>
-#include "Buffer.h"
+#include "Core/Buffer.h"
 #include <cassert>
 #include <iostream>
 #include <cmath>
-#include "ResourceHeap.h"
+#include "Renderer/ResourceHeap.h"
 
 namespace Engine
 {

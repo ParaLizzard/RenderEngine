@@ -1,6 +1,5 @@
 #include "Window.h"
 
-#include <iostream>
 
 namespace Engine
 {

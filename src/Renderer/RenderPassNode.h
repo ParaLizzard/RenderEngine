@@ -1,6 +1,6 @@
 #pragma once
 #include <vulkan/vulkan.h>
-#include "FrameInfo.h"
+#include "Scene/FrameInfo.h"
 
 namespace Engine
 {

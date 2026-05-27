@@ -1,12 +1,7 @@
 
 #define VMA_IMPLEMENTATION
 #include "Device.h"
-#include <iostream>
-#include <set>
-#include <stdexcept>
-#include <unordered_set>
 
-#include "GLFW/glfw3.h"
 
 
 namespace Engine
@@ -358,7 +353,7 @@ namespace Engine
 
     void Device::createLogicalDevice()
     {
-        QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
+        indices = findQueueFamilies(physicalDevice);
 
         std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
 

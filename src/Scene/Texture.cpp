@@ -1,7 +1,3 @@
-//
-// Created by Martin Varga on 26.05.2026.
-//
-
 #include "Texture.h"
 
 namespace Engine
