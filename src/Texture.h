@@ -1,8 +1,13 @@
 #pragma once
 
 #include "Device.h"
-#include "ktx.h"
-#include "filesystem"
+#include <ktxvulkan.h>
+#include <filesystem>
+#include "Buffer.h"
+#include <cassert>
+#include <iostream>
+#include <cmath>
+#include "ResourceHeap.h"
 
 namespace Engine
 {
@@ -19,14 +24,12 @@ namespace Engine
         uint32_t layerCount;
         VkDescriptorImageInfo descriptor;
         VkSampler sampler;
+        ResourceHeap::TextureHandle heapHandle;
 
         void updateDescriptor();
         void destroy();
 
         ktxResult loadKTXFile(std::string filename, ktxTexture** target);
-
-        void flushCommandBuffer(VkCommandBuffer commandBuffer, VkQueue queue, VkCommandPool pool, bool free = true);
-        void flushCommandBuffer(VkCommandBuffer commandBuffer, VkQueue queue, bool free = true);
 
         void transitionImageLayout(
             VkCommandBuffer commandBuffer,
@@ -34,34 +37,33 @@ namespace Engine
             VkImageLayout oldLayout,
             VkImageLayout newLayout,
             VkImageSubresourceRange subresourceRange);
-
-        VkCommandBuffer createCommandBuffer(VkCommandBufferLevel level, bool begin);
-        VkCommandBuffer createCommandBuffer(VkCommandBufferLevel level, VkCommandPool pool, bool begin);
     };
 
     class Texture2D : public Texture
     {
     public:
-    void loadFromFile(
+        void loadFromFile(
             std::string filename,
             VkFormat format,
             Device* device,
-            VkQueue copyQueue,
+            ResourceHeap& resourceHeap,
+            VkFilter filter = VK_FILTER_LINEAR,
+            VkImageUsageFlags imageUsageFlags = VK_IMAGE_USAGE_SAMPLED_BIT,
+            VkImageLayout imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+            );
+        void fromBuffer(
+            void* buffer,
+            VkDeviceSize bufferSize,
+            VkFormat format,
+            uint32_t texWidth,
+            uint32_t texHeight,
+            Device* device,
+            ResourceHeap& resourceHeap,
+            VkFilter filter = VK_FILTER_LINEAR,
             VkImageUsageFlags imageUsageFlags = VK_IMAGE_USAGE_SAMPLED_BIT,
             VkImageLayout imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    void fromBuffer(
-        void* buffer,
-        VkDeviceSize bufferSize,
-        VkFormat format,
-        uint32_t texWidth,
-        uint32_t texHeight,
-        Device& device,
-        VkQueue copyQueue,
-        VkFilter filter = VK_FILTER_LINEAR,
-        VkImageUsageFlags imageUsageFlags = VK_IMAGE_USAGE_SAMPLED_BIT,
-        VkImageLayout imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-    void createDefaultTexture(Device& device, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+        void createDefaultTexture(Device* device, uint8_t r, uint8_t g, uint8_t b, uint8_t a,ResourceHeap& resourceHeap);
     };
 
     class Texture2DArray : public Texture
@@ -70,8 +72,8 @@ namespace Engine
         void loadFromFile(
             std::string filename,
             VkFormat format,
-            Device& device,
-            VkQueue copyQueue,
+            Device* device,
+            ResourceHeap& resourceHeap,
             VkImageUsageFlags imageUsageFlags = VK_IMAGE_USAGE_SAMPLED_BIT,
             VkImageLayout imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     };
@@ -82,10 +84,9 @@ namespace Engine
         void loadFromFile(
             std::string filename,
             VkFormat format,
-            Device& device,
-            VkQueue copyQueue,
+            Device* device,
+            ResourceHeap& resourceHeap,
             VkImageUsageFlags imageUsageFlags = VK_IMAGE_USAGE_SAMPLED_BIT,
             VkImageLayout imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     };
 }
-

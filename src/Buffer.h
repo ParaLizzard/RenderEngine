@@ -19,6 +19,11 @@ namespace Engine
         Buffer(Buffer const&) = delete;
         Buffer& operator=(Buffer const&) = delete;
 
+        void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VmaMemoryUsage memUsage, VkBuffer& buffer,
+                         VmaAllocation& allocation, VmaAllocationInfo* pResultInfo);
+        void copyBuffer(VkBuffer dstBuffer, VkDeviceSize size);
+        void copyBufferToImage(VkImage image, uint32_t width, uint32_t height, uint32_t layerCount);
+
         VkBuffer getBuffer() { return buffer; }
         void* getMappedMemory() { return mapped; }
         uint32_t getInstanceCount(){ return instanceCount; }

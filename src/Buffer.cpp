@@ -29,13 +29,80 @@ namespace Engine
         alignmentSize = getAlignment(instanceSize, minOffsetAlignment);
         bufferSize = alignmentSize * instanceCount;
         VmaAllocationInfo allocationInfo = {};
-        device.createBuffer(bufferSize, usageFlags, memoryUsage, buffer, allocation, &allocationInfo);
+        createBuffer(bufferSize, usageFlags, memoryUsage, buffer, allocation, &allocationInfo);
         mapped = allocationInfo.pMappedData;
     }
 
     Buffer::~Buffer()
     {
         vmaDestroyBuffer(device.getAllocator(), buffer, allocation);
+    }
+
+    void Buffer::createBuffer(
+       VkDeviceSize size,
+       VkBufferUsageFlags usage,
+       VmaMemoryUsage memUsage,
+       VkBuffer& buffer,
+       VmaAllocation& allocation,
+       VmaAllocationInfo* pResultInfo
+   )
+    {
+        VkBufferCreateInfo bufferInfo{};
+        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufferInfo.size = size;
+        bufferInfo.usage = usage;
+        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        VmaAllocationCreateInfo allocInfo{};
+        allocInfo.usage = memUsage;
+
+        allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+        if (vmaCreateBuffer(device.getAllocator(), &bufferInfo, &allocInfo, &buffer, &allocation, pResultInfo) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Device: failed to create VMA buffer");
+        }
+    }
+
+    void Buffer::copyBuffer(VkBuffer dstBuffer, VkDeviceSize size)
+    {
+        VkCommandBuffer commandBuffer = device.beginSingleTimeCommands();
+
+        VkBufferCopy copyRegion{};
+        copyRegion.srcOffset = 0;
+        copyRegion.dstOffset = 0;
+        copyRegion.size = size;
+        vkCmdCopyBuffer(commandBuffer, buffer, dstBuffer, 1, &copyRegion);
+
+        device.endSingleTimeCommands(commandBuffer);
+    }
+
+    void Buffer::copyBufferToImage(VkImage image, uint32_t width, uint32_t height, uint32_t layerCount)
+    {
+        VkCommandBuffer commandBuffer = device.beginSingleTimeCommands();
+
+        VkBufferImageCopy region{};
+        region.bufferOffset = 0;
+        region.bufferRowLength = 0;
+        region.bufferImageHeight = 0;
+
+        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.imageSubresource.mipLevel = 0;
+        region.imageSubresource.baseArrayLayer = 0;
+        region.imageSubresource.layerCount = layerCount;
+
+        region.imageOffset = {0, 0, 0};
+        region.imageExtent = {width, height, 1};
+
+        vkCmdCopyBufferToImage(
+            commandBuffer,
+            buffer,
+            image,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            1,
+            &region);
+        device.endSingleTimeCommands(commandBuffer);
     }
 
     VkDeviceSize Buffer::getAlignment(VkDeviceSize instanceSize, VkDeviceSize minOffsetAlignment)

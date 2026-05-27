@@ -35,12 +35,8 @@ namespace Engine
 
         VkFormat findSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling,
                                      VkFormatFeatureFlags features);
-        void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
-                          VmaMemoryUsage memUsage, VkBuffer& buffer, VmaAllocation& allocation, VmaAllocationInfo* pResultInfo);
         VkCommandBuffer beginSingleTimeCommands();
         void endSingleTimeCommands(VkCommandBuffer commandBuffer);
-        void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
-        void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height, uint32_t layerCount);
         void createImageWithInfo(const VkImageCreateInfo& imageInfo, VkImage& image, VmaAllocation& allocation);
         void hasGflwRequiredInstanceExtensions();
         VkPhysicalDeviceProperties getDeviceProperties();
@@ -51,6 +47,7 @@ namespace Engine
         VkPhysicalDevice getPhysicalDevice(){return physicalDevice;}
         VkCommandPool getCommandPool(){return commandPool;}
         VmaAllocator getAllocator(){return allocator;}
+        float getMaxAnisotoropy();
 
     private:
         bool enableValidationLayers = true;

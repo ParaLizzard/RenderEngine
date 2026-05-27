@@ -388,6 +388,7 @@ namespace Engine
         vulkan12Features.runtimeDescriptorArray = VK_TRUE;
         vulkan12Features.descriptorBindingPartiallyBound = VK_TRUE;
         vulkan12Features.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+        vulkan12Features.descriptorBindingVariableDescriptorCount = VK_TRUE;
 
         VkPhysicalDeviceFeatures2 deviceFeatures2{};
         deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
@@ -432,11 +433,16 @@ namespace Engine
 
     void Device::createAllocator()
     {
+        VmaVulkanFunctions vulkanFunctions{};
+        vulkanFunctions.vkGetInstanceProcAddr = &vkGetInstanceProcAddr;
+        vulkanFunctions.vkGetDeviceProcAddr = &vkGetDeviceProcAddr;
+
         VmaAllocatorCreateInfo allocatorInfo{};
         allocatorInfo.device = device;
         allocatorInfo.physicalDevice = physicalDevice;
         allocatorInfo.instance = instance;
         allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_3;
+        allocatorInfo.pVulkanFunctions = &vulkanFunctions;
 
         if (vmaCreateAllocator(&allocatorInfo, &allocator) != VK_SUCCESS)
         {
@@ -463,33 +469,6 @@ namespace Engine
         }
 
         throw std::runtime_error("Device: failed to find supported format");
-    }
-
-    void Device::createBuffer(
-        VkDeviceSize size,
-        VkBufferUsageFlags usage,
-        VmaMemoryUsage memUsage,
-        VkBuffer& buffer,
-        VmaAllocation& allocation,
-        VmaAllocationInfo* pResultInfo
-    )
-    {
-        VkBufferCreateInfo bufferInfo{};
-        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        bufferInfo.size = size;
-        bufferInfo.usage = usage;
-        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-        VmaAllocationCreateInfo allocInfo{};
-        allocInfo.usage = memUsage;
-
-        allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-            VMA_ALLOCATION_CREATE_MAPPED_BIT;
-
-        if (vmaCreateBuffer(allocator, &bufferInfo, &allocInfo, &buffer, &allocation, pResultInfo) != VK_SUCCESS)
-        {
-            throw std::runtime_error("Device: failed to create VMA buffer");
-        }
     }
 
     VkCommandBuffer Device::beginSingleTimeCommands()
@@ -531,46 +510,6 @@ namespace Engine
         vkDestroyFence(device, fence, nullptr);
 
         vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
-    }
-
-    void Device::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
-    {
-        VkCommandBuffer commandBuffer = beginSingleTimeCommands();
-
-        VkBufferCopy copyRegion{};
-        copyRegion.srcOffset = 0;
-        copyRegion.dstOffset = 0;
-        copyRegion.size = size;
-        vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
-
-        endSingleTimeCommands(commandBuffer);
-    }
-
-    void Device::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height, uint32_t layerCount)
-    {
-        VkCommandBuffer commandBuffer = beginSingleTimeCommands();
-
-        VkBufferImageCopy region{};
-        region.bufferOffset = 0;
-        region.bufferRowLength = 0;
-        region.bufferImageHeight = 0;
-
-        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        region.imageSubresource.mipLevel = 0;
-        region.imageSubresource.baseArrayLayer = 0;
-        region.imageSubresource.layerCount = layerCount;
-
-        region.imageOffset = {0, 0, 0};
-        region.imageExtent = {width, height, 1};
-
-        vkCmdCopyBufferToImage(
-            commandBuffer,
-            buffer,
-            image,
-            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            1,
-            &region);
-        endSingleTimeCommands(commandBuffer);
     }
 
     void Device::createImageWithInfo(const VkImageCreateInfo& imageInfo, VkImage& image,
@@ -624,5 +563,10 @@ namespace Engine
         VkFormatProperties formatProperties;
         vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &formatProperties);
         return formatProperties;
+    }
+
+    float Device::getMaxAnisotoropy()
+    {
+        return getDeviceProperties().limits.maxSamplerAnisotropy;
     }
 }

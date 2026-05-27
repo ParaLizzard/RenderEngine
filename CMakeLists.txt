@@ -21,12 +21,13 @@ FetchContent_MakeAvailable(glfw)
 FetchContent_Declare(
         ktx
         GIT_REPOSITORY https://github.com/KhronosGroup/KTX-Software.git
-        GIT_TAG v4.3.2 # Or use a recent stable release like v4.4.2
+        GIT_TAG v4.3.2
 )
-# Disable KTX command-line applications and tests to keep build lightweight
+
 set(KTX_FEATURE_APPS OFF CACHE BOOL "" FORCE)
 set(KTX_FEATURE_TESTS OFF CACHE BOOL "" FORCE)
 set(KTX_FEATURE_STATIC_SAMPLER OFF CACHE BOOL "" FORCE)
+set(KTX_FEATURE_STATIC_LIBRARY ON CACHE BOOL "" FORCE)
 
 FetchContent_MakeAvailable(ktx)
 
@@ -46,6 +47,14 @@ add_executable(RenderEngine
         src/ResourceHeap.h
         src/Texture.cpp
         src/Texture.h
+        src/RenderPassNode.h
+        src/FrameInfo.h
+        src/RenderGraph.cpp
+        src/RenderGraph.h
+        src/Renderer.cpp
+        src/Renderer.h
+        src/Swapchain.cpp
+        src/Swapchain.h
 )
 
 target_link_libraries(RenderEngine
