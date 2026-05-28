@@ -35,7 +35,7 @@ namespace Engine
         VkDeviceSize getBufferSize(){ return bufferSize; }
 
         VkDeviceSize getAlignment(VkDeviceSize instanceSize, VkDeviceSize minOffsetAlignment);
-        void writeToBuffer(void* data, VkDeviceSize size, VkDeviceSize offset);
+        void writeToBuffer(const void* data, VkDeviceSize size, VkDeviceSize offset);
         VkResult flush(VkDeviceSize size, VkDeviceSize offset);
         VkResult invalidate(VkDeviceSize size, VkDeviceSize offset);
         VkDescriptorBufferInfo descriptorInfo(VkDeviceSize size, VkDeviceSize offset);

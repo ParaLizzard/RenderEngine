@@ -53,6 +53,8 @@ set(RENDERER_SOURCES
 # Scene sources
 set(SCENE_SOURCES
         src/Scene/Texture.cpp
+        src/Scene/Model.h
+        src/Scene/Model.cpp
 )
 
 add_executable(RenderEngine
