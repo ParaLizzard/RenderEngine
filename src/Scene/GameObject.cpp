@@ -44,4 +44,20 @@ namespace Engine
                 {translation.x, translation.y, translation.z, 1.0f}
         };
     }
+
+    bool GameObject::addChild(GameObject& child)
+    {
+        if (child.parentId != INVALID_ID)
+            return false;
+
+        if (child.getId() == INVALID_ID || child.getId() == id)
+            return false;
+
+        if (std::ranges::find(childrenIds, child.getId()) != childrenIds.end())
+            return false;
+
+        childrenIds.push_back(child.getId());
+        child.parentId = this->getId();
+        return true;
+    }
 }

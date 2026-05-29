@@ -11,7 +11,7 @@ namespace Engine
     {
         glm::vec3 translation{};
         glm::vec3 scale{1.f, 1.f, 1.f};
-        glm::vec3 rotation{};
+        glm::quat rotation{1.f, 0.f, 0.f, 0.f};
 
         glm::mat4 mat4();
     };
@@ -20,8 +20,10 @@ namespace Engine
     {
     public:
         using id_t = unsigned int;
+        static constexpr id_t INVALID_ID = std::numeric_limits<id_t>::max();
 
         static GameObject createGameObject();
+        bool addChild(GameObject& child);
 
         GameObject(const GameObject&) = delete;
         GameObject& operator=(const GameObject&) = delete;
@@ -33,6 +35,11 @@ namespace Engine
 
         TransformComponent transform{};
         SubMesh subMesh{};
+
+        id_t parentId = INVALID_ID;
+        std::vector<id_t> childrenIds;
+
+        glm::mat4 currentWorldMatrix{1.0f};
 
     private:
         GameObject(id_t objId);

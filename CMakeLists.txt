@@ -5,52 +5,64 @@ set(CMAKE_CXX_STANDARD 20)
 
 include(FetchContent)
 
+# ---------------------------------------------------------------------------
+# Dependencies
+# ---------------------------------------------------------------------------
 FetchContent_Declare(
         glfw
         GIT_REPOSITORY https://github.com/glfw/glfw.git
-        GIT_TAG 3.4
+        GIT_TAG        3.4
 )
-
-set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
-set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_DOCS     OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
-
-FetchContent_MakeAvailable(glfw)
+set(GLFW_INSTALL        OFF CACHE BOOL "" FORCE)
 
 FetchContent_Declare(
         ktx
         GIT_REPOSITORY https://github.com/KhronosGroup/KTX-Software.git
-        GIT_TAG v4.3.2
+        GIT_TAG        v4.3.2
+)
+set(KTX_FEATURE_APPS           OFF CACHE BOOL "" FORCE)
+set(KTX_FEATURE_TESTS          OFF CACHE BOOL "" FORCE)
+set(KTX_FEATURE_STATIC_SAMPLER OFF CACHE BOOL "" FORCE)
+set(KTX_FEATURE_STATIC_LIBRARY ON  CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+        fastgltf
+        GIT_REPOSITORY https://github.com/spnda/fastgltf.git
+        GIT_TAG        v0.8.0
 )
 
-set(KTX_FEATURE_APPS OFF CACHE BOOL "" FORCE)
-set(KTX_FEATURE_TESTS OFF CACHE BOOL "" FORCE)
-set(KTX_FEATURE_STATIC_SAMPLER OFF CACHE BOOL "" FORCE)
-set(KTX_FEATURE_STATIC_LIBRARY ON CACHE BOOL "" FORCE)
+FetchContent_Declare(
+        stb
+        GIT_REPOSITORY https://github.com/nothings/stb.git
+        GIT_TAG        master
+)
 
-FetchContent_MakeAvailable(ktx)
+FetchContent_MakeAvailable(glfw ktx fastgltf stb)
 
+# stb is header-only — expose it as an INTERFACE target so we can link it cleanly
+add_library(stb INTERFACE)
+target_include_directories(stb INTERFACE "${stb_SOURCE_DIR}")
+
+# ---------------------------------------------------------------------------
+# Vulkan + glslc
+# ---------------------------------------------------------------------------
 find_package(Vulkan REQUIRED COMPONENTS glslc)
 
-# ---------------------------------------------------------------------------
-# Shader compilation
-# ---------------------------------------------------------------------------
-# Locate glslc — prefer the one bundled with the Vulkan SDK so the version
-# matches the SDK headers already in use.
 if(Vulkan_GLSLC_EXECUTABLE)
     set(GLSLC "${Vulkan_GLSLC_EXECUTABLE}")
 else()
     find_program(GLSLC glslc REQUIRED
-            HINTS
-            "$ENV{VULKAN_SDK}/bin"
-            "$ENV{VULKAN_SDK}/Bin"
+            HINTS "$ENV{VULKAN_SDK}/bin" "$ENV{VULKAN_SDK}/Bin"
             DOC "glslc shader compiler")
 endif()
-
 message(STATUS "glslc: ${GLSLC}")
 
-# All GLSL stage extensions we want to compile.
+# ---------------------------------------------------------------------------
+# Shader compilation — only recompile on source or #include changes
+# ---------------------------------------------------------------------------
 set(SHADER_STAGE_EXTENSIONS
         vert frag comp geom
         tesc tese
@@ -58,60 +70,59 @@ set(SHADER_STAGE_EXTENSIONS
         rgen rchit rmiss rint rahit rcall
 )
 
-# Collect every shader source under root/shaders/
 set(SHADER_SOURCES "")
 foreach(EXT ${SHADER_STAGE_EXTENSIONS})
-    file(GLOB_RECURSE _found
-            LIST_DIRECTORIES false
-            "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.${EXT}"
-    )
+    file(GLOB_RECURSE _found LIST_DIRECTORIES false
+            "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.${EXT}")
     list(APPEND SHADER_SOURCES ${_found})
 endforeach()
 
-# Output SPVs mirror the source tree under <build>/shaders/
 set(SHADER_BINARY_DIR "${CMAKE_BINARY_DIR}/shaders")
+set(SHADER_STAMP_DIR  "${CMAKE_BINARY_DIR}/shader_stamps")
 set(SHADER_OUTPUTS "")
 
 foreach(SHADER_SRC ${SHADER_SOURCES})
-    # e.g. <root>/shaders/forward/pbr.frag  ->  forward/pbr.frag
     file(RELATIVE_PATH REL_PATH
             "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
-            "${SHADER_SRC}"
-    )
+            "${SHADER_SRC}")
 
-    set(SPV_OUT "${SHADER_BINARY_DIR}/${REL_PATH}.spv")
-    set(DEP_FILE "${SHADER_BINARY_DIR}/${REL_PATH}.d")
+    set(SPV_OUT   "${SHADER_BINARY_DIR}/${REL_PATH}.spv")
+    set(DEP_FILE  "${SHADER_BINARY_DIR}/${REL_PATH}.d")
+    # Stamp file: only touched when glslc actually writes a new SPV.
+    # CMake uses the stamp's mtime to decide whether downstream targets are stale,
+    # so this is what prevents re-linking the executable on every build.
+    set(STAMP     "${SHADER_STAMP_DIR}/${REL_PATH}.stamp")
 
-    # Make sure the output subdirectory exists at generation time.
-    get_filename_component(SPV_DIR "${SPV_OUT}" DIRECTORY)
-    file(MAKE_DIRECTORY "${SPV_DIR}")
+    get_filename_component(SPV_DIR   "${SPV_OUT}" DIRECTORY)
+    get_filename_component(STAMP_DIR "${STAMP}"   DIRECTORY)
+    file(MAKE_DIRECTORY "${SPV_DIR}" "${STAMP_DIR}")
 
     add_custom_command(
-            OUTPUT  "${SPV_OUT}"
+            OUTPUT  "${SPV_OUT}" "${STAMP}"
             COMMAND "${GLSLC}"
-            # Emit a Make-style dependency file so CMake can track #includes.
             -MD -MF "${DEP_FILE}"
-            # Pass the shaders/ root as an include search path.
             -I "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
-            # Target Vulkan 1.3 SPIR-V 1.6 — adjust if needed.
             --target-env=vulkan1.3
             -O
             "${SHADER_SRC}"
             -o "${SPV_OUT}"
+            # Update stamp only if the SPV actually changed (avoids false rebuilds)
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${SPV_OUT}" "${SPV_OUT}"
+            COMMAND "${CMAKE_COMMAND}" -E touch "${STAMP}"
             DEPENDS "${SHADER_SRC}"
             DEPFILE "${DEP_FILE}"
-            COMMENT "glslc ${REL_PATH} -> ${REL_PATH}.spv"
+            COMMENT "glslc  ${REL_PATH}  ->  ${REL_PATH}.spv"
             VERBATIM
     )
 
     list(APPEND SHADER_OUTPUTS "${SPV_OUT}")
 endforeach()
 
-# A single logical target that drives all shader compilations.
 add_custom_target(Shaders ALL DEPENDS ${SHADER_OUTPUTS})
-# ---------------------------------------------------------------------------
 
-# Core sources
+# ---------------------------------------------------------------------------
+# Engine executable
+# ---------------------------------------------------------------------------
 set(CORE_SOURCES
         src/Core/main.cpp
         src/Core/Window.cpp
@@ -120,7 +131,6 @@ set(CORE_SOURCES
         src/Core/Buffer.cpp
 )
 
-# Renderer sources
 set(RENDERER_SOURCES
         src/Renderer/Renderer.cpp
         src/Renderer/Swapchain.cpp
@@ -128,7 +138,6 @@ set(RENDERER_SOURCES
         src/Renderer/ResourceHeap.cpp
 )
 
-# Scene sources
 set(SCENE_SOURCES
         src/Scene/Texture.cpp
         src/Scene/Model.h
@@ -160,6 +169,8 @@ target_link_libraries(RenderEngine
         glfw
         Vulkan::Vulkan
         ktx
+        fastgltf
+        stb
 )
 
 add_dependencies(RenderEngine Shaders)
