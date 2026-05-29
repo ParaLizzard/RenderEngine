@@ -20,7 +20,7 @@ namespace Engine
     class Renderer
     {
     public:
-        static constexpr size_t MAX_FRAMES_IN_FLIGHT = 2;
+        static constexpr size_t MAX_FRAMES_IN_FLIGHT = 3;
         Renderer(Window& window, Device& device);
         ~Renderer();
 
@@ -41,6 +41,7 @@ namespace Engine
         void endFrame();
         VkCommandBuffer getCurrentCommandBuffer();
         SwapChain& getSwapChain();
+        uint32_t getCurrentImageIndex() const { return currentImageIndex; }
 
         bool wasSwapChainRecreated() const { return swapChainRecreatedThisFrame; }
         std::unique_ptr<SwapChain> swapChain;

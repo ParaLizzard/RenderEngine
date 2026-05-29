@@ -2,6 +2,7 @@
 
 #include "Window.h"
 #include "Device.h"
+#include "Scene/Camera.h"
 #include "Renderer/Renderer.h"
 #include "Renderer/RenderGraph.h"
 #include "Renderer/ResourceHeap.h"
@@ -29,5 +30,6 @@ namespace Engine
         ResourceHeap resourceHeap{device};
         RenderGraph renderGraph{};
         Renderer renderer{window,device};
+        Model megaBuffer{device, 500000, 1000000};
     };
 }

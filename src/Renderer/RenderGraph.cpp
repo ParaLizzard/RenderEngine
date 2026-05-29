@@ -2,17 +2,14 @@
 
 namespace Engine
 {
-    void RenderGraph::addPass(std::unique_ptr<RenderPassNode> pass)
+    void RenderGraph::addPass(RenderPassNode* pass)
     {
         PassExecutionInfo info{};
-        info.passNode = pass.get();
+        info.passNode = pass;
 
         RenderGraphBuilder builder{info.usages};
-
-
         pass->setup(builder);
 
-        ownedPasses.push_back(std::move(pass));
         registeredPasses.push_back(info);
     }
 
@@ -151,6 +148,46 @@ namespace Engine
         declaration.accessMask = accessMask;
 
         usages.push_back(declaration);
+    }
+
+    void RenderGraph::transitionToPresent(VkCommandBuffer cmdBuffer, const std::string& imageName)
+    {
+        if (resourceRegistry.find(imageName) == resourceRegistry.end()) return;
+
+        GraphImage& graphImage = resourceRegistry[imageName];
+
+        if (graphImage.layout != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR)
+        {
+            VkImageMemoryBarrier2 imageBarrier{};
+            imageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+            imageBarrier.oldLayout = graphImage.layout;
+            imageBarrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+            imageBarrier.image = graphImage.image;
+            imageBarrier.pNext = nullptr;
+
+            imageBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            imageBarrier.subresourceRange.baseMipLevel = 0;
+            imageBarrier.subresourceRange.levelCount = graphImage.mipLevels;
+            imageBarrier.subresourceRange.layerCount = graphImage.arrayLayers;
+
+            imageBarrier.srcStageMask = graphImage.lastStageMask;
+            imageBarrier.srcAccessMask = graphImage.lastAccessMask;
+
+            imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
+            imageBarrier.dstAccessMask = VK_ACCESS_2_NONE;
+
+            VkDependencyInfo dependencyInfo{
+                .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                .imageMemoryBarrierCount = 1,
+                .pImageMemoryBarriers = &imageBarrier,
+            };
+
+            vkCmdPipelineBarrier2(cmdBuffer, &dependencyInfo);
+
+            graphImage.layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+            graphImage.lastStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
+            graphImage.lastAccessMask = VK_ACCESS_2_NONE;
+        }
     }
 
     bool RenderGraph::isDepthFormat(VkFormat format) {

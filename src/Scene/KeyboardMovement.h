@@ -1,9 +1,9 @@
 #pragma once
 
 #include "GameObject.h"
-#include "Window.h"
+#include "Core/Window.h"
 
-namespace bat
+namespace Engine
 {
     class KeyboardMovementController
     {
@@ -21,7 +21,7 @@ namespace bat
             int lookDown = GLFW_KEY_DOWN;
         };
 
-        void moveInPlaneXZ(GLFWwindow* window, float dt, shared_ptr<GameObject> gameObject);
+        void moveInPlaneXZ(GLFWwindow* window, float dt, std::shared_ptr<GameObject> gameObject);
 
         KeyMappings keys{};
         float moveSpeed = 3.f;

@@ -38,15 +38,15 @@ namespace Engine
     class RenderGraph
     {
     public:
-        void addPass(std::unique_ptr<RenderPassNode> pass);
+        void addPass(RenderPassNode* pass);
         void registerPhysicalImage(const std::string& name, VkImage image, VkImageView view, VkFormat format, VkExtent2D extent, VkImageLayout initialLayout);
         void compile();
         void execute(VkCommandBuffer cmdBuffer, FrameInfo& frameInfo);
         void clear();
         bool isDepthFormat(VkFormat format);
+        void transitionToPresent(VkCommandBuffer cmdBuffer, const std::string& imageName);
 
     private:
-        std::vector<std::unique_ptr<RenderPassNode>> ownedPasses;
         std::vector<PassExecutionInfo> registeredPasses;
         std::unordered_map<std::string, GraphImage> resourceRegistry;
     };

@@ -26,6 +26,9 @@ namespace Engine
         uint32_t width() { return swapChainExtent.width; }
         uint32_t height() { return swapChainExtent.height; }
         VkImage getImage(int index) { return swapChainImages[index]; }
+        VkImageView getDepthImageView() { return depthImageView; }
+        VkImage getDepthImage() { return depthImage; }
+        VkFormat getDepthFormat() { return VK_FORMAT_D32_SFLOAT; }
 
 
         float extentAspectRatio()
@@ -45,6 +48,7 @@ namespace Engine
         void init();
         void createSwapChain();
         void createImageViews();
+        void createDepthResources();
 
         VkSurfaceFormatKHR chooseSwapSurfaceFormat(
            const std::vector<VkSurfaceFormatKHR>& availableFormats);
@@ -57,6 +61,10 @@ namespace Engine
 
         std::vector<VkImage> swapChainImages;
         std::vector<VkImageView> swapChainImageViews;
+
+        VkImage depthImage = VK_NULL_HANDLE;
+        VmaAllocation depthAllocation = VK_NULL_HANDLE;
+        VkImageView depthImageView = VK_NULL_HANDLE;
 
         Device& device;
         VkExtent2D windowExtent;

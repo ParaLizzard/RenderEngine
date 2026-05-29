@@ -73,7 +73,7 @@ namespace Engine
         VkSemaphoreSubmitInfo semInfo2{};
         semInfo2.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
         semInfo2.semaphore = frames[currentFrameIndex].renderFinishedSemaphore;
-        semInfo2.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+        semInfo2.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 
         VkSubmitInfo2 submitInfo2{};
         submitInfo2.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
@@ -132,6 +132,8 @@ namespace Engine
             cmd.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
             cmd.commandPool = frames[i].commandPool;
             cmd.commandBufferCount = 1;
+
+            vkAllocateCommandBuffers(device.getDevice(), &cmd, &frames[i].commandBuffer);
 
             VkSemaphoreCreateInfo semaphoreInfo{};
             semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
