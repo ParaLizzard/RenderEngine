@@ -31,5 +31,8 @@ namespace Engine
         RenderGraph renderGraph{};
         Renderer renderer{window,device};
         Model megaBuffer{device, 500000, 1000000};
+
+        std::vector<Texture2D> sceneTextures;
+        std::vector<GameObject> gameObjects;
     };
 }

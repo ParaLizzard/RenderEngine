@@ -57,7 +57,14 @@ namespace Engine
 
     void ForwardPassNode::setup(RenderGraphBuilder& renderGraph)
     {
-        renderGraph.writeImage("SwapChainImage", VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        VkExtent2D frameExtent = engineRenderer.getSwapChain().getSwapChainExtent();
+
+        renderGraph.createTransientImage("SceneColorImage", VK_FORMAT_R8G8B8A8_UNORM, frameExtent);
+
+        renderGraph.readBuffer("MaterialSSBO",
+                           VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                           VK_ACCESS_2_SHADER_STORAGE_READ_BIT);
+        renderGraph.writeImage("SceneColorImage", VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
         renderGraph.writeImage("DepthImage", VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
                                VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
@@ -270,6 +277,9 @@ namespace Engine
 
         for (const auto& obj : frameInfo.gameObjects)
         {
+            //if (!obj.subMesh.bufferIndex) continue;
+            if (obj.subMesh.indexCount == 0) continue;
+
             if (obj.subMesh.bufferIndex != lastBoundChunk)
             {
                 geometryMegaBuffer.bind(cmd, obj.subMesh.bufferIndex);
@@ -277,13 +287,15 @@ namespace Engine
             }
 
             ForwardPushConstants pushConstants{};
-            pushConstants.modelMatrix = const_cast<GameObject&>(obj).transform.mat4();
+            pushConstants.modelMatrix = obj.currentWorldMatrix;
             pushConstants.viewProjection = viewProjection;
 
             vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(ForwardPushConstants), &pushConstants);
 
             vkCmdDrawIndexed(cmd, obj.subMesh.indexCount, 1, obj.subMesh.firstIndex, obj.subMesh.vertexOffset, 0);
         }
+
+
 
         vkCmdEndRendering(cmd);
     }

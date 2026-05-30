@@ -1,7 +1,7 @@
 #version 460
 
 layout (location = 0) in vec3 inPos;
-layout (location = 1) in vec3 inColor;
+//layout (location = 1) in vec3 inColor;
 layout (location = 2) in vec3 inNormal;
 layout (location = 3) in vec2 inUV;
 layout (location = 4) in vec4 inTangent;
@@ -17,6 +17,22 @@ layout(push_constant) uniform PushConsts {
     mat4 modelMatrix;
     mat4 viewProjection;
 } push;
+
+struct Material {
+    vec4  albedoFactor;
+    vec4  emissiveFactor;
+    uint  albedoIndex;
+    uint  normalIndex;
+    uint  roughnessMetallicIndex;
+    uint  emissiveIndex;
+    uint  occlusionIndex;
+    uint  flags;
+    float alphaCutoff;
+    float normalScale;
+    float roughnessFactor;
+    float metallicFactor;
+    uint  padding[2];
+};
 
 void main() {
     outTexID = inTexID;

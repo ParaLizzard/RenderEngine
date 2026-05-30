@@ -381,6 +381,7 @@ namespace Engine
         vulkan12Features.pNext = &vulkan13Features;
         vulkan12Features.descriptorIndexing = VK_TRUE;
         vulkan12Features.runtimeDescriptorArray = VK_TRUE;
+        vulkan12Features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
         vulkan12Features.descriptorBindingPartiallyBound = VK_TRUE;
         vulkan12Features.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
         vulkan12Features.descriptorBindingVariableDescriptorCount = VK_TRUE;

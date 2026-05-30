@@ -1,7 +1,13 @@
 #include "ResourceHeap.h"
 
+#include <array>
+
+#include "Scene/Texture.h"
+
 namespace Engine
 {
+
+
     ResourceHeap::ResourceHeap(Device& device, uint32_t maxTextures) : device(device), maxDescriptors(maxTextures)
     {
         slots.resize(maxDescriptors);
@@ -14,45 +20,54 @@ namespace Engine
 
         pendingWrites.reserve(maxDescriptors/10);
 
-        VkDescriptorPoolSize poolSize{};
-        poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        poolSize.descriptorCount = maxDescriptors;
+        std::array<VkDescriptorPoolSize, 2> poolSizes{};
+        poolSizes[0].type            = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        poolSizes[0].descriptorCount = 1;
+        poolSizes[1].type            = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        poolSizes[1].descriptorCount = maxDescriptors;
 
         VkDescriptorPoolCreateInfo poolInfo{};
-        poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
-        poolInfo.maxSets = 1;
-        poolInfo.poolSizeCount = 1;
-        poolInfo.pPoolSizes = &poolSize;
+        poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        poolInfo.flags         = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
+        poolInfo.maxSets       = 1;
+        poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+        poolInfo.pPoolSizes    = poolSizes.data();
 
         if (vkCreateDescriptorPool(device.getDevice(), &poolInfo, nullptr, &globalDescriptorPool) != VK_SUCCESS)
         {
             throw std::runtime_error("ResourceHeap: Failed to create bindless descriptor pool");
         }
 
-        VkDescriptorSetLayoutBinding layoutBinding{};
-        layoutBinding.binding = 0;
-        layoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        layoutBinding.descriptorCount = maxDescriptors;
-        layoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        layoutBinding.pImmutableSamplers = nullptr;
+        std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
 
-        VkDescriptorBindingFlags bindingFlags =
+        bindings[0].binding         = 0;
+        bindings[0].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        bindings[0].descriptorCount = 1;
+        bindings[0].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        bindings[1].binding         = 1;
+        bindings[1].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[1].descriptorCount = maxDescriptors;
+        bindings[1].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        std::array<VkDescriptorBindingFlags, 2> bindingFlags{};
+        bindingFlags[0] = 0;
+        bindingFlags[1] =
             VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
-            VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
+            VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT   |
             VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT;
 
         VkDescriptorSetLayoutBindingFlagsCreateInfo bindingFlagsInfo{};
-        bindingFlagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
-        bindingFlagsInfo.bindingCount = 1;
-        bindingFlagsInfo.pBindingFlags = &bindingFlags;
+        bindingFlagsInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+        bindingFlagsInfo.bindingCount = static_cast<uint32_t>(bindingFlags.size());
+        bindingFlagsInfo.pBindingFlags = bindingFlags.data();
 
         VkDescriptorSetLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.pNext = &bindingFlagsInfo;
-        layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
-        layoutInfo.bindingCount = 1;
-        layoutInfo.pBindings = &layoutBinding;
+        layoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layoutInfo.pNext        = &bindingFlagsInfo;
+        layoutInfo.flags        = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+        layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+        layoutInfo.pBindings    = bindings.data();
 
         if (vkCreateDescriptorSetLayout(device.getDevice(), &layoutInfo, nullptr, &globalDescriptorSetLayout) != VK_SUCCESS)
         {
@@ -76,10 +91,27 @@ namespace Engine
         {
             throw std::runtime_error("ResourceHeap: Failed to allocate bindless descriptor set");
         }
+
+        fallbackWhiteTex     = std::make_unique<Texture2D>();
+        fallbackFlatNormalTex = std::make_unique<Texture2D>();
+
+        uint8_t white[4]      = {255, 255, 255, 255};
+        uint8_t flatNormal[4] = {128, 128, 255, 255};
+
+        fallbackWhiteTex->fromBuffer(white, 4, VK_FORMAT_R8G8B8A8_UNORM, 1, 1, &device, *this);
+        fallbackFlatNormalTex->fromBuffer(flatNormal, 4, VK_FORMAT_R8G8B8A8_UNORM, 1, 1, &device, *this);
+
+        fallbackWhiteSlot      = fallbackWhiteTex->heapHandle.index;
+        fallbackFlatNormalSlot = fallbackFlatNormalTex->heapHandle.index;
+
+        flushPendingUpdates();
     }
 
     ResourceHeap::~ResourceHeap()
     {
+        if (fallbackWhiteTex)     fallbackWhiteTex->destroy();
+        if (fallbackFlatNormalTex) fallbackFlatNormalTex->destroy();
+
         if (globalDescriptorSetLayout != VK_NULL_HANDLE)
             vkDestroyDescriptorSetLayout(device.getDevice(), globalDescriptorSetLayout, nullptr);
         if (globalDescriptorPool != VK_NULL_HANDLE)
@@ -111,7 +143,7 @@ namespace Engine
         VkWriteDescriptorSet write{};
         write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         write.dstSet = globalDescriptorSet;
-        write.dstBinding = 0;
+        write.dstBinding = 1;
         write.dstArrayElement = allocatedIndex;
         write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         write.descriptorCount = 1;
@@ -138,6 +170,24 @@ namespace Engine
         freeIndices.push_back(handle.index);
     }
 
+    uint32_t ResourceHeap::registerMaterial(VkDescriptorImageInfo albedoInfo, VkDescriptorImageInfo normalInfo, VkDescriptorImageInfo roughnessMetallicInfo)
+    {
+        TextureHandle albedoHandle = registerTexture(albedoInfo);
+        TextureHandle normalHandle = registerTexture(normalInfo);
+        TextureHandle roughnessMetallicHandle = registerTexture(roughnessMetallicInfo);
+
+        std::lock_guard<std::mutex> lock(heapMutex);
+        uint32_t materialId = static_cast<uint32_t>(materials.size());
+
+        MaterialData matData{};
+        matData.albedoIndex = albedoHandle.index;
+        matData.normalIndex = normalHandle.index;
+        matData.roughnessMetallicIndex = roughnessMetallicHandle.index;
+
+        materials.push_back(matData);
+        return materialId;
+    }
+
     void ResourceHeap::flushPendingUpdates()
     {
         std::lock_guard<std::mutex> lock(heapMutex);
@@ -150,7 +200,7 @@ namespace Engine
         {
             writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             writes[i].dstSet = globalDescriptorSet;
-            writes[i].dstBinding = 0;
+            writes[i].dstBinding = 1;
             writes[i].dstArrayElement = pendingWrites[i].dstArrayElement;
             writes[i].descriptorCount = 1;
             writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -173,5 +223,62 @@ namespace Engine
 
         return slots[handle.index].allocated;
     }
+
+    uint32_t ResourceHeap::pushMaterial(const MaterialData& mat)
+    {
+        std::lock_guard<std::mutex> lock(heapMutex);
+        uint32_t id = static_cast<uint32_t>(materials.size());
+        materials.push_back(mat);
+        return id;
+    }
+
+    void ResourceHeap::uploadMaterialBuffer()
+    {
+        if (materials.empty()) return;
+
+        VkDeviceSize bufferSize = sizeof(MaterialData) * materials.size();
+
+        if (!materialBuffer || materialBuffer->getBufferSize() < bufferSize)
+        {
+            materialBuffer = std::make_unique<Buffer>(
+                device,
+                sizeof(MaterialData),
+                static_cast<uint32_t>(materials.size()),
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                VMA_MEMORY_USAGE_CPU_TO_GPU,
+                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                0
+            );
+        }
+
+        materialBuffer->writeToBuffer(materials.data(), bufferSize, 0);
+        materialBuffer->flush(bufferSize, 0);
+    }
+
+    VkDescriptorBufferInfo ResourceHeap::getMaterialBufferInfo() const
+    {
+        assert(materialBuffer && "Material buffer not uploaded yet");
+        return materialBuffer->descriptorInfo(
+            sizeof(MaterialData) * materials.size(), 0);
+    }
+
+    void ResourceHeap::writeMaterialDescriptor()
+    {
+        assert(materialBuffer && "Call uploadMaterialBuffer first");
+
+        VkDescriptorBufferInfo bufInfo = getMaterialBufferInfo();
+
+        VkWriteDescriptorSet write{};
+        write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet          = globalDescriptorSet;
+        write.dstBinding      = 0;                              // binding 1
+        write.dstArrayElement = 0;
+        write.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        write.descriptorCount = 1;
+        write.pBufferInfo     = &bufInfo;
+
+        vkUpdateDescriptorSets(device.getDevice(), 1, &write, 0, nullptr);
+    }
+
 }
 

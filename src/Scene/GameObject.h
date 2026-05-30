@@ -34,7 +34,7 @@ namespace Engine
         id_t getId() const { return id; }
 
         TransformComponent transform{};
-        SubMesh subMesh{};
+        Model::SubMesh subMesh{};
 
         id_t parentId = INVALID_ID;
         std::vector<id_t> childrenIds;

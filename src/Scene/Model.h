@@ -10,18 +10,17 @@
 
 namespace Engine
 {
-
-    struct SubMesh
-    {
-        uint32_t bufferIndex;
-        uint32_t indexCount;
-        uint32_t firstIndex;
-        int32_t  vertexOffset;
-    };
-
     class Model
     {
     public:
+        struct SubMesh
+        {
+            uint32_t bufferIndex;
+            uint32_t indexCount;
+            uint32_t firstIndex;
+            int32_t  vertexOffset;
+        };
+
         struct Vertex
         {
             glm::vec3 position{};

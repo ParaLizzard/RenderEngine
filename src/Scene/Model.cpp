@@ -66,7 +66,7 @@ namespace Engine
         return attributeDescriptions;
     }
 
-    SubMesh Model::registerMesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices)
+    Model::SubMesh Model::registerMesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices)
     {
         uint32_t verticesCount = vertices.size();
         uint32_t indexCount = indices.size();

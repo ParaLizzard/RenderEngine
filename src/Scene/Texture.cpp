@@ -1,4 +1,6 @@
 #include "Texture.h"
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 
 namespace Engine
 {
@@ -251,16 +253,50 @@ namespace Engine
         assert(buffer);
 
         this->device = device;
-        width = texWidth;
-        height = texHeight;
+
+        stbi_uc* pixels = nullptr;
+        VkDeviceSize imageSize = 0;
+
+        if (texWidth == 0 || texHeight == 0)
+        {
+            int imgWidth, imgHeight, imgChannels;
+            pixels = stbi_load_from_memory(
+                reinterpret_cast<const stbi_uc*>(buffer),
+                static_cast<int>(bufferSize),
+                &imgWidth,
+                &imgHeight,
+                &imgChannels,
+                STBI_rgb_alpha
+            );
+
+            if (!pixels) {
+                throw std::runtime_error("Texture: Failed to decode image from memory!");
+            }
+
+            this->width = static_cast<uint32_t>(imgWidth);
+            this->height = static_cast<uint32_t>(imgHeight);
+            imageSize = this->width * this->height * 4;
+        }
+        else
+        {
+            // Otherwise, these are raw uncompressed pixels (like our fallback textures)
+            this->width = texWidth;
+            this->height = texHeight;
+            imageSize = bufferSize;
+            pixels = reinterpret_cast<stbi_uc*>(buffer);
+        }
 
         mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
 
         Buffer stgBuffer{
-            *device, bufferSize, 1, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, {}, 0
+            *device, imageSize, 1, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, {}, 0
         };
-        stgBuffer.writeToBuffer(buffer, bufferSize, 0);
-        stgBuffer.flush(bufferSize, 0);
+        stgBuffer.writeToBuffer(pixels, imageSize, 0);
+        stgBuffer.flush(imageSize, 0);
+
+        if (texWidth == 0 || texHeight == 0) {
+            stbi_image_free(pixels);
+        }
 
         VkImageCreateInfo imageCreateInfo{
             .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -319,11 +355,13 @@ namespace Engine
 
         VkImageMemoryBarrier2 barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        barrier.image = image;
         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         barrier.subresourceRange.baseArrayLayer = 0;
         barrier.subresourceRange.layerCount = 1;
+        barrier.subresourceRange.levelCount = 1;
 
         int32_t mipWidth = width;
         int32_t mipHeight = height;

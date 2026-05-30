@@ -1,8 +1,28 @@
 #include "Application.h"
 #include "Passes/ForwardPassNode.h"
+#include "Scene/LoaderGLTF.h"
 
 namespace Engine
 {
+    static void updateHierarchy(GameObject& obj, std::vector<GameObject>& allObjects, const glm::mat4& parentMatrix)
+    {
+        // 1. My World Matrix = Parent's World Matrix * My Local Matrix
+        obj.currentWorldMatrix = parentMatrix * obj.transform.mat4();
+
+        // 2. Cascade down to all children
+        for (auto childId : obj.childrenIds)
+        {
+            // Find the child in our vector by its ID
+            auto it = std::find_if(allObjects.begin(), allObjects.end(),
+                [childId](const GameObject& g) { return g.getId() == childId; });
+
+            if (it != allObjects.end())
+            {
+                updateHierarchy(*it, allObjects, obj.currentWorldMatrix);
+            }
+        }
+    }
+
     Application::Application()
     {
         Texture2D testTexture;
@@ -20,34 +40,56 @@ namespace Engine
 
     void Application::run()
     {
-        std::vector<GameObject> gameObjects;
         Camera camera{};
         camera.setViewTarget(glm::vec3{0.0f, 0.0f, -5.0f}, glm::vec3{0.0f, 0.0f, 0.0f});
 
         ForwardPassNode forwardPass{device, renderer, megaBuffer, resourceHeap};
 
-        std::vector<Model::Vertex> vertices = {
-            {{ 0.0f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 0.0f}, 0},
-            {{ 0.5f,  0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 0.0f}, 0},
-            {{-0.5f,  0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 0.0f}, 0}
-        };
-        std::vector<uint32_t> indices = {0, 1, 2};
+        auto loaded = LoaderGLTF::loadObjectGLTF(device, "models/pbr_sphere.glb", megaBuffer, resourceHeap,
+                                                 sceneTextures);
 
-        GameObject triangle = GameObject::createGameObject();
-        triangle.subMesh = megaBuffer.registerMesh(vertices, indices);
-        triangle.transform.translation = {0.0f, 0.0f, 0.0f};
+        for (auto& obj : loaded)
+            gameObjects.push_back(std::move(obj));
 
-        gameObjects.push_back(std::move(triangle));
+        resourceHeap.uploadMaterialBuffer();
+        resourceHeap.writeMaterialDescriptor();
 
         while (!window.shouldClose())
         {
             glfwPollEvents();
+
+            float time = glfwGetTime();
+
+            for (auto& obj : gameObjects)
+            {
+                if (obj.parentId == GameObject::INVALID_ID)
+                {
+                    obj.transform.rotation = glm::angleAxis(time * 0.5f, glm::vec3(0.0f, 1.0f, 0.0f));
+                }
+            }
+
+            glm::mat4 identityMatrix = glm::mat4(1.0f);
+            for (auto& obj : gameObjects)
+            {
+                if (obj.parentId == GameObject::INVALID_ID)
+                {
+                    updateHierarchy(obj, gameObjects, identityMatrix);
+                }
+            }
 
             VkCommandBuffer cmd = renderer.beginFrame();
             if (cmd == VK_NULL_HANDLE) continue;
 
             VkExtent2D currentExtent = renderer.getSwapChain().getSwapChainExtent();
             uint32_t imgIdx = renderer.getCurrentImageIndex();
+
+            renderGraph.registerPhysicalBuffer(
+                "MaterialSSBO",
+                resourceHeap.getMaterialBufferInfo().buffer,
+                resourceHeap.getMaterialBufferSize(),
+                VK_PIPELINE_STAGE_2_HOST_BIT,
+                VK_ACCESS_2_HOST_WRITE_BIT
+            );
 
             renderGraph.registerPhysicalImage(
                 "SwapChainImage",
@@ -72,7 +114,7 @@ namespace Engine
 
             FrameInfo info{
                 .frameIndex = static_cast<int>(imgIdx),
-                .frameTime = 0.016f,
+                .frameTime = time,
                 .extent = currentExtent,
                 .commandBuffer = cmd,
                 .camera = camera,
@@ -89,5 +131,10 @@ namespace Engine
         }
 
         vkDeviceWaitIdle(device.getDevice());
+
+        for (auto& tex : sceneTextures)
+        {
+            tex.destroy();
+        }
     }
 }

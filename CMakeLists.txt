@@ -152,7 +152,11 @@ set(SCENE_SOURCES
 set(PASSES_SOURCES
         src/Passes/ForwardPassNode.cpp
         src/Passes/ForwardPassNode.h
+        src/Passes/FxaaPassNode.cpp
+        src/Passes/FxaaPassNode.h
 )
+
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/models" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 
 add_executable(RenderEngine
         ${CORE_SOURCES}
