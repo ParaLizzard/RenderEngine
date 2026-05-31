@@ -11,14 +11,26 @@ namespace Engine
         descriptor.imageLayout = imageLayout;
     }
 
+
     void Texture::destroy()
     {
-        vkDestroyImageView(device->getDevice(), view, nullptr);
-        vmaDestroyImage(device->getAllocator(), image, allocation);
+        if (!device) return;
 
-        if (sampler)
+        if (view != VK_NULL_HANDLE)
+        {
+            vkDestroyImageView(device->getDevice(), view, nullptr);
+            view = VK_NULL_HANDLE;
+        }
+        if (image != VK_NULL_HANDLE && allocation != VK_NULL_HANDLE)
+        {
+            vmaDestroyImage(device->getAllocator(), image, allocation);
+            image = VK_NULL_HANDLE;
+            allocation = VK_NULL_HANDLE;
+        }
+        if (sampler != VK_NULL_HANDLE)
         {
             vkDestroySampler(device->getDevice(), sampler, nullptr);
+            sampler = VK_NULL_HANDLE;
         }
     }
 
@@ -50,7 +62,6 @@ namespace Engine
         VkImageLayout newLayout,
         VkImageSubresourceRange subresourceRange)
     {
-        // Initialize the unified modern barrier struct
         VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
         barrier.oldLayout = oldLayout;
         barrier.newLayout = newLayout;
@@ -59,7 +70,6 @@ namespace Engine
         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 
-        // Automatically resolve pipeline stages and access masks based on layouts
         if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
         {
             barrier.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
@@ -98,7 +108,8 @@ namespace Engine
         vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
     }
 
-    void Texture2D::loadFromFile(std::string filename, VkFormat format, Device* device, ResourceHeap& resourceHeap, VkFilter filter,
+    void Texture2D::loadFromFile(std::string filename, VkFormat format, Device* device, ResourceHeap& resourceHeap,
+                                 VkFilter filter,
                                  VkImageUsageFlags imageUsageFlags, VkImageLayout imageLayout)
     {
         ktxTexture* ktxTexture;
@@ -269,7 +280,8 @@ namespace Engine
                 STBI_rgb_alpha
             );
 
-            if (!pixels) {
+            if (!pixels)
+            {
                 throw std::runtime_error("Texture: Failed to decode image from memory!");
             }
 
@@ -279,7 +291,6 @@ namespace Engine
         }
         else
         {
-            // Otherwise, these are raw uncompressed pixels (like our fallback textures)
             this->width = texWidth;
             this->height = texHeight;
             imageSize = bufferSize;
@@ -294,7 +305,8 @@ namespace Engine
         stgBuffer.writeToBuffer(pixels, imageSize, 0);
         stgBuffer.flush(imageSize, 0);
 
-        if (texWidth == 0 || texHeight == 0) {
+        if (texWidth == 0 || texHeight == 0)
+        {
             stbi_image_free(pixels);
         }
 
@@ -466,7 +478,8 @@ namespace Engine
         this->heapHandle = resourceHeap.registerTexture(this->descriptor);
     }
 
-    void Texture2D::createDefaultTexture(Device* device, uint8_t r, uint8_t g, uint8_t b, uint8_t a, ResourceHeap& resourceHeap)
+    void Texture2D::createDefaultTexture(Device* device, uint8_t r, uint8_t g, uint8_t b, uint8_t a,
+                                         ResourceHeap& resourceHeap)
     {
         VkDeviceSize imageSize = 4;
         unsigned char pixels[4] = {r, g, b, a};
@@ -553,7 +566,6 @@ namespace Engine
 
         device->endSingleTimeCommands(commandBuffer);
 
-        // Create image view
         VkImageViewCreateInfo viewInfo{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
         viewInfo.image = image;
         viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
@@ -596,7 +608,7 @@ namespace Engine
         this->heapHandle = resourceHeap.registerTexture(this->descriptor);
     }
 
-    void Texture2DArray::loadFromFile(std::string filename, VkFormat format, Device* device,  ResourceHeap& resourceHeap,
+    void Texture2DArray::loadFromFile(std::string filename, VkFormat format, Device* device, ResourceHeap& resourceHeap,
                                       VkImageUsageFlags imageUsageFlags, VkImageLayout imageLayout)
     {
         ktxTexture* ktxTexture;
@@ -663,7 +675,8 @@ namespace Engine
         VmaAllocationCreateInfo allocInfo;
         allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-        VkResult imageResult = vmaCreateImage(device->getAllocator(), &imageCreateInfo, &allocInfo, &image, &allocation, {});
+        VkResult imageResult = vmaCreateImage(device->getAllocator(), &imageCreateInfo, &allocInfo, &image, &allocation,
+                                              {});
         if (imageResult != VK_SUCCESS)
         {
             throw std::runtime_error("Failed to allocate texture array image for: " + filename);
@@ -745,7 +758,7 @@ namespace Engine
         this->heapHandle = resourceHeap.registerTexture(this->descriptor);
     }
 
-    void TextureCubeMap::loadFromFile(std::string filename, VkFormat format, Device* device,  ResourceHeap& resourceHeap,
+    void TextureCubeMap::loadFromFile(std::string filename, VkFormat format, Device* device, ResourceHeap& resourceHeap,
                                       VkImageUsageFlags imageUsageFlags, VkImageLayout imageLayout)
     {
         ktxTexture* ktxTexture;
@@ -811,7 +824,8 @@ namespace Engine
         VmaAllocationCreateInfo allocInfo{};
         allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-        VkResult imageResult = vmaCreateImage(device->getAllocator(), &imageCreateInfo, &allocInfo, &image, &allocation, {});
+        VkResult imageResult = vmaCreateImage(device->getAllocator(), &imageCreateInfo, &allocInfo, &image, &allocation,
+                                              {});
         if (imageResult != VK_SUCCESS)
         {
             throw std::runtime_error("Texture: Failed to allocate cubemap image for: " + filename);
@@ -826,7 +840,8 @@ namespace Engine
         subresourceRange.baseArrayLayer = 0;
         subresourceRange.layerCount = 6;
 
-        transitionImageLayout(copyCmd, image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, subresourceRange);
+        transitionImageLayout(copyCmd, image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                              subresourceRange);
 
         vkCmdCopyBufferToImage(
             copyCmd,
@@ -885,6 +900,226 @@ namespace Engine
 
         updateDescriptor();
 
+        this->heapHandle = resourceHeap.registerTexture(this->descriptor);
+    }
+
+    void TextureCubeMap::loadFromFileSTB(
+        std::array<std::string, 6> filenames,
+        VkFormat format,
+        Device* device,
+        ResourceHeap& resourceHeap,
+        VkImageUsageFlags imageUsageFlags,
+        VkImageLayout imageLayout)
+    {
+        this->device = device;
+        this->layerCount = 6;
+
+        bool isHDR = stbi_is_hdr(filenames[0].c_str());
+        int texWidth = 0, texHeight = 0, texChannels = 0;
+
+        if (!stbi_info(filenames[0].c_str(), &texWidth, &texHeight, &texChannels))
+        {
+            throw std::runtime_error("TextureCubeMap: Failed to read image info from: " + filenames[0]);
+        }
+        this->width = static_cast<uint32_t>(texWidth);
+        this->height = static_cast<uint32_t>(texHeight);
+        this->mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
+
+
+        VkDeviceSize faceSize = width * height * 4 * (isHDR ? sizeof(float) : sizeof(stbi_uc));
+        VkDeviceSize totalImageSize = faceSize * 6;
+
+        Buffer stgBuffer{
+            *device, totalImageSize, 1, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, {}, 0
+        };
+
+        for (uint32_t i = 0; i < 6; i++)
+        {
+            int w, h, c;
+            void* pixels = nullptr;
+
+            if (isHDR)
+            {
+                pixels = stbi_loadf(filenames[i].c_str(), &w, &h, &c, STBI_rgb_alpha);
+            }
+            else
+            {
+                pixels = stbi_load(filenames[i].c_str(), &w, &h, &c, STBI_rgb_alpha);
+            }
+
+            if (!pixels)
+            {
+                throw std::runtime_error("TextureCubeMap: Failed to load cubemap face: " + filenames[i]);
+            }
+            if (w != width || h != height)
+            {
+                stbi_image_free(pixels);
+                throw std::runtime_error(
+                    "TextureCubeMap: Cubemap faces have differing dimensions! Check face: " + filenames[i]);
+            }
+
+            stgBuffer.writeToBuffer(pixels, faceSize, faceSize * i);
+            stbi_image_free(pixels);
+        }
+        stgBuffer.flush(totalImageSize, 0);
+
+
+        VkImageCreateInfo imageCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            .flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT,
+            .imageType = VK_IMAGE_TYPE_2D,
+            .format = format,
+            .extent = {width, height, 1},
+            .mipLevels = mipLevels,
+            .arrayLayers = 6,
+            .samples = VK_SAMPLE_COUNT_1_BIT,
+            .tiling = VK_IMAGE_TILING_OPTIMAL,
+            .usage = imageUsageFlags | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
+        };
+
+        VmaAllocationCreateInfo allocInfo{};
+        allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+        if (vmaCreateImage(device->getAllocator(), &imageCreateInfo, &allocInfo, &image, &allocation, {}) != VK_SUCCESS)
+        {
+            throw std::runtime_error("TextureCubeMap: Failed to allocate cubemap image");
+        }
+
+        VkCommandBuffer copyCmd = device->beginSingleTimeCommands();
+
+        VkImageSubresourceRange subresourceRange = {};
+        subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        subresourceRange.baseMipLevel = 0;
+        subresourceRange.levelCount = mipLevels;
+        subresourceRange.baseArrayLayer = 0;
+        subresourceRange.layerCount = 6;
+
+        transitionImageLayout(copyCmd, image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                              subresourceRange);
+
+        VkBufferImageCopy bufferCopyRegion = {};
+        bufferCopyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        bufferCopyRegion.imageSubresource.mipLevel = 0;
+        bufferCopyRegion.imageSubresource.baseArrayLayer = 0;
+        bufferCopyRegion.imageSubresource.layerCount = 6;
+        bufferCopyRegion.imageExtent = {width, height, 1};
+        bufferCopyRegion.bufferOffset = 0;
+
+        vkCmdCopyBufferToImage(copyCmd, stgBuffer.getBuffer(), image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
+                               &bufferCopyRegion);
+
+        VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+        barrier.image = image;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        barrier.subresourceRange.baseArrayLayer = 0;
+        barrier.subresourceRange.layerCount = 6;
+        barrier.subresourceRange.levelCount = 1;
+
+        int32_t mipWidth = width;
+        int32_t mipHeight = height;
+
+        for (uint32_t i = 1; i < mipLevels; i++)
+        {
+            barrier.subresourceRange.baseMipLevel = i - 1;
+            barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+            barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+            barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+
+            VkDependencyInfo depInfo{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+            depInfo.imageMemoryBarrierCount = 1;
+            depInfo.pImageMemoryBarriers = &barrier;
+            vkCmdPipelineBarrier2(copyCmd, &depInfo);
+
+            VkImageBlit blit{};
+            blit.srcOffsets[0] = {0, 0, 0};
+            blit.srcOffsets[1] = {mipWidth, mipHeight, 1};
+            blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            blit.srcSubresource.mipLevel = i - 1;
+            blit.srcSubresource.baseArrayLayer = 0;
+            blit.srcSubresource.layerCount = 6;
+
+            blit.dstOffsets[0] = {0, 0, 0};
+            blit.dstOffsets[1] = {mipWidth > 1 ? mipWidth / 2 : 1, mipHeight > 1 ? mipHeight / 2 : 1, 1};
+            blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            blit.dstSubresource.mipLevel = i;
+            blit.dstSubresource.baseArrayLayer = 0;
+            blit.dstSubresource.layerCount = 6;
+
+            vkCmdBlitImage(copyCmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+
+            barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+            barrier.newLayout = imageLayout;
+            barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+            barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+
+            vkCmdPipelineBarrier2(copyCmd, &depInfo);
+
+            if (mipWidth > 1) mipWidth /= 2;
+            if (mipHeight > 1) mipHeight /= 2;
+        }
+
+        barrier.subresourceRange.baseMipLevel = mipLevels - 1;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.newLayout = imageLayout;
+        barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+        barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+        barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+
+        VkDependencyInfo depInfoFinal{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+        depInfoFinal.imageMemoryBarrierCount = 1;
+        depInfoFinal.pImageMemoryBarriers = &barrier;
+        vkCmdPipelineBarrier2(copyCmd, &depInfoFinal);
+
+        this->imageLayout = imageLayout;
+        device->endSingleTimeCommands(copyCmd);
+
+        VkSamplerCreateInfo samplerCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+            .magFilter = VK_FILTER_LINEAR,
+            .minFilter = VK_FILTER_LINEAR,
+            .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+            .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            .mipLodBias = 0.0f,
+            .anisotropyEnable = VK_TRUE,
+            .maxAnisotropy = device->getMaxAnisotoropy(),
+            .compareOp = VK_COMPARE_OP_NEVER,
+            .minLod = 0.0f,
+            .maxLod = static_cast<float>(mipLevels),
+            .borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE
+        };
+
+        if (vkCreateSampler(device->getDevice(), &samplerCreateInfo, nullptr, &sampler) != VK_SUCCESS)
+        {
+            throw std::runtime_error("TextureCubeMap: Failed to create sampler");
+        }
+
+        VkImageViewCreateInfo viewCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .image = image,
+            .viewType = VK_IMAGE_VIEW_TYPE_CUBE,
+            .format = format,
+            .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, mipLevels, 0, 6}
+        };
+
+        if (vkCreateImageView(device->getDevice(), &viewCreateInfo, nullptr, &view) != VK_SUCCESS)
+        {
+            throw std::runtime_error("TextureCubeMap: Failed to create image view");
+        }
+
+        updateDescriptor();
         this->heapHandle = resourceHeap.registerTexture(this->descriptor);
     }
 }

@@ -68,8 +68,6 @@ namespace Engine
         TextureHandle registerTexture(VkDescriptorImageInfo imageInfo);
         void freeTexture(TextureHandle& handle);
 
-        uint32_t registerMaterial(VkDescriptorImageInfo albedoInfo, VkDescriptorImageInfo normalInfo,
-                                  VkDescriptorImageInfo roughnessMetallicInfo);
         const std::vector<MaterialData>& getMaterials() const { return materials; }
 
         void flushPendingUpdates();
@@ -79,8 +77,11 @@ namespace Engine
         uint32_t getFallbackFlatNormalSlot()const { return fallbackFlatNormalSlot; }
 
         void uploadMaterialBuffer();
+
         VkDescriptorBufferInfo getMaterialBufferInfo() const;
         void writeMaterialDescriptor();
+        void writeSceneUboDescriptor(VkDescriptorBufferInfo bufInfo);
+        void writeIBLDescriptors(VkDescriptorImageInfo irradianceInfo, VkDescriptorImageInfo prefilterInfo, VkDescriptorImageInfo brdfLutInfo);
         VkDeviceSize getMaterialBufferSize() const { return sizeof(MaterialData) * materials.size(); }
 
         VkDescriptorSet getDescriptorSet() { return globalDescriptorSet; }

@@ -59,7 +59,12 @@ namespace Engine
         VkQueue getGraphicsQueue() {return graphicsQueue_;}
         VkQueue getPresentQueue() {return presentQueue_;}
         VkSurfaceKHR getSurface() {return surface_;}
-
+        void transitionImageLayout(
+           VkCommandBuffer commandBuffer,
+           VkImage image,
+           VkImageLayout oldLayout,
+           VkImageLayout newLayout,
+           VkImageSubresourceRange subresourceRange);
 
     private:
         bool enableValidationLayers = true;

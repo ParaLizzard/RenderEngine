@@ -37,6 +37,7 @@ namespace Engine
         Model::SubMesh subMesh{};
 
         id_t parentId = INVALID_ID;
+        size_t parentCacheIndex = std::numeric_limits<size_t>::max();
         std::vector<id_t> childrenIds;
 
         glm::mat4 currentWorldMatrix{1.0f};

@@ -8,6 +8,11 @@
 #include "Renderer/ResourceHeap.h"
 #include "Scene/Texture.h"
 #include <format>
+#include <unordered_map>
+#include <limits>
+#include "Core/JobSystem.h"
+
+#include "Scene/KeyboardMovement.h"
 
 namespace Engine
 {
@@ -28,9 +33,12 @@ namespace Engine
         Window window{WIDTH,HEIGHT,"Render Engine"};
         Device device{window};
         ResourceHeap resourceHeap{device};
-        RenderGraph renderGraph{};
+        RenderGraph renderGraph{device};
         Renderer renderer{window,device};
         Model megaBuffer{device, 500000, 1000000};
+        KeyboardMovementController cameraController{};
+        std::shared_ptr<GameObject> cameraObject;
+        JobSystem jobSystem{ std::max(1u, std::thread::hardware_concurrency() - 1) };
 
         std::vector<Texture2D> sceneTextures;
         std::vector<GameObject> gameObjects;

@@ -37,14 +37,18 @@ namespace Engine
     }
 
     void Buffer::createBuffer(
-       VkDeviceSize size,
-       VkBufferUsageFlags usage,
-       VmaMemoryUsage memUsage,
-       VkBuffer& buffer,
-       VmaAllocation& allocation,
-       VmaAllocationInfo* pResultInfo
-   )
+   VkDeviceSize size,
+   VkBufferUsageFlags usage,
+   VmaMemoryUsage memUsage,
+   VkBuffer& buffer,
+   VmaAllocation& allocation,
+   VmaAllocationInfo* pResultInfo
+)
     {
+        if (size == 0) {
+            throw std::runtime_error("Buffers: Attempted to create a buffer of size 0");
+        }
+
         VkBufferCreateInfo bufferInfo{};
         bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         bufferInfo.size = size;
@@ -54,12 +58,29 @@ namespace Engine
         VmaAllocationCreateInfo allocInfo{};
         allocInfo.usage = memUsage;
 
-        allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-            VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
-        if (vmaCreateBuffer(device.getAllocator(), &bufferInfo, &allocInfo, &buffer, &allocation, pResultInfo) != VK_SUCCESS)
+        if (memUsage == VMA_MEMORY_USAGE_CPU_TO_GPU || memUsage == VMA_MEMORY_USAGE_CPU_ONLY) {
+            allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+            allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                              VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        } else if (memUsage == VMA_MEMORY_USAGE_GPU_ONLY) {
+            allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+            allocInfo.flags = 0;
+        } else {
+            allocInfo.usage = memUsage;
+            allocInfo.flags = 0;
+        }
+
+        VkResult result = vmaCreateBuffer(device.getAllocator(), &bufferInfo, &allocInfo, &buffer, &allocation, pResultInfo);
+
+        if (result != VK_SUCCESS && (memUsage == VMA_MEMORY_USAGE_CPU_TO_GPU)) {
+            allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+            result = vmaCreateBuffer(device.getAllocator(), &bufferInfo, &allocInfo, &buffer, &allocation, pResultInfo);
+        }
+
+        if (result != VK_SUCCESS)
         {
-            throw std::runtime_error("Device: failed to create VMA buffer");
+            throw std::runtime_error("Buffers: failed to create VMA buffer");
         }
     }
 

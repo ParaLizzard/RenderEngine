@@ -15,10 +15,10 @@ namespace Engine
     public:
         struct SubMesh
         {
-            uint32_t bufferIndex;
-            uint32_t indexCount;
-            uint32_t firstIndex;
-            int32_t  vertexOffset;
+            uint32_t bufferIndex = 0;
+            uint32_t indexCount = 0;
+            uint32_t firstIndex = 0;
+            int32_t  vertexOffset = 0;
         };
 
         struct Vertex

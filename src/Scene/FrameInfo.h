@@ -5,6 +5,7 @@
 
 namespace Engine
 {
+    class RenderGraph;
 
     struct FrameInfo
     {
@@ -14,5 +15,12 @@ namespace Engine
         VkCommandBuffer commandBuffer;
         Camera& camera;
         std::vector<GameObject>& gameObjects;
+        const RenderGraph* renderGraph = nullptr;
+    };
+
+    struct SceneUbo
+    {
+        glm::vec4 cameraPosition;
+        glm::vec4 directionalLight;
     };
 }

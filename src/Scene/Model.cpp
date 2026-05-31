@@ -84,6 +84,9 @@ namespace Engine
         vertexBuffers.back()->writeToBuffer(vertices.data(), verticesCount*sizeof(Vertex), vertexByteOffset);
         indexBuffers.back()->writeToBuffer(indices.data(), indexCount * sizeof(uint32_t), indexByteOffset);
 
+        vertexBuffers.back()->flush(VK_WHOLE_SIZE, 0);
+        indexBuffers.back()->flush(VK_WHOLE_SIZE, 0);
+
         SubMesh subMesh{};
         subMesh.bufferIndex = vertexBuffers.size() - 1;
         subMesh.indexCount = indexCount;

@@ -129,6 +129,7 @@ set(CORE_SOURCES
         src/Core/Application.cpp
         src/Core/Device.cpp
         src/Core/Buffer.cpp
+        src/Core/JobSystem.h
 )
 
 set(RENDERER_SOURCES
@@ -136,6 +137,7 @@ set(RENDERER_SOURCES
         src/Renderer/Swapchain.cpp
         src/Renderer/RenderGraph.cpp
         src/Renderer/ResourceHeap.cpp
+        src/Renderer/ShaderUtils.h
 )
 
 set(SCENE_SOURCES
@@ -147,16 +149,20 @@ set(SCENE_SOURCES
         src/Scene/Camera.cpp
         src/Scene/LoaderGLTF.cpp
         src/Scene/LoaderGLTF.h
+        src/Scene/KeyboardMovement.cpp
+        src/Scene/IBL.cpp
+        src/Scene/IBL.h
 )
 
 set(PASSES_SOURCES
         src/Passes/ForwardPassNode.cpp
         src/Passes/ForwardPassNode.h
-        src/Passes/FxaaPassNode.cpp
         src/Passes/FxaaPassNode.h
+        src/Passes/FxaaPassNode.cpp
 )
 
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/models" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/assets" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 
 add_executable(RenderEngine
         ${CORE_SOURCES}

@@ -2,6 +2,7 @@
 #define VMA_IMPLEMENTATION
 #include "Device.h"
 
+#include <fstream>
 
 
 namespace Engine
@@ -245,7 +246,6 @@ namespace Engine
         std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
         vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, queueFamilies.data());
 
-        // Same present and graphic index
         for (uint32_t i = 0; i < queueFamilyCount; i++)
         {
             const auto& queueFamily = queueFamilies[i];
@@ -270,7 +270,6 @@ namespace Engine
             }
         }
 
-        // Different present and graphic index
         for (uint32_t i = 0; i < queueFamilyCount; i++)
         {
             const auto& queueFamily = queueFamilies[i];
@@ -385,6 +384,7 @@ namespace Engine
         vulkan12Features.descriptorBindingPartiallyBound = VK_TRUE;
         vulkan12Features.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
         vulkan12Features.descriptorBindingVariableDescriptorCount = VK_TRUE;
+        vulkan12Features.bufferDeviceAddress = VK_TRUE;
 
         VkPhysicalDeviceFeatures2 deviceFeatures2{};
         deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
@@ -439,6 +439,8 @@ namespace Engine
         allocatorInfo.instance = instance;
         allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_3;
         allocatorInfo.pVulkanFunctions = &vulkanFunctions;
+
+        allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
 
         if (vmaCreateAllocator(&allocatorInfo, &allocator) != VK_SUCCESS)
         {
@@ -500,7 +502,6 @@ namespace Engine
         vkCreateFence(device, &fenceInfo, nullptr, &fence);
 
         vkQueueSubmit(graphicsQueue_, 1, &submitInfo, fence);
-        vkQueueWaitIdle(graphicsQueue_);
 
         vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
         vkDestroyFence(device, fence, nullptr);
@@ -564,5 +565,85 @@ namespace Engine
     float Device::getMaxAnisotoropy()
     {
         return getDeviceProperties().limits.maxSamplerAnisotropy;
+    }
+
+    void Device::transitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout oldLayout,
+        VkImageLayout newLayout, VkImageSubresourceRange subresourceRange)
+    {
+        VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+        barrier.oldLayout = oldLayout;
+        barrier.newLayout = newLayout;
+        barrier.image = image;
+        barrier.subresourceRange = subresourceRange;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+
+        if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+        {
+            barrier.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+            barrier.srcAccessMask = VK_ACCESS_2_NONE;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        }
+        else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout ==
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+        {
+            barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+            barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+        }
+        else if (oldLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR)
+        {
+            barrier.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+            barrier.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_NONE;
+        }
+        else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL)
+        {
+            barrier.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+            barrier.srcAccessMask = VK_ACCESS_2_NONE;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
+                VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        }else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
+        {
+            barrier.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+            barrier.srcAccessMask = VK_ACCESS_2_NONE;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+        }
+        else if (oldLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+        {
+            barrier.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+            barrier.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+        }
+        else if (oldLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL)
+        {
+            barrier.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+            barrier.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+        }
+        else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
+        {
+            barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+            barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+        }
+        else
+        {
+            throw std::invalid_argument("Device: Unsupported layout transition!");
+        }
+
+        VkDependencyInfo dependencyInfo{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+        dependencyInfo.imageMemoryBarrierCount = 1;
+        dependencyInfo.pImageMemoryBarriers = &barrier;
+
+        vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
     }
 }

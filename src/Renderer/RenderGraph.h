@@ -8,9 +8,6 @@
 
 namespace Engine
 {
-    // -------------------------------------------------------------------------
-    // Image resource tracking
-    // -------------------------------------------------------------------------
 
     struct GraphImage
     {
@@ -25,12 +22,20 @@ namespace Engine
         uint32_t arrayLayers = 1;
     };
 
+    enum class ResourceUsageType
+    {
+        Read,
+        Write,
+        ReadWrite
+    };
+
     struct ImageUsageDeclaration
     {
         std::string           imageName;
         VkImageLayout         imageLayout;
         VkPipelineStageFlags2 stageMask;
         VkAccessFlags2        accessMask;
+        ResourceUsageType     usageType;
     };
 
     struct TransientImageDeclaration
@@ -46,11 +51,9 @@ namespace Engine
         VkImage image;
         VkImageView view;
         VmaAllocation allocation;
+        VkExtent2D extent;
     };
 
-    // -------------------------------------------------------------------------
-    // Buffer resource tracking
-    // -------------------------------------------------------------------------
 
     struct GraphBuffer
     {
@@ -65,11 +68,9 @@ namespace Engine
         std::string           bufferName;
         VkPipelineStageFlags2 stageMask;
         VkAccessFlags2        accessMask;
+        ResourceUsageType     usageType;
     };
 
-    // -------------------------------------------------------------------------
-    // Pass execution info — carries both image and buffer usage declarations
-    // -------------------------------------------------------------------------
 
     struct PassExecutionInfo
     {
@@ -79,14 +80,12 @@ namespace Engine
         std::vector<BufferUsageDeclaration>  bufferUsages;
     };
 
-    // -------------------------------------------------------------------------
-    // RenderGraph
-    // -------------------------------------------------------------------------
-
     class RenderGraph
     {
     public:
         RenderGraph(Device& device);
+
+        ~RenderGraph();
 
         void addPass(RenderPassNode* pass);
 
@@ -108,21 +107,19 @@ namespace Engine
         void clear();
 
         void transitionToPresent(VkCommandBuffer cmdBuffer, const std::string& imageName);
+        void updateImageHandle(const std::string& name, VkImage image, VkImageView view, VkExtent2D extent);
 
         bool isDepthFormat(VkFormat format);
+        VkImageView getImageView(const std::string& name) const;
 
     private:
         Device& device;
 
         std::vector<PassExecutionInfo>              registeredPasses;
         std::unordered_map<std::string, GraphImage>  imageRegistry;
-        std::vector<TransientResource> transientRegistry;
+        std::unordered_map<std::string, TransientResource> transientCache;
         std::unordered_map<std::string, GraphBuffer> bufferRegistry;
     };
-
-    // -------------------------------------------------------------------------
-    // RenderGraphBuilder — used inside RenderPassNode::setup()
-    // -------------------------------------------------------------------------
 
     class RenderGraphBuilder
     {
@@ -133,7 +130,6 @@ namespace Engine
             std::vector<BufferUsageDeclaration>& bufferUsagesList
             );
 
-        // Image declarations
         void readImage(
             const std::string& name,
             VkImageLayout imageLayout,
@@ -146,7 +142,6 @@ namespace Engine
             VkPipelineStageFlags2 stageMask,
             VkAccessFlags2 accessMask);
 
-        // Buffer declarations
         void readBuffer(
             const std::string& name,
             VkPipelineStageFlags2 stageMask,
@@ -170,4 +165,4 @@ namespace Engine
         std::vector<BufferUsageDeclaration>& bufferUsages;
     };
 
-} // namespace Engine
+}

@@ -37,12 +37,12 @@ namespace Engine
         void createPipelineLayout();
         void createPipeline();
 
+        //VkFormat colorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
 
-
-        Device& engineDevice;
-        Renderer& engineRenderer;
-        Model& geometryMegaBuffer;
-        ResourceHeap& engineResourceHeap;
+        Device& device;
+        Renderer& renderer;
+        Model& megaBuffer;
+        ResourceHeap& resourceHeap;
 
         VkPipelineLayout pipelineLayout{VK_NULL_HANDLE};
         VkPipeline graphicsPipeline{VK_NULL_HANDLE};

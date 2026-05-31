@@ -15,47 +15,69 @@
 #include <filesystem>
 #include <optional>
 #include <vector>
+#include <future>
+#include "Core/JobSystem.h"
 
 namespace Engine
 {
+    struct ParsedImage
+    {
+        std::vector<unsigned char> pixels;
+        uint32_t width = 0;
+        uint32_t height = 0;
+        bool isValid = false;
+        bool isSRGB = false;
+    };
+
+    struct ParsedPrimitive
+    {
+        std::vector<Model::Vertex> vertices;
+        std::vector<uint32_t> indices;
+        uint32_t localMaterialIndex = 0; // 0 = Default, index+1 = GLTF Material Index
+    };
+
+    struct ParsedNode
+    {
+        TransformComponent transform;
+        std::vector<size_t> childrenIndices;
+        std::vector<ParsedPrimitive> primitives;
+    };
+
+    struct ParsedGLTF
+    {
+        std::vector<ParsedImage> images;
+        std::vector<ResourceHeap::MaterialData> materials;
+        std::vector<ParsedNode> nodes;
+        bool success = false;
+    };
+
     class LoaderGLTF
     {
     public:
-        // Main entry point.
-        // outTextures receives ownership of all uploaded GPU textures so they
-        // stay alive for the lifetime of the scene (store in Application).
-        static std::vector<GameObject> loadObjectGLTF(
-            Device&                        device,
-            const std::filesystem::path&   filePath,
-            Model&                         megaBuffer,
-            ResourceHeap&                  resourceHeap,
-            std::vector<Texture2D>&        outTextures);
+        static std::future<ParsedGLTF> loadAsync(JobSystem& jobSystem, const std::filesystem::path& filePath);
+
+        static std::vector<GameObject> finalize(
+            ParsedGLTF& parsedData,
+            Device& device,
+            Model& megaBuffer,
+            ResourceHeap& resourceHeap,
+            std::vector<Texture2D>& outTextures);
 
     private:
         static fastgltf::Asset loadAsset(const std::filesystem::path& filePath);
 
-        // Upload all images in the asset (deduplication: one upload per image index).
-        // Returns a parallel array: gltfImageIndex -> bindless heap slot.
-        static std::vector<uint32_t> uploadImages(
-            Device&                        device,
-            fastgltf::Asset&               asset,
-            const std::filesystem::path&   assetDir,
-            ResourceHeap&                  resourceHeap,
-            std::vector<Texture2D>&        outTextures);
+        static void decodeImages(
+            JobSystem& jobSystem,
+            fastgltf::Asset& asset,
+            const std::filesystem::path& assetDir,
+            ParsedGLTF& outData);
 
-        // Construct ResourceHeap::MaterialData for every GLTF material.
-        // Returns a parallel array: [0] = default sentinel, [i+1] = gltfMaterialIndex i.
-        static std::vector<uint32_t> buildMaterials(
-            fastgltf::Asset&               asset,
-            const std::vector<uint32_t>&   imageSlots,
-            ResourceHeap&                  resourceHeap);
+        static void extractMaterials(
+            fastgltf::Asset& asset,
+            ParsedGLTF& outData);
 
-        // Upload vertices + indices for one GLTF mesh (all primitives merged).
-        // Writes materialID into every vertex.texId.
-        static std::optional<Model::SubMesh> loadMesh(
-            fastgltf::Asset&               asset,
-            fastgltf::Mesh&                mesh,
-            Model&                         megaBuffer,
-            const std::vector<uint32_t>&   materialIndexToID);
+        static void extractNodesAndMeshes(
+            fastgltf::Asset& asset,
+            ParsedGLTF& outData);
     };
 }

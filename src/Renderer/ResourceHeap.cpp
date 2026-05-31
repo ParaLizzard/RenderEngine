@@ -20,11 +20,13 @@ namespace Engine
 
         pendingWrites.reserve(maxDescriptors/10);
 
-        std::array<VkDescriptorPoolSize, 2> poolSizes{};
+        std::array<VkDescriptorPoolSize, 3> poolSizes{};
         poolSizes[0].type            = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         poolSizes[0].descriptorCount = 1;
-        poolSizes[1].type            = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        poolSizes[1].descriptorCount = maxDescriptors;
+        poolSizes[1].type            = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        poolSizes[1].descriptorCount = 1;
+        poolSizes[2].type            = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        poolSizes[2].descriptorCount = maxDescriptors + 3;
 
         VkDescriptorPoolCreateInfo poolInfo{};
         poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -38,24 +40,55 @@ namespace Engine
             throw std::runtime_error("ResourceHeap: Failed to create bindless descriptor pool");
         }
 
-        std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
+        std::array<VkDescriptorSetLayoutBinding, 6> bindings{};
 
+        // Binding 0: Material SSBO
         bindings[0].binding         = 0;
         bindings[0].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         bindings[0].descriptorCount = 1;
         bindings[0].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
 
+        // Binding 1: Scene UBO
         bindings[1].binding         = 1;
-        bindings[1].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        bindings[1].descriptorCount = maxDescriptors;
+        bindings[1].descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        bindings[1].descriptorCount = 1;
         bindings[1].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-        std::array<VkDescriptorBindingFlags, 2> bindingFlags{};
+        // Binding 2: Irradiance Map (Cube)
+        bindings[2].binding         = 2;
+        bindings[2].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[2].descriptorCount = 1;
+        bindings[2].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        // Binding 3: Prefilter Map (Cube)
+        bindings[3].binding         = 3;
+        bindings[3].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[3].descriptorCount = 1;
+        bindings[3].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        // Binding 4: BRDF LUT (2D)
+        bindings[4].binding         = 4;
+        bindings[4].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[4].descriptorCount = 1;
+        bindings[4].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        // Binding 5: Variable Textures (Must be last!)
+        bindings[5].binding         = 5;
+        bindings[5].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[5].descriptorCount = maxDescriptors;
+        bindings[5].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        std::array<VkDescriptorBindingFlags, 6> bindingFlags{};
         bindingFlags[0] = 0;
-        bindingFlags[1] =
+        bindingFlags[1] = 0;
+        bindingFlags[2] = 0;
+        bindingFlags[3] = 0;
+        bindingFlags[4] = 0;
+        bindingFlags[5] =
             VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
             VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT   |
             VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT;
+
 
         VkDescriptorSetLayoutBindingFlagsCreateInfo bindingFlagsInfo{};
         bindingFlagsInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
@@ -107,6 +140,20 @@ namespace Engine
         flushPendingUpdates();
     }
 
+    void ResourceHeap::writeSceneUboDescriptor(VkDescriptorBufferInfo bufInfo)
+    {
+        VkWriteDescriptorSet write{};
+        write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet          = globalDescriptorSet;
+        write.dstBinding      = 1;
+        write.dstArrayElement = 0;
+        write.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        write.descriptorCount = 1;
+        write.pBufferInfo     = &bufInfo;
+
+        vkUpdateDescriptorSets(device.getDevice(), 1, &write, 0, nullptr);
+    }
+
     ResourceHeap::~ResourceHeap()
     {
         if (fallbackWhiteTex)     fallbackWhiteTex->destroy();
@@ -143,7 +190,7 @@ namespace Engine
         VkWriteDescriptorSet write{};
         write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         write.dstSet = globalDescriptorSet;
-        write.dstBinding = 1;
+        write.dstBinding = 5;
         write.dstArrayElement = allocatedIndex;
         write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         write.descriptorCount = 1;
@@ -170,24 +217,6 @@ namespace Engine
         freeIndices.push_back(handle.index);
     }
 
-    uint32_t ResourceHeap::registerMaterial(VkDescriptorImageInfo albedoInfo, VkDescriptorImageInfo normalInfo, VkDescriptorImageInfo roughnessMetallicInfo)
-    {
-        TextureHandle albedoHandle = registerTexture(albedoInfo);
-        TextureHandle normalHandle = registerTexture(normalInfo);
-        TextureHandle roughnessMetallicHandle = registerTexture(roughnessMetallicInfo);
-
-        std::lock_guard<std::mutex> lock(heapMutex);
-        uint32_t materialId = static_cast<uint32_t>(materials.size());
-
-        MaterialData matData{};
-        matData.albedoIndex = albedoHandle.index;
-        matData.normalIndex = normalHandle.index;
-        matData.roughnessMetallicIndex = roughnessMetallicHandle.index;
-
-        materials.push_back(matData);
-        return materialId;
-    }
-
     void ResourceHeap::flushPendingUpdates()
     {
         std::lock_guard<std::mutex> lock(heapMutex);
@@ -200,7 +229,7 @@ namespace Engine
         {
             writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             writes[i].dstSet = globalDescriptorSet;
-            writes[i].dstBinding = 1;
+            writes[i].dstBinding = 5;
             writes[i].dstArrayElement = pendingWrites[i].dstArrayElement;
             writes[i].descriptorCount = 1;
             writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -271,13 +300,44 @@ namespace Engine
         VkWriteDescriptorSet write{};
         write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         write.dstSet          = globalDescriptorSet;
-        write.dstBinding      = 0;                              // binding 1
+        write.dstBinding      = 0;
         write.dstArrayElement = 0;
         write.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         write.descriptorCount = 1;
         write.pBufferInfo     = &bufInfo;
 
         vkUpdateDescriptorSets(device.getDevice(), 1, &write, 0, nullptr);
+    }
+
+    void ResourceHeap::writeIBLDescriptors(VkDescriptorImageInfo irradianceInfo, VkDescriptorImageInfo prefilterInfo, VkDescriptorImageInfo brdfLutInfo)
+    {
+        std::array<VkWriteDescriptorSet, 3> writes{};
+
+        writes[0].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[0].dstSet          = globalDescriptorSet;
+        writes[0].dstBinding      = 2;
+        writes[0].dstArrayElement = 0;
+        writes[0].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[0].descriptorCount = 1;
+        writes[0].pImageInfo      = &irradianceInfo;
+
+        writes[1].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[1].dstSet          = globalDescriptorSet;
+        writes[1].dstBinding      = 3;
+        writes[1].dstArrayElement = 0;
+        writes[1].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[1].descriptorCount = 1;
+        writes[1].pImageInfo      = &prefilterInfo;
+
+        writes[2].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[2].dstSet          = globalDescriptorSet;
+        writes[2].dstBinding      = 4;
+        writes[2].dstArrayElement = 0;
+        writes[2].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[2].descriptorCount = 1;
+        writes[2].pImageInfo      = &brdfLutInfo;
+
+        vkUpdateDescriptorSets(device.getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
     }
 
 }

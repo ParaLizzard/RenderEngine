@@ -5,39 +5,12 @@
 #include <fstream>
 #include <vector>
 
+#include "Renderer/ShaderUtils.h"
+
 namespace Engine
 {
-    static std::vector<char> readFile(const std::string& filename)
-    {
-        std::ifstream file(filename, std::ios::ate | std::ios::binary);
-        if (!file.is_open())
-        {
-            throw std::runtime_error("failed to open file: " + filename);
-        }
-        size_t fileSize = (size_t)file.tellg();
-        std::vector<char> buffer(fileSize);
-        file.seekg(0);
-        file.read(buffer.data(), fileSize);
-        file.close();
-        return buffer;
-    }
-
-    static VkShaderModule createShaderModule(VkDevice device, const std::vector<char>& code)
-    {
-        VkShaderModuleCreateInfo createInfo{};
-        createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-        createInfo.codeSize = code.size();
-        createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
-        VkShaderModule shaderModule;
-        if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS)
-        {
-            throw std::runtime_error("failed to create shader module");
-        }
-        return shaderModule;
-    }
-
     ForwardPassNode::ForwardPassNode(Device& device, Renderer& renderer, Model& megaBuffer, ResourceHeap& resourceHeap)
-    : engineDevice(device), engineRenderer(renderer), geometryMegaBuffer(megaBuffer), engineResourceHeap(resourceHeap)
+    : device(device), renderer(renderer), megaBuffer(megaBuffer), resourceHeap(resourceHeap)
     {
         createPipelineLayout();
         createPipeline();
@@ -47,20 +20,25 @@ namespace Engine
     {
         if (graphicsPipeline != VK_NULL_HANDLE)
         {
-            vkDestroyPipeline(engineDevice.getDevice(), graphicsPipeline, nullptr);
+            vkDestroyPipeline(device.getDevice(), graphicsPipeline, nullptr);
         }
         if (pipelineLayout != VK_NULL_HANDLE)
         {
-            vkDestroyPipelineLayout(engineDevice.getDevice(), pipelineLayout, nullptr);
+            vkDestroyPipelineLayout(device.getDevice(), pipelineLayout, nullptr);
         }
     }
 
     void ForwardPassNode::setup(RenderGraphBuilder& renderGraph)
     {
-        VkExtent2D frameExtent = engineRenderer.getSwapChain().getSwapChainExtent();
+        VkExtent2D currentExtent = renderer.getSwapChain().getSwapChainExtent();
+        VkFormat currentFormat = renderer.getSwapChain().getSwapChainImageFormat();
 
-        renderGraph.createTransientImage("SceneColorImage", VK_FORMAT_R8G8B8A8_UNORM, frameExtent);
+        renderGraph.createTransientImage("SceneColorImage", currentFormat, currentExtent);
 
+
+        renderGraph.readBuffer("SceneUBO",
+                   VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                   VK_ACCESS_2_UNIFORM_READ_BIT);
         renderGraph.readBuffer("MaterialSSBO",
                            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
                            VK_ACCESS_2_SHADER_STORAGE_READ_BIT);
@@ -79,7 +57,7 @@ namespace Engine
         pushConstantRange.offset = 0;
         pushConstantRange.size = sizeof(ForwardPushConstants);
 
-        VkDescriptorSetLayout bindlessLayout = engineResourceHeap.getDescriptorSetLayout();
+        VkDescriptorSetLayout bindlessLayout = resourceHeap.getDescriptorSetLayout();
 
         VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -88,7 +66,7 @@ namespace Engine
         pipelineLayoutInfo.setLayoutCount = 1;
         pipelineLayoutInfo.pSetLayouts = &bindlessLayout;
 
-        if (vkCreatePipelineLayout(engineDevice.getDevice(), &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS)
+        if (vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS)
         {
             throw std::runtime_error("failed to create pipeline layout");
         }
@@ -96,11 +74,11 @@ namespace Engine
 
     void ForwardPassNode::createPipeline()
     {
-        auto vertCode = readFile("shaders/pbr.vert.spv");
-        auto fragCode = readFile("shaders/pbr.frag.spv");
+        auto vertCode = ShaderUtils::readFile("shaders/pbr.vert.spv");
+        auto fragCode = ShaderUtils::readFile("shaders/pbr.frag.spv");
 
-        VkShaderModule vertShaderModule = createShaderModule(engineDevice.getDevice(), vertCode);
-        VkShaderModule fragShaderModule = createShaderModule(engineDevice.getDevice(), fragCode);
+        VkShaderModule vertShaderModule = ShaderUtils::createShaderModule(device.getDevice(), vertCode);
+        VkShaderModule fragShaderModule = ShaderUtils::createShaderModule(device.getDevice(), fragCode);
 
         VkPipelineShaderStageCreateInfo shaderStages[2]{};
         shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -178,7 +156,7 @@ namespace Engine
         dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
         dynamicState.pDynamicStates = dynamicStates.data();
 
-        VkFormat colorFormat = engineRenderer.getSwapChain().getSwapChainImageFormat();
+        VkFormat colorFormat = renderer.getSwapChain().getSwapChainImageFormat();
         VkPipelineRenderingCreateInfo renderingCreateInfo{};
         renderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
         renderingCreateInfo.pNext = nullptr;
@@ -203,21 +181,21 @@ namespace Engine
         pipelineInfo.renderPass = VK_NULL_HANDLE;
         pipelineInfo.subpass = 0;
 
-        if (vkCreateGraphicsPipelines(engineDevice.getDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
+        if (vkCreateGraphicsPipelines(device.getDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
                                       &graphicsPipeline) != VK_SUCCESS)
         {
             throw std::runtime_error("failed to create graphics pipeline");
         }
 
-        vkDestroyShaderModule(engineDevice.getDevice(), vertShaderModule, nullptr);
-        vkDestroyShaderModule(engineDevice.getDevice(), fragShaderModule, nullptr);
+        vkDestroyShaderModule(device.getDevice(), vertShaderModule, nullptr);
+        vkDestroyShaderModule(device.getDevice(), fragShaderModule, nullptr);
     }
 
     void ForwardPassNode::execute(VkCommandBuffer& cmd, FrameInfo& frameInfo)
     {
         VkRenderingAttachmentInfo colorAttachment{};
         colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        colorAttachment.imageView = engineRenderer.getSwapChain().getImageView(frameInfo.frameIndex);
+        colorAttachment.imageView = frameInfo.renderGraph->getImageView("SceneColorImage");
         colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -225,7 +203,7 @@ namespace Engine
 
         VkRenderingAttachmentInfo depthAttachment{};
         depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        depthAttachment.imageView = engineRenderer.getSwapChain().getDepthImageView();
+        depthAttachment.imageView = renderer.getSwapChain().getDepthImageView();
         depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -259,7 +237,7 @@ namespace Engine
         vkCmdSetViewport(cmd, 0, 1, &viewport);
         vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-        VkDescriptorSet globalBindlessSet = engineResourceHeap.getDescriptorSet();
+        VkDescriptorSet globalBindlessSet = resourceHeap.getDescriptorSet();
         vkCmdBindDescriptorSets(
             cmd,
             VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -277,12 +255,11 @@ namespace Engine
 
         for (const auto& obj : frameInfo.gameObjects)
         {
-            //if (!obj.subMesh.bufferIndex) continue;
             if (obj.subMesh.indexCount == 0) continue;
 
             if (obj.subMesh.bufferIndex != lastBoundChunk)
             {
-                geometryMegaBuffer.bind(cmd, obj.subMesh.bufferIndex);
+                megaBuffer.bind(cmd, obj.subMesh.bufferIndex);
                 lastBoundChunk = obj.subMesh.bufferIndex;
             }
 

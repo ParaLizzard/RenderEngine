@@ -6,6 +6,17 @@ namespace Engine
     {
     }
 
+    RenderGraph::~RenderGraph()
+    {
+        for (auto& pair : transientCache)
+        {
+            vkDestroyImageView(device.getDevice(), pair.second.view, nullptr);
+            vmaDestroyImage(device.getAllocator(), pair.second.image, pair.second.allocation);
+        }
+        transientCache.clear();
+        clear();
+    }
+
     void RenderGraph::addPass(RenderPassNode* pass)
     {
         PassExecutionInfo info{};
@@ -59,8 +70,27 @@ namespace Engine
             {
                 if (imageRegistry.find(decl.name) != imageRegistry.end()) continue;
 
+                if (transientCache.find(decl.name) != transientCache.end())
+                {
+                    TransientResource& cached = transientCache[decl.name];
+
+                    if (cached.extent.width != decl.extent.width || cached.extent.height != decl.extent.height)
+                    {
+                        vkDestroyImageView(device.getDevice(), cached.view, nullptr);
+                        vmaDestroyImage(device.getAllocator(), cached.image, cached.allocation);
+                        transientCache.erase(decl.name);
+                    }
+                    else
+                    {
+                        registerPhysicalImage(decl.name, cached.image, cached.view, decl.format, decl.extent, VK_IMAGE_LAYOUT_UNDEFINED);
+                        continue;
+                    }
+                }
+
                 VkImage transientImage;
                 VmaAllocation allocation;
+
+                bool isDepth = isDepthFormat(decl.format);
 
                 VkImageCreateInfo imageInfo{};
                 imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -69,8 +99,11 @@ namespace Engine
                 imageInfo.mipLevels = 1;
                 imageInfo.arrayLayers = 1;
                 imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-                imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-                imageInfo.extent = VkExtent3D(decl.extent.width,decl.extent.height, 0.f);
+                imageInfo.usage = (isDepth ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
+                                  | VK_IMAGE_USAGE_SAMPLED_BIT
+                                  | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+
+                imageInfo.extent = {decl.extent.width, decl.extent.height, 1};
                 imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
                 imageInfo.pNext = nullptr;
 
@@ -86,14 +119,21 @@ namespace Engine
                 imageViewInfo.subresourceRange.aspectMask = isDepthFormat(decl.format) ?
                                             VK_IMAGE_ASPECT_DEPTH_BIT :
                                             VK_IMAGE_ASPECT_COLOR_BIT;
+                imageViewInfo.subresourceRange.levelCount = 1;
+                imageViewInfo.subresourceRange.layerCount = 1;
 
-                vkCreateImageView(device.getDevice(), {}, nullptr, &transientImageView);
+                vkCreateImageView(device.getDevice(), &imageViewInfo, nullptr, &transientImageView);
 
-                registerPhysicalImage(decl.name, transientImage, transientImageView, decl.format, decl.extent,
-                                      VK_IMAGE_LAYOUT_UNDEFINED);
+                TransientResource res{};
+                res.name = decl.name;
+                res.image = transientImage;
+                res.view = transientImageView;
+                res.allocation = allocation;
+                res.extent = decl.extent;
 
-                transientRegistry.push_back({decl.name, transientImage, transientImageView, allocation});
+                transientCache[decl.name] = res;
 
+                registerPhysicalImage(decl.name, transientImage, transientImageView, decl.format, decl.extent, VK_IMAGE_LAYOUT_UNDEFINED);
             }
 
             for (const ImageUsageDeclaration& image : pass.imageUsages)
@@ -118,6 +158,11 @@ namespace Engine
 
     void RenderGraph::execute(VkCommandBuffer cmdBuffer, FrameInfo& frameInfo)
     {
+        for (PassExecutionInfo& pass : registeredPasses)
+        {
+            pass.passNode->resolve(*this, frameInfo);
+        }
+
         for (PassExecutionInfo& pass : registeredPasses)
         {
             std::vector<VkImageMemoryBarrier2> imageBarriers;
@@ -194,9 +239,6 @@ namespace Engine
                 g.lastAccessMask = decl.accessMask;
             }
 
-            // -----------------------------------------------------------------
-            // Single vkCmdPipelineBarrier2 covering both images and buffers
-            // -----------------------------------------------------------------
             if (!imageBarriers.empty() || !bufferBarriers.empty())
             {
                 VkDependencyInfo dep{};
@@ -215,12 +257,6 @@ namespace Engine
 
     void RenderGraph::clear()
     {
-        for (const TransientResource& res : transientRegistry)
-        {
-            vkDestroyImageView(device.getDevice(), res.view, nullptr);
-            vmaDestroyImage(device.getAllocator(), res.image, res.allocation);
-        }
-        transientRegistry.clear();
         registeredPasses.clear();
         imageRegistry.clear();
         bufferRegistry.clear();
@@ -281,6 +317,16 @@ namespace Engine
         }
     }
 
+    VkImageView RenderGraph::getImageView(const std::string& name) const
+    {
+        auto it = imageRegistry.find(name);
+        if (it != imageRegistry.end())
+        {
+            return it->second.imageView;
+        }
+        throw std::runtime_error("RenderGraph: Attempted to fetch unregistered image: " + name);
+    }
+
     RenderGraphBuilder::RenderGraphBuilder(
         std::vector<ImageUsageDeclaration>& imageUsagesList,
         std::vector<TransientImageDeclaration>& transientImageUsagesList,
@@ -295,7 +341,7 @@ namespace Engine
         VkPipelineStageFlags2 stageMask,
         VkAccessFlags2 accessMask)
     {
-        imageUsages.push_back({name, imageLayout, stageMask, accessMask});
+        imageUsages.push_back({name, imageLayout, stageMask, accessMask, ResourceUsageType::Read});
     }
 
     void RenderGraphBuilder::writeImage(
@@ -304,7 +350,7 @@ namespace Engine
         VkPipelineStageFlags2 stageMask,
         VkAccessFlags2 accessMask)
     {
-        imageUsages.push_back({name, imageLayout, stageMask, accessMask});
+        imageUsages.push_back({name, imageLayout, stageMask, accessMask,ResourceUsageType::Write});
     }
 
     void RenderGraphBuilder::readBuffer(
@@ -312,7 +358,7 @@ namespace Engine
         VkPipelineStageFlags2 stageMask,
         VkAccessFlags2 accessMask)
     {
-        bufferUsages.push_back({name, stageMask, accessMask});
+        bufferUsages.push_back({name, stageMask, accessMask, ResourceUsageType::Read});
     }
 
     void RenderGraphBuilder::writeBuffer(
@@ -320,7 +366,7 @@ namespace Engine
         VkPipelineStageFlags2 stageMask,
         VkAccessFlags2 accessMask)
     {
-        bufferUsages.push_back({name, stageMask, accessMask});
+        bufferUsages.push_back({name, stageMask, accessMask, ResourceUsageType::Write});
     }
 
     void RenderGraphBuilder::readWriteBuffer(
@@ -328,11 +374,27 @@ namespace Engine
         VkPipelineStageFlags2 stageMask,
         VkAccessFlags2 accessMask)
     {
-        bufferUsages.push_back({name, stageMask, accessMask});
+        bufferUsages.push_back({name, stageMask, accessMask, ResourceUsageType::ReadWrite});
     }
 
     void RenderGraphBuilder::createTransientImage(const std::string& name, VkFormat format, VkExtent2D extent)
     {
         transientImageUsages.push_back({name, format, extent});
+    }
+
+    void RenderGraph::updateImageHandle(const std::string& name, VkImage image, VkImageView view, VkExtent2D extent)
+    {
+        auto it = imageRegistry.find(name);
+        if (it != imageRegistry.end())
+        {
+            if (it->second.image != image)
+            {
+                it->second.layout = VK_IMAGE_LAYOUT_UNDEFINED;
+            }
+
+            it->second.image = image;
+            it->second.imageView = view;
+            it->second.extent = extent;
+        }
     }
 }

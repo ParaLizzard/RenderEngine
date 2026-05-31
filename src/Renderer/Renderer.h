@@ -42,6 +42,7 @@ namespace Engine
         VkCommandBuffer getCurrentCommandBuffer();
         SwapChain& getSwapChain();
         uint32_t getCurrentImageIndex() const { return currentImageIndex; }
+        int getFrameIndex() const { return currentFrameIndex; }
 
         bool wasSwapChainRecreated() const { return swapChainRecreatedThisFrame; }
         std::unique_ptr<SwapChain> swapChain;
