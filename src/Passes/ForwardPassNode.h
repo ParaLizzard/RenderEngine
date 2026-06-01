@@ -19,6 +19,7 @@ namespace Engine
     {
         glm::mat4 modelMatrix{1.0f};
         glm::mat4 viewProjection{1.0f};
+        uint32_t debugIsTransparent;
     };
 
     class ForwardPassNode : public RenderPassNode
@@ -46,5 +47,6 @@ namespace Engine
 
         VkPipelineLayout pipelineLayout{VK_NULL_HANDLE};
         VkPipeline graphicsPipeline{VK_NULL_HANDLE};
+        VkPipeline transparentPipeline = VK_NULL_HANDLE;
     };
 }

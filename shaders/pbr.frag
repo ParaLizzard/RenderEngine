@@ -30,6 +30,10 @@ struct Material {
     uint  padding[2];
 };
 
+layout(push_constant) uniform PushConsts {
+    layout(offset = 128) uint debugIsTransparent;
+} push;
+
 layout(set = 0, binding = 0) readonly buffer MaterialBuffer {
     Material materials[];
 };
@@ -73,8 +77,20 @@ vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness) {
 
 void main() {
     Material mat = materials[inTexID];
+    vec4 albedo = texture(textures[nonuniformEXT(mat.albedoIndex)], inUV) * mat.albedoFactor;
 
-    vec4  albedo    = texture(textures[nonuniformEXT(mat.albedoIndex)], inUV) * mat.albedoFactor;
+    if (push.debugIsTransparent == 1u) {
+        if (albedo.a < 0.1) {
+            color = vec4(albedo.rgb + vec3(0.0, 0.2, 0.0), 1.0);
+            return;
+        }
+    }
+
+    uint isMask = mat.flags & 1u;
+    if (isMask != 0u && albedo.a < mat.alphaCutoff) {
+        discard;
+    }
+
     float roughness = texture(textures[nonuniformEXT(mat.roughnessMetallicIndex)], inUV).g * mat.roughnessFactor;
     float metalness = texture(textures[nonuniformEXT(mat.roughnessMetallicIndex)], inUV).b * mat.metallicFactor;
 

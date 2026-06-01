@@ -108,6 +108,7 @@ namespace Engine
 
         void transitionToPresent(VkCommandBuffer cmdBuffer, const std::string& imageName);
         void updateImageHandle(const std::string& name, VkImage image, VkImageView view, VkExtent2D extent);
+        void updateBufferHandle(const std::string& name, VkBuffer buffer, VkDeviceSize size);
 
         bool isDepthFormat(VkFormat format);
         VkImageView getImageView(const std::string& name) const;

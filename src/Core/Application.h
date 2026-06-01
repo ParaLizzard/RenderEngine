@@ -40,7 +40,8 @@ namespace Engine
         std::shared_ptr<GameObject> cameraObject;
         JobSystem jobSystem{ std::max(1u, std::thread::hardware_concurrency() - 1) };
 
-        std::vector<Texture2D> sceneTextures;
+        //std::vector<Texture2D> sceneTextures;
+        std::deque<Texture2D> sceneTextures;
         std::vector<GameObject> gameObjects;
     };
 }

@@ -10,7 +10,7 @@
 namespace Engine
 {
     ForwardPassNode::ForwardPassNode(Device& device, Renderer& renderer, Model& megaBuffer, ResourceHeap& resourceHeap)
-    : device(device), renderer(renderer), megaBuffer(megaBuffer), resourceHeap(resourceHeap)
+        : device(device), renderer(renderer), megaBuffer(megaBuffer), resourceHeap(resourceHeap)
     {
         createPipelineLayout();
         createPipeline();
@@ -21,6 +21,10 @@ namespace Engine
         if (graphicsPipeline != VK_NULL_HANDLE)
         {
             vkDestroyPipeline(device.getDevice(), graphicsPipeline, nullptr);
+        }
+        if (transparentPipeline != VK_NULL_HANDLE)
+        {
+            vkDestroyPipeline(device.getDevice(), transparentPipeline, nullptr);
         }
         if (pipelineLayout != VK_NULL_HANDLE)
         {
@@ -37,11 +41,11 @@ namespace Engine
 
 
         renderGraph.readBuffer("SceneUBO",
-                   VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                   VK_ACCESS_2_UNIFORM_READ_BIT);
+                               VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                               VK_ACCESS_2_UNIFORM_READ_BIT);
         renderGraph.readBuffer("MaterialSSBO",
-                           VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                           VK_ACCESS_2_SHADER_STORAGE_READ_BIT);
+                               VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                               VK_ACCESS_2_SHADER_STORAGE_READ_BIT);
         renderGraph.writeImage("SceneColorImage", VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
         renderGraph.writeImage("DepthImage", VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
@@ -53,7 +57,7 @@ namespace Engine
     void ForwardPassNode::createPipelineLayout()
     {
         VkPushConstantRange pushConstantRange{};
-        pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
         pushConstantRange.offset = 0;
         pushConstantRange.size = sizeof(ForwardPushConstants);
 
@@ -119,7 +123,7 @@ namespace Engine
         rasterizer.rasterizerDiscardEnable = VK_FALSE;
         rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
         rasterizer.lineWidth = 1.0f;
-        rasterizer.cullMode = VK_CULL_MODE_NONE;
+        rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
         rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         rasterizer.depthBiasEnable = VK_FALSE;
 
@@ -140,6 +144,14 @@ namespace Engine
         colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
             VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
         colorBlendAttachment.blendEnable = VK_FALSE;
+
+        colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+
+        colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+        colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
 
         VkPipelineColorBlendStateCreateInfo colorBlending{};
         colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -185,6 +197,22 @@ namespace Engine
                                       &graphicsPipeline) != VK_SUCCESS)
         {
             throw std::runtime_error("failed to create graphics pipeline");
+        }
+
+        depthStencil.depthWriteEnable = VK_FALSE; // Turn OFF depth writing
+
+        colorBlendAttachment.blendEnable = VK_TRUE; // Turn ON Alpha Blending
+        colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+        colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+        colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+
+        if (vkCreateGraphicsPipelines(device.getDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
+                                      &transparentPipeline) != VK_SUCCESS)
+        {
+            throw std::runtime_error("failed to create transparent graphics pipeline");
         }
 
         vkDestroyShaderModule(device.getDevice(), vertShaderModule, nullptr);
@@ -248,32 +276,64 @@ namespace Engine
         );
 
         glm::mat4 projection = frameInfo.camera.getProjection();
+
         glm::mat4 view = frameInfo.camera.getView();
         glm::mat4 viewProjection = projection * view;
 
-        uint32_t lastBoundChunk = 999999;
+        std::vector<const GameObject*> opaqueDraws;
+        std::vector<const GameObject*> transparentDraws;
 
         for (const auto& obj : frameInfo.gameObjects)
         {
             if (obj.subMesh.indexCount == 0) continue;
-
-            if (obj.subMesh.bufferIndex != lastBoundChunk)
-            {
-                megaBuffer.bind(cmd, obj.subMesh.bufferIndex);
-                lastBoundChunk = obj.subMesh.bufferIndex;
-            }
-
-            ForwardPushConstants pushConstants{};
-            pushConstants.modelMatrix = obj.currentWorldMatrix;
-            pushConstants.viewProjection = viewProjection;
-
-            vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(ForwardPushConstants), &pushConstants);
-
-            vkCmdDrawIndexed(cmd, obj.subMesh.indexCount, 1, obj.subMesh.firstIndex, obj.subMesh.vertexOffset, 0);
+            if (obj.isTransparent) transparentDraws.push_back(&obj);
+            else opaqueDraws.push_back(&obj);
         }
 
+        glm::vec3 camPos = glm::vec3(glm::inverse(frameInfo.camera.getView())[3]);
 
+        std::sort(transparentDraws.begin(), transparentDraws.end(), [&camPos](const GameObject* a, const GameObject* b)
+        {
+            float distA = glm::length(glm::vec3(a->currentWorldMatrix[3]) - camPos);
+            float distB = glm::length(glm::vec3(b->currentWorldMatrix[3]) - camPos);
+            return distA > distB; // Furthest away gets drawn first
+        });
 
+        uint32_t lastBoundChunk = 999999;
+
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+
+        glm::mat4 flipMatrix = glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+
+        for (const auto* obj : opaqueDraws) {
+            if (obj->subMesh.bufferIndex != lastBoundChunk) {
+                megaBuffer.bind(cmd, obj->subMesh.bufferIndex);
+                lastBoundChunk = obj->subMesh.bufferIndex;
+            }
+            ForwardPushConstants pushConstants{};
+            pushConstants.modelMatrix = flipMatrix * obj->currentWorldMatrix;
+            pushConstants.viewProjection = viewProjection;
+            pushConstants.debugIsTransparent = 0;
+            vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(ForwardPushConstants), &pushConstants);
+            vkCmdDrawIndexed(cmd, obj->subMesh.indexCount, 1, obj->subMesh.firstIndex, obj->subMesh.vertexOffset, 0);
+        }
+
+        // 4. PASS TWO: Draw Transparent Objects (Reads Depth, Alpha Blends)
+        if (!transparentDraws.empty()) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, transparentPipeline);
+            for (const auto* obj : transparentDraws) {
+                if (obj->subMesh.bufferIndex != lastBoundChunk) {
+                    megaBuffer.bind(cmd, obj->subMesh.bufferIndex);
+                    lastBoundChunk = obj->subMesh.bufferIndex;
+                }
+                ForwardPushConstants pushConstants{};
+                pushConstants.modelMatrix = flipMatrix * obj->currentWorldMatrix;
+                pushConstants.viewProjection = viewProjection;
+                pushConstants.debugIsTransparent = 1;
+                vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(ForwardPushConstants), &pushConstants);
+                vkCmdDrawIndexed(cmd, obj->subMesh.indexCount, 1, obj->subMesh.firstIndex, obj->subMesh.vertexOffset, 0);
+            }
+        }
         vkCmdEndRendering(cmd);
     }
 }

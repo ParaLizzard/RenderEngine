@@ -3,6 +3,19 @@ project(RenderEngine)
 
 set(CMAKE_CXX_STANDARD 20)
 
+# ---------------------------------------------------------------------------
+# Debug symbols for profiling (Nsight, etc.)
+# Keep debug info even in Release builds for accurate GPU profiling
+# ---------------------------------------------------------------------------
+if(MSVC)
+    string(APPEND CMAKE_CXX_FLAGS_RELEASE " /Zi")
+    string(APPEND CMAKE_EXE_LINKER_FLAGS_RELEASE " /DEBUG:FULL")
+else()
+    # MinGW: -g = DWARF debug symbols, -O3 = max optimization
+    string(APPEND CMAKE_CXX_FLAGS_DEBUG " -O1 -g")
+    string(APPEND CMAKE_CXX_FLAGS_RELEASE " -O3 -g")
+endif()
+
 include(FetchContent)
 
 # ---------------------------------------------------------------------------
@@ -100,13 +113,13 @@ foreach(SHADER_SRC ${SHADER_SOURCES})
     add_custom_command(
             OUTPUT  "${SPV_OUT}" "${STAMP}"
             COMMAND "${GLSLC}"
+            -g
+            -O
             -MD -MF "${DEP_FILE}"
             -I "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
             --target-env=vulkan1.3
-            -O
             "${SHADER_SRC}"
             -o "${SPV_OUT}"
-            # Update stamp only if the SPV actually changed (avoids false rebuilds)
             COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${SPV_OUT}" "${SPV_OUT}"
             COMMAND "${CMAKE_COMMAND}" -E touch "${STAMP}"
             DEPENDS "${SHADER_SRC}"

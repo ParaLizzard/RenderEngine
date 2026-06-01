@@ -61,7 +61,7 @@ namespace Engine
             Device& device,
             Model& megaBuffer,
             ResourceHeap& resourceHeap,
-            std::vector<Texture2D>& outTextures);
+            std::deque<Texture2D>& outTextures);
 
     private:
         static fastgltf::Asset loadAsset(const std::filesystem::path& filePath);

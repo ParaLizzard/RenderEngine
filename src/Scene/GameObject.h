@@ -41,6 +41,7 @@ namespace Engine
         std::vector<id_t> childrenIds;
 
         glm::mat4 currentWorldMatrix{1.0f};
+        bool isTransparent = false;
 
     private:
         GameObject(id_t objId);

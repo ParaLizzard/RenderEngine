@@ -397,4 +397,13 @@ namespace Engine
             it->second.extent = extent;
         }
     }
+
+    void RenderGraph::updateBufferHandle(const std::string& name, VkBuffer buffer, VkDeviceSize size)
+    {
+        auto it = bufferRegistry.find(name);
+        if (it != bufferRegistry.end()) {
+            it->second.buffer = buffer;
+            it->second.size = size;
+        }
+    }
 }

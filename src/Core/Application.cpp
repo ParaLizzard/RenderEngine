@@ -98,15 +98,19 @@ namespace Engine
 
         std::vector<std::future<ParsedGLTF>> pendingLoads;
         //pendingLoads.push_back(LoaderGLTF::loadAsync(jobSystem, "models/pbr_sphere.glb"));
-        pendingLoads.push_back(LoaderGLTF::loadAsync(jobSystem, "C:/Users/Martin Varga/Downloads/metallic--roughness--test/source/Metallic_Roughness_Test.glb"));
+        pendingLoads.push_back(LoaderGLTF::loadAsync(
+            jobSystem, "C:/Users/Jan Varga/Downloads/main_sponza (1)/main_sponza/NewSponza_Main_glTF_003.gltf"));
+        //pendingLoads.push_back(LoaderGLTF::loadAsync(jobSystem, "C:/Users/Martin Varga/Downloads/metallic--roughness--test/source/Metallic_Roughness_Test.glb"));
 
         auto cubeFuture = LoaderGLTF::loadAsync(jobSystem, "models/cube.glb");
         ParsedGLTF cubeParsed = cubeFuture.get();
         auto cube = LoaderGLTF::finalize(cubeParsed, device, megaBuffer, resourceHeap, sceneTextures);
 
         GameObject* cubeMeshNode = &cube[0];
-        for (auto& node : cube) {
-            if (node.subMesh.indexCount > 0) {
+        for (auto& node : cube)
+        {
+            if (node.subMesh.indexCount > 0)
+            {
                 cubeMeshNode = &node;
                 break;
             }
@@ -184,12 +188,12 @@ namespace Engine
             {
                 if (pendingLoads[i].wait_for(std::chrono::seconds(0)) == std::future_status::ready)
                 {
-                    ParsedGLTF parsedData = pendingLoads[i].get();
+                    vkDeviceWaitIdle(device.getDevice());
 
+                    ParsedGLTF parsedData = pendingLoads[i].get();
                     auto newObjects = LoaderGLTF::finalize(parsedData, device, megaBuffer, resourceHeap, sceneTextures);
 
                     for (auto& obj : newObjects) gameObjects.push_back(std::move(obj));
-
                     flattenSceneGraph(gameObjects);
 
                     resourceHeap.uploadMaterialBuffer();
@@ -214,7 +218,8 @@ namespace Engine
             {
                 if (obj.parentCacheIndex != std::numeric_limits<size_t>::max())
                 {
-                    obj.currentWorldMatrix = gameObjects[obj.parentCacheIndex].currentWorldMatrix * obj.transform.mat4();
+                    obj.currentWorldMatrix = gameObjects[obj.parentCacheIndex].currentWorldMatrix * obj.transform.
+                        mat4();
                 }
                 else
                 {
@@ -234,18 +239,23 @@ namespace Engine
                 renderGraph.clear();
 
                 renderGraph.registerPhysicalBuffer("SceneUBO",
-                    sceneUboBuffer->getBuffer(), sceneUboBuffer->getBufferSize(),
-                    VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_HOST_WRITE_BIT);
+                                                   sceneUboBuffer->getBuffer(), sceneUboBuffer->getBufferSize(),
+                                                   VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_HOST_WRITE_BIT);
                 renderGraph.registerPhysicalBuffer("MaterialSSBO",
-                    resourceHeap.getMaterialBufferInfo().buffer, resourceHeap.getMaterialBufferInfo().range,
-                    VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_HOST_WRITE_BIT);
+                                                   resourceHeap.getMaterialBufferInfo().buffer,
+                                                   resourceHeap.getMaterialBufferInfo().range,
+                                                   VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_HOST_WRITE_BIT);
 
                 renderGraph.registerPhysicalImage("SwapChainImage",
-                    renderer.getSwapChain().getImage(imgIdx), renderer.getSwapChain().getImageView(imgIdx),
-                    renderer.getSwapChain().getSwapChainImageFormat(), currentExtent, VK_IMAGE_LAYOUT_UNDEFINED);
+                                                  renderer.getSwapChain().getImage(imgIdx),
+                                                  renderer.getSwapChain().getImageView(imgIdx),
+                                                  renderer.getSwapChain().getSwapChainImageFormat(), currentExtent,
+                                                  VK_IMAGE_LAYOUT_UNDEFINED);
                 renderGraph.registerPhysicalImage("DepthImage",
-                    renderer.getSwapChain().getDepthImage(), renderer.getSwapChain().getDepthImageView(),
-                    renderer.getSwapChain().getDepthFormat(), currentExtent, VK_IMAGE_LAYOUT_UNDEFINED);
+                                                  renderer.getSwapChain().getDepthImage(),
+                                                  renderer.getSwapChain().getDepthImageView(),
+                                                  renderer.getSwapChain().getDepthFormat(), currentExtent,
+                                                  VK_IMAGE_LAYOUT_UNDEFINED);
 
                 renderGraph.addPass(&forwardPass);
                 renderGraph.addPass(&fxaaPass);
@@ -255,10 +265,15 @@ namespace Engine
                 lastExtent = currentExtent;
             }
 
+            renderGraph.updateBufferHandle("MaterialSSBO",
+                                           resourceHeap.getMaterialBufferInfo().buffer,
+                                           resourceHeap.getMaterialBufferSize());
             renderGraph.updateImageHandle("SwapChainImage",
-                renderer.getSwapChain().getImage(imgIdx), renderer.getSwapChain().getImageView(imgIdx), currentExtent);
+                                          renderer.getSwapChain().getImage(imgIdx),
+                                          renderer.getSwapChain().getImageView(imgIdx), currentExtent);
             renderGraph.updateImageHandle("DepthImage",
-                renderer.getSwapChain().getDepthImage(), renderer.getSwapChain().getDepthImageView(), currentExtent);
+                                          renderer.getSwapChain().getDepthImage(),
+                                          renderer.getSwapChain().getDepthImageView(), currentExtent);
 
             float aspect = renderer.getaspectRatio();
             camera.setPerspectiveProjection(glm::radians(50.0f), aspect, 0.1f, 100.0f);

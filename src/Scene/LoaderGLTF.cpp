@@ -240,7 +240,7 @@ namespace Engine
         Device&                        device,
         Model&                         megaBuffer,
         ResourceHeap&                  resourceHeap,
-        std::vector<Texture2D>&        outTextures)
+        std::deque<Texture2D>&        outTextures)
     {
         if (!parsedData.success) {
             return {};
@@ -253,7 +253,13 @@ namespace Engine
             auto& parsedImg = parsedData.images[i];
             if (!parsedImg.isValid || parsedImg.pixels.empty()) continue;
 
-            Texture2D tex{};
+            // 1. Construct the object directly inside the deque
+            outTextures.emplace_back();
+
+            // 2. Get a reference to the newly created, permanent object
+            Texture2D& tex = outTextures.back();
+
+            // 3. Upload the buffer directly into the permanent object
             tex.fromBuffer(
                 parsedImg.pixels.data(),
                 parsedImg.pixels.size(),
@@ -263,8 +269,8 @@ namespace Engine
                 &device,
                 resourceHeap);
 
+            // 4. Save the handle (No std::move or temporaries needed!)
             imageIndexToHeapSlot[i] = tex.heapHandle.index;
-            outTextures.push_back(std::move(tex));
         }
 
         const uint32_t WHITE_SLOT = resourceHeap.getFallbackWhiteSlot();
@@ -307,6 +313,8 @@ namespace Engine
             loadedNodes.push_back(GameObject::createGameObject());
         }
 
+        std::vector<GameObject> extraNodes;
+
         for (size_t i = 0; i < parsedData.nodes.size(); ++i)
         {
             auto& parsedNode = parsedData.nodes[i];
@@ -320,27 +328,37 @@ namespace Engine
 
             if (!parsedNode.primitives.empty())
             {
-                std::vector<Model::Vertex> mergedVertices;
-                std::vector<uint32_t> mergedIndices;
-
-                for (auto& prim : parsedNode.primitives)
+                for (size_t p = 0; p < parsedNode.primitives.size(); ++p)
                 {
-                    uint32_t vertexBase = static_cast<uint32_t>(mergedVertices.size());
-
+                    auto& prim = parsedNode.primitives[p];
                     uint32_t globalMatID = materialIndexToGlobalID[prim.localMaterialIndex];
 
-                    for (auto& v : prim.vertices) {
-                        v.texId = globalMatID;
-                        mergedVertices.push_back(v);
-                    }
+                    // Check if this specific primitive uses AlphaMode::Blend
+                    bool isBlend = (resourceHeap.getMaterials()[globalMatID].flags & 2u) != 0u;
 
-                    for (auto idx : prim.indices) {
-                        mergedIndices.push_back(idx + vertexBase);
+                    std::vector<Model::Vertex> vertices = prim.vertices;
+                    for (auto& v : vertices) v.texId = globalMatID;
+
+                    if (p == 0) {
+                        // Apply the first primitive to the main object
+                        obj.subMesh = megaBuffer.registerMesh(vertices, prim.indices);
+                        obj.isTransparent = isBlend;
+                    } else {
+                        // If the node has multiple primitives, spawn child GameObjects
+                        GameObject child = GameObject::createGameObject();
+                        child.subMesh = megaBuffer.registerMesh(vertices, prim.indices);
+                        child.isTransparent = isBlend;
+                        obj.addChild(child);
+
+                        // Push to the temporary array safely
+                        extraNodes.push_back(std::move(child));
                     }
                 }
-
-                obj.subMesh = megaBuffer.registerMesh(mergedVertices, mergedIndices);
             }
+        }
+
+        for (auto& child : extraNodes) {
+            loadedNodes.push_back(std::move(child));
         }
 
         resourceHeap.flushPendingUpdates();
@@ -361,7 +379,7 @@ namespace Engine
             fastgltf::Options::DontRequireValidAssetMember |
             fastgltf::Options::AllowDouble          |
             fastgltf::Options::LoadExternalBuffers  |
-            fastgltf::Options::LoadExternalImages   |
+            //fastgltf::Options::LoadExternalImages   |
             fastgltf::Options::GenerateMeshIndices;
 
         auto gltfFile = fastgltf::MappedGltfFile::FromPath(filePath);
