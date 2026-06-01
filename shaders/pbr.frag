@@ -79,12 +79,13 @@ void main() {
     Material mat = materials[inTexID];
     vec4 albedo = texture(textures[nonuniformEXT(mat.albedoIndex)], inUV) * mat.albedoFactor;
 
+    /*
     if (push.debugIsTransparent == 1u) {
         if (albedo.a < 0.1) {
             color = vec4(albedo.rgb + vec3(0.0, 0.2, 0.0), 1.0);
             return;
         }
-    }
+    }*/
 
     uint isMask = mat.flags & 1u;
     if (isMask != 0u && albedo.a < mat.alphaCutoff) {

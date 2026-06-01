@@ -35,12 +35,11 @@ namespace Engine
         ResourceHeap resourceHeap{device};
         RenderGraph renderGraph{device};
         Renderer renderer{window,device};
-        Model megaBuffer{device, 500000, 1000000};
+        Model megaBuffer{device, 2000000, 5000000};
         KeyboardMovementController cameraController{};
         std::shared_ptr<GameObject> cameraObject;
         JobSystem jobSystem{ std::max(1u, std::thread::hardware_concurrency() - 1) };
 
-        //std::vector<Texture2D> sceneTextures;
         std::deque<Texture2D> sceneTextures;
         std::vector<GameObject> gameObjects;
     };

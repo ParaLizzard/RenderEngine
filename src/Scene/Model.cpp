@@ -71,9 +71,20 @@ namespace Engine
         uint32_t verticesCount = vertices.size();
         uint32_t indexCount = indices.size();
 
-        assert(verticesCount <= chunkVertexCapacity && indexCount <= chunkIndexCapacity && "Mesh is too big");
+        //assert(verticesCount <= chunkVertexCapacity && indexCount <= chunkIndexCapacity && "Mesh is too big");
 
-        if (activeChunkVertexCount + verticesCount > chunkVertexCapacity || activeChunkIndexCount + indexCount > chunkIndexCapacity)
+        if (verticesCount > chunkVertexCapacity || indexCount > chunkIndexCapacity)
+        {
+            chunkVertexCapacity = std::max(chunkVertexCapacity, verticesCount);
+            chunkIndexCapacity  = std::max(chunkIndexCapacity, indexCount);
+
+            std::cout << "Model: Upgrading chunk capacity to "
+                      << chunkVertexCapacity << " vertices and "
+                      << chunkIndexCapacity << " indices to fit giant mesh!\n";
+        }
+
+        if (activeChunkVertexCount + verticesCount > chunkVertexCapacity ||
+            activeChunkIndexCount + indexCount > chunkIndexCapacity)
         {
             createNewChunk();
         }
@@ -81,8 +92,8 @@ namespace Engine
         uint32_t vertexByteOffset = activeChunkVertexCount * sizeof(Vertex);
         uint32_t indexByteOffset = activeChunkIndexCount * sizeof(uint32_t);
 
-        vertexBuffers.back()->writeToBuffer(vertices.data(), verticesCount*sizeof(Vertex), vertexByteOffset);
-        indexBuffers.back()->writeToBuffer(indices.data(), indexCount * sizeof(uint32_t), indexByteOffset);
+        vertexBuffers.back()->writeToBuffer((void*)vertices.data(), verticesCount * sizeof(Vertex), activeChunkVertexCount * sizeof(Vertex));
+        indexBuffers.back()->writeToBuffer((void*)indices.data(), indexCount * sizeof(uint32_t), activeChunkIndexCount * sizeof(uint32_t));
 
         vertexBuffers.back()->flush(VK_WHOLE_SIZE, 0);
         indexBuffers.back()->flush(VK_WHOLE_SIZE, 0);
