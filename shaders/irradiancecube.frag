@@ -14,7 +14,7 @@ layout(push_constant) uniform PushConsts {
 void main()
 {
 	vec3 N = normalize(inPos);
-	vec3 up = vec3(0.0, 1.0, 0.0);
+	vec3 up = abs(N.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
 	vec3 right = normalize(cross(up, N));
 	up = cross(N, right);
 

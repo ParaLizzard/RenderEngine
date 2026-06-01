@@ -172,6 +172,8 @@ set(PASSES_SOURCES
         src/Passes/ForwardPassNode.h
         src/Passes/FxaaPassNode.h
         src/Passes/FxaaPassNode.cpp
+        src/Passes/ZPrePassNode.cpp
+        src/Passes/ZPrePassNode.h
 )
 
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/models" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")

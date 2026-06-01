@@ -35,7 +35,7 @@ namespace Engine
     void ForwardPassNode::setup(RenderGraphBuilder& renderGraph)
     {
         VkExtent2D currentExtent = renderer.getSwapChain().getSwapChainExtent();
-        VkFormat currentFormat = renderer.getSwapChain().getSwapChainImageFormat();
+        VkFormat currentFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
 
         renderGraph.createTransientImage("SceneColorImage", currentFormat, currentExtent);
 
@@ -135,8 +135,8 @@ namespace Engine
         VkPipelineDepthStencilStateCreateInfo depthStencil{};
         depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
         depthStencil.depthTestEnable = VK_TRUE;
-        depthStencil.depthWriteEnable = VK_TRUE;
-        depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+        depthStencil.depthWriteEnable = VK_FALSE;
+        depthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
         depthStencil.depthBoundsTestEnable = VK_FALSE;
         depthStencil.stencilTestEnable = VK_FALSE;
 
@@ -168,7 +168,7 @@ namespace Engine
         dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
         dynamicState.pDynamicStates = dynamicStates.data();
 
-        VkFormat colorFormat = renderer.getSwapChain().getSwapChainImageFormat();
+        VkFormat colorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
         VkPipelineRenderingCreateInfo renderingCreateInfo{};
         renderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
         renderingCreateInfo.pNext = nullptr;
@@ -199,9 +199,9 @@ namespace Engine
             throw std::runtime_error("failed to create graphics pipeline");
         }
 
-        depthStencil.depthWriteEnable = VK_FALSE; // Turn OFF depth writing
-
-        colorBlendAttachment.blendEnable = VK_TRUE; // Turn ON Alpha Blending
+        depthStencil.depthWriteEnable = VK_FALSE;
+        depthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+        colorBlendAttachment.blendEnable = VK_TRUE;
         colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
         colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
         colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
@@ -233,7 +233,7 @@ namespace Engine
         depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
         depthAttachment.imageView = renderer.getSwapChain().getDepthImageView();
         depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
         depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         depthAttachment.clearValue.depthStencil = {1.0f, 0};
 
@@ -286,7 +286,7 @@ namespace Engine
         for (const auto& obj : frameInfo.gameObjects)
         {
             if (obj.subMesh.indexCount == 0) continue;
-            if (obj.isTransparent) transparentDraws.push_back(&obj);
+            if (obj.alphaMode == AlphaMode::Blend) transparentDraws.push_back(&obj);
             else opaqueDraws.push_back(&obj);
         }
 
@@ -296,7 +296,7 @@ namespace Engine
         {
             float distA = glm::length(glm::vec3(a->currentWorldMatrix[3]) - camPos);
             float distB = glm::length(glm::vec3(b->currentWorldMatrix[3]) - camPos);
-            return distA > distB; // Furthest away gets drawn first
+            return distA > distB;
         });
 
         uint32_t lastBoundChunk = 999999;
@@ -318,7 +318,6 @@ namespace Engine
             vkCmdDrawIndexed(cmd, obj->subMesh.indexCount, 1, obj->subMesh.firstIndex, obj->subMesh.vertexOffset, 0);
         }
 
-        // 4. PASS TWO: Draw Transparent Objects (Reads Depth, Alpha Blends)
         if (!transparentDraws.empty()) {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, transparentPipeline);
             for (const auto* obj : transparentDraws) {

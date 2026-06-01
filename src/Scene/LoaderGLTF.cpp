@@ -378,16 +378,12 @@ namespace Engine
                     auto& prim = parsedNode.primitives[p];
                     uint32_t globalMatID = materialIndexToGlobalID[prim.localMaterialIndex];
 
-                    // debug
-                    std::cout << "Node " << i << ", Primitive " << p
-                        << ": vertices=" << prim.vertices.size()
-                        << ", indices=" << prim.indices.size() << "\n";
-                    if (p < 5)
-                    {
-                        std::cout << "  -> Registering mesh...\n";
-                    }
-
+                    bool isMask = (resourceHeap.getMaterials()[globalMatID].flags & 1u) != 0u;
                     bool isBlend = (resourceHeap.getMaterials()[globalMatID].flags & 2u) != 0u;
+
+                    AlphaMode mode = AlphaMode::Opaque;
+                    if (isBlend) mode = AlphaMode::Blend;
+                    else if (isMask) mode = AlphaMode::Mask;
 
                     std::vector<Model::Vertex> vertices = prim.vertices;
                     for (auto& v : vertices) v.texId = globalMatID;
@@ -395,20 +391,18 @@ namespace Engine
                     if (p == 0)
                     {
                         obj.subMesh = megaBuffer.registerMesh(vertices, prim.indices);
-                        obj.isTransparent = isBlend;
+                        obj.alphaMode = mode;
                     }
                     else
                     {
                         GameObject child = GameObject::createGameObject();
                         child.transform = parsedNode.transform;
                         child.subMesh = megaBuffer.registerMesh(vertices, prim.indices);
-                        child.isTransparent = isBlend;
+                        child.alphaMode = mode;
 
                         extraNodes.push_back(std::move(child));
                     }
                 }
-
-                std::cout << "  -> Registered: indexCount=" << obj.subMesh.indexCount << "\n";
             }
         }
 

@@ -38,7 +38,6 @@ layout(set = 0, binding = 0) readonly buffer MaterialBuffer {
     Material materials[];
 };
 
-// vec3 in UBO has vec4 alignment — use vec4 and read .xyz to avoid C++ struct misalignment
 layout(set = 0, binding = 1) uniform SceneData {
     vec4 cameraPosition;
     vec4 directionalLight;
@@ -74,6 +73,11 @@ vec3 fresnelSchlick(vec3 F0, float cosTheta) {
 vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness) {
     return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
+
+float interleavedGradientNoise(vec2 n) {
+    return fract(52.9829189 * fract(dot(n, vec2(0.06711056, 0.00583715))));
+}
+
 
 void main() {
     Material mat = materials[inTexID];
@@ -113,15 +117,11 @@ void main() {
 
     vec3 F0 = mix(Fdielectric, albedo.rgb, metalness);
 
-    // --- Direct lighting (only when surface faces the light) ---
     vec3 Lo = vec3(0.0);
 
-    // 1. Calculate the soft wrap diffuse (allows light to wrap around the equator)
-    // Tweak this 'wrap' value! 0.0 = hard edge, 0.5 = soft, 1.0 = extreme wrap
     float wrap = 0.5;
     float NdotL_diffuse = clamp((rawNdotL + wrap) / (1.0 + wrap), 0.0, 1.0);
 
-    // 2. Standard Specular (only happens on the lit side)
     float lightRoughness = max(roughness, 0.05);
     float NDF = ndfGGX(max(dot(worldNormal, H), 0.0), lightRoughness);
     float G   = gaSchlickGGX(NdotL, NdotV, lightRoughness);
@@ -130,19 +130,22 @@ void main() {
     vec3 specular = (NDF * G * F) / (4.0 * NdotV * NdotL + Epsilon);
     vec3 kD       = (vec3(1.0) - F) * (1.0 - metalness);
 
-    // 3. Combine. Notice specular uses the hard NdotL, diffuse uses the soft NdotL_diffuse!
     Lo = (kD * albedo.rgb / PI * NdotL_diffuse + specular * NdotL) * vec3(2.0);
 
-    // --- Ambient / IBL ---
     vec3 F_ambient  = fresnelSchlickRoughness(NdotV, F0, roughness);
     vec3 kD_ambient = (vec3(1.0) - F_ambient) * (1.0 - metalness);
 
-    vec3 irradiance      = texture(irradianceMap, worldNormal).rgb;
+    vec3 sampleN = vec3(worldNormal.x, -worldNormal.y, worldNormal.z);
+
+    vec3 irradiance      = texture(irradianceMap, sampleN).rgb;
     vec3 diffuse_ambient = irradiance * albedo.rgb;
 
     float MAX_REFLECTION_LOD = float(textureQueryLevels(prefilterMap) - 1);
     vec3  R                  = reflect(-V, worldNormal);
-    vec3  prefilteredColor   = textureLod(prefilterMap, R, roughness * MAX_REFLECTION_LOD).rgb;
+
+    vec3 sampleR = vec3(R.x, -R.y, R.z);
+
+    vec3  prefilteredColor   = textureLod(prefilterMap, sampleR, roughness * MAX_REFLECTION_LOD).rgb;
     vec2  envBRDF            = texture(brdfLUT, vec2(NdotV, roughness)).rg;
     vec3  specular_ambient   = prefilteredColor * (F_ambient * envBRDF.x + envBRDF.y);
 
@@ -151,6 +154,13 @@ void main() {
 
     float exposure = 1.2;
     finalColor = vec3(1.0) - exp(-finalColor * exposure);
+
+    float dither = interleavedGradientNoise(gl_FragCoord.xy) - 0.5;
+
+    finalColor += dither / 255.0;
+
+    //finalColor = pow(finalColor, vec3(1.0 / 2.2));
+
 
     color = vec4(finalColor, albedo.a);
 }

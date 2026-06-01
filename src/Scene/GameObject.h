@@ -16,6 +16,8 @@ namespace Engine
         glm::mat4 mat4();
     };
 
+    enum class AlphaMode { Opaque, Mask, Blend };
+
     class GameObject
     {
     public:
@@ -41,7 +43,8 @@ namespace Engine
         std::vector<id_t> childrenIds;
 
         glm::mat4 currentWorldMatrix{1.0f};
-        bool isTransparent = false;
+
+        AlphaMode alphaMode = AlphaMode::Opaque;
 
     private:
         GameObject(id_t objId);

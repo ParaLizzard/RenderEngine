@@ -505,14 +505,13 @@ namespace Engine
                                      VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, offscreenSubresourceRange);
 
         std::vector<glm::mat4> matrices = {
-            glm::rotate(glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f)),
-                        glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)), // +X
-            glm::rotate(glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f)),
-                        glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)), // -X
-            glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f)), // +Y
-            glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f)), // -Y
-            glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)), // +Z
-            glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(0.0f, 0.0f, 1.0f)), // -Z
+            //                                 Look Target                       Up Vector
+            glm::lookAt(glm::vec3(0.0f), glm::vec3( 1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)), // +X
+            glm::lookAt(glm::vec3(0.0f), glm::vec3(-1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)), // -X
+            glm::lookAt(glm::vec3(0.0f), glm::vec3( 0.0f,  1.0f,  0.0f), glm::vec3(0.0f,  0.0f,  1.0f)), // +Y
+            glm::lookAt(glm::vec3(0.0f), glm::vec3( 0.0f, -1.0f,  0.0f), glm::vec3(0.0f,  0.0f, -1.0f)), // -Y
+            glm::lookAt(glm::vec3(0.0f), glm::vec3( 0.0f,  0.0f,  1.0f), glm::vec3(0.0f, -1.0f,  0.0f)), // +Z
+            glm::lookAt(glm::vec3(0.0f), glm::vec3( 0.0f,  0.0f, -1.0f), glm::vec3(0.0f, -1.0f,  0.0f))  // -Z
         };
 
         VkClearValue clearValues[1];
@@ -554,7 +553,6 @@ namespace Engine
                 vkCmdBeginRendering(cmdBuf, &renderingInfo);
 
                 glm::mat4 proj = glm::perspective((float)(M_PI / 2.0), 1.0f, 0.1f, 512.0f);
-                proj[1][1] *= -1.0f;
                 pushBlock.mvp = proj * matrices[f];
                 vkCmdPushConstants(cmdBuf, pipelinelayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                                    sizeof(PushBlock), &pushBlock);
@@ -828,14 +826,13 @@ namespace Engine
                                      VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, offscreenSubresourceRange);
 
         std::vector<glm::mat4> matrices = {
-            glm::rotate(glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f)),
-                        glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)), // +X
-            glm::rotate(glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f)),
-                        glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)), // -X
-            glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f)), // +Y
-            glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f)), // -Y
-            glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)), // +Z
-            glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(0.0f, 0.0f, 1.0f)), // -Z
+            //                                 Look Target                       Up Vector
+            glm::lookAt(glm::vec3(0.0f), glm::vec3( 1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)), // +X
+            glm::lookAt(glm::vec3(0.0f), glm::vec3(-1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)), // -X
+            glm::lookAt(glm::vec3(0.0f), glm::vec3( 0.0f,  1.0f,  0.0f), glm::vec3(0.0f,  0.0f,  1.0f)), // +Y
+            glm::lookAt(glm::vec3(0.0f), glm::vec3( 0.0f, -1.0f,  0.0f), glm::vec3(0.0f,  0.0f, -1.0f)), // -Y
+            glm::lookAt(glm::vec3(0.0f), glm::vec3( 0.0f,  0.0f,  1.0f), glm::vec3(0.0f, -1.0f,  0.0f)), // +Z
+            glm::lookAt(glm::vec3(0.0f), glm::vec3( 0.0f,  0.0f, -1.0f), glm::vec3(0.0f, -1.0f,  0.0f))  // -Z
         };
 
         VkClearValue clearValues[1];
@@ -877,7 +874,6 @@ namespace Engine
                 vkCmdBeginRendering(cmdBuf, &renderingInfo);
 
                 glm::mat4 proj = glm::perspective((float)(M_PI / 2.0), 1.0f, 0.1f, 512.0f);
-                proj[1][1] *= -1.0f;
                 pushBlock.mvp = proj * matrices[f];
                 pushBlock.roughness = (float)m / (float)(numMips - 1);
                 vkCmdPushConstants(cmdBuf, pipelinelayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,

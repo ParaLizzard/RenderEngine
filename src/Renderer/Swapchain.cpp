@@ -151,14 +151,28 @@ namespace Engine
 
     VkSurfaceFormatKHR SwapChain::chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats)
     {
-        for (auto& format : availableFormats)
-        {
-            if (format.format == VK_FORMAT_R8G8B8A8_SRGB && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
-            {
+        // 1. Try standard 10-bit
+        for (const auto& format : availableFormats) {
+            if (format.format == VK_FORMAT_A2B10G10R10_UNORM_PACK32 && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+                printf("Loading VK_FORMAT_A2B10G10R10_UNORM_PACK32 format\n");
                 return format;
             }
         }
-
+        // 2. Try swapped 10-bit (Common on Intel / AMD)
+        for (const auto& format : availableFormats) {
+            if (format.format == VK_FORMAT_A2R10G10B10_UNORM_PACK32 && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+                printf("Loading VK_FORMAT_A2R10G10B10_UNORM_PACK32 format\n");
+                return format;
+            }
+        }
+        // 3. Fallback to 8-bit
+        for (auto& format : availableFormats) {
+            if ((format.format == VK_FORMAT_B8G8R8A8_SRGB || format.format == VK_FORMAT_R8G8B8A8_SRGB)
+                 && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+                printf("Loading VK_FORMAT_R8G8B8A8_SRGB format\n");
+                return format;
+                 }
+        }
         return availableFormats[0];
     }
 
