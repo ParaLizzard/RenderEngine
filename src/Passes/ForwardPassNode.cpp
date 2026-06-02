@@ -4,7 +4,10 @@
 #include <stdexcept>
 #include <fstream>
 #include <vector>
+#include <array>
+#include <future>
 
+#include "Core/JobSystem.h"
 #include "Renderer/ShaderUtils.h"
 
 namespace Engine
@@ -30,12 +33,21 @@ namespace Engine
         {
             vkDestroyPipelineLayout(device.getDevice(), pipelineLayout, nullptr);
         }
+        if (graphicsPipelineDoubleSided != VK_NULL_HANDLE)
+        {
+            vkDestroyPipeline(device.getDevice(), graphicsPipelineDoubleSided, nullptr);
+        }
+        if (transparentPipelineDoubleSided != VK_NULL_HANDLE)
+        {
+            vkDestroyPipeline(device.getDevice(), transparentPipelineDoubleSided, nullptr);
+        }
     }
 
     void ForwardPassNode::setup(RenderGraphBuilder& renderGraph)
     {
         VkExtent2D currentExtent = renderer.getSwapChain().getSwapChainExtent();
-        VkFormat currentFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+        //VkFormat currentFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+        VkFormat currentFormat = renderer.getSwapChain().getSwapChainImageFormat();
 
         renderGraph.createTransientImage("SceneColorImage", currentFormat, currentExtent);
 
@@ -135,8 +147,8 @@ namespace Engine
         VkPipelineDepthStencilStateCreateInfo depthStencil{};
         depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
         depthStencil.depthTestEnable = VK_TRUE;
-        depthStencil.depthWriteEnable = VK_FALSE;
-        depthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+        depthStencil.depthWriteEnable = VK_TRUE;
+        depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
         depthStencil.depthBoundsTestEnable = VK_FALSE;
         depthStencil.stencilTestEnable = VK_FALSE;
 
@@ -168,7 +180,8 @@ namespace Engine
         dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
         dynamicState.pDynamicStates = dynamicStates.data();
 
-        VkFormat colorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+        //VkFormat colorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+        VkFormat colorFormat = renderer.getSwapChain().getSwapChainImageFormat();
         VkPipelineRenderingCreateInfo renderingCreateInfo{};
         renderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
         renderingCreateInfo.pNext = nullptr;
@@ -199,8 +212,8 @@ namespace Engine
             throw std::runtime_error("failed to create graphics pipeline");
         }
 
-        depthStencil.depthWriteEnable = VK_FALSE;
-        depthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+        depthStencil.depthWriteEnable = VK_TRUE;
+        //depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
         colorBlendAttachment.blendEnable = VK_TRUE;
         colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
         colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
@@ -213,6 +226,25 @@ namespace Engine
                                       &transparentPipeline) != VK_SUCCESS)
         {
             throw std::runtime_error("failed to create transparent graphics pipeline");
+        }
+
+        rasterizer.cullMode = VK_CULL_MODE_NONE;
+
+        depthStencil.depthWriteEnable = VK_TRUE;
+        colorBlendAttachment.blendEnable = VK_FALSE;
+        if (vkCreateGraphicsPipelines(device.getDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipelineDoubleSided) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create double-sided graphics pipeline");
+        }
+
+        colorBlendAttachment.blendEnable = VK_TRUE;
+        colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+        colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+        colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+        if (vkCreateGraphicsPipelines(device.getDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &transparentPipelineDoubleSided) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create double-sided transparent pipeline");
         }
 
         vkDestroyShaderModule(device.getDevice(), vertShaderModule, nullptr);
@@ -233,7 +265,7 @@ namespace Engine
         depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
         depthAttachment.imageView = renderer.getSwapChain().getDepthImageView();
         depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         depthAttachment.clearValue.depthStencil = {1.0f, 0};
 
@@ -276,18 +308,86 @@ namespace Engine
         );
 
         glm::mat4 projection = frameInfo.camera.getProjection();
-
         glm::mat4 view = frameInfo.camera.getView();
         glm::mat4 viewProjection = projection * view;
+
+        glm::mat4 tvp = glm::transpose(viewProjection);
+
+        std::array<glm::vec4, 6> frustumPlanes;
+        frustumPlanes[0] = tvp[3] + tvp[0]; // Left
+        frustumPlanes[1] = tvp[3] - tvp[0]; // Right
+        frustumPlanes[2] = tvp[3] + tvp[1]; // Bottom
+        frustumPlanes[3] = tvp[3] - tvp[1]; // Top
+        // 2. VULKAN SPECIFIC: Depth is 0 to 1, so Near plane is just Row 2
+        frustumPlanes[4] = tvp[2];          // Near
+        frustumPlanes[5] = tvp[3] - tvp[2]; // Far
+
+        for (int i = 0; i < 6; i++) {
+            float length = glm::length(glm::vec3(frustumPlanes[i]));
+            frustumPlanes[i] /= length;
+        }
+
+        glm::mat4 flipMatrix = glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f));
 
         std::vector<const GameObject*> opaqueDraws;
         std::vector<const GameObject*> transparentDraws;
 
-        for (const auto& obj : frameInfo.gameObjects)
-        {
-            if (obj.subMesh.indexCount == 0) continue;
-            if (obj.alphaMode == AlphaMode::Blend) transparentDraws.push_back(&obj);
-            else opaqueDraws.push_back(&obj);
+        struct CullResult {
+            std::vector<const GameObject*> localOpaque;
+            std::vector<const GameObject*> localTransparent;
+        };
+
+        size_t objectCount = frameInfo.gameObjects.size();
+        size_t numThreads = std::max(1u, std::thread::hardware_concurrency() - 1);
+        size_t itemsPerChunk = (objectCount + numThreads - 1) / numThreads; // Ceiling division
+
+        std::vector<std::future<CullResult>> futures;
+
+        for (size_t i = 0; i < numThreads; ++i) {
+            size_t startIdx = i * itemsPerChunk;
+            size_t endIdx = std::min(startIdx + itemsPerChunk, objectCount);
+
+            if (startIdx >= endIdx) break;
+
+            futures.push_back(frameInfo.jobSystem->enqueue([startIdx, endIdx, &frameInfo, flipMatrix, frustumPlanes]() {
+                CullResult result;
+                result.localOpaque.reserve(endIdx - startIdx);
+                result.localTransparent.reserve(endIdx - startIdx);
+
+                for (size_t j = startIdx; j < endIdx; ++j) {
+                    const auto& obj = frameInfo.gameObjects[j];
+                    if (obj.subMesh.indexCount == 0) continue;
+
+                    glm::mat4 actualWorldMatrix = flipMatrix * obj.currentWorldMatrix;
+                    glm::vec3 worldCenter = glm::vec3(actualWorldMatrix * glm::vec4(obj.boundingSphere.x, obj.boundingSphere.y, obj.boundingSphere.z, 1.0f));
+
+                    float scaleX = glm::length(glm::vec3(actualWorldMatrix[0]));
+                    float scaleY = glm::length(glm::vec3(actualWorldMatrix[1]));
+                    float scaleZ = glm::length(glm::vec3(actualWorldMatrix[2]));
+                    float maxScale = std::max({scaleX, scaleY, scaleZ});
+                    float worldRadius = obj.boundingSphere.w * maxScale;
+
+                    bool visible = true;
+                    for (int p = 0; p < 6; p++) {
+                        if (glm::dot(glm::vec3(frustumPlanes[p]), worldCenter) + frustumPlanes[p].w < -worldRadius) {
+                            visible = false;
+                            break;
+                        }
+                    }
+
+                    if (!visible) continue;
+
+                    if (obj.alphaMode == AlphaMode::Blend) result.localTransparent.push_back(&obj);
+                    else result.localOpaque.push_back(&obj);
+                }
+                return result;
+            }));
+        }
+
+        for (auto& future : futures) {
+            CullResult res = future.get();
+            opaqueDraws.insert(opaqueDraws.end(), res.localOpaque.begin(), res.localOpaque.end());
+            transparentDraws.insert(transparentDraws.end(), res.localTransparent.begin(), res.localTransparent.end());
         }
 
         glm::vec3 camPos = glm::vec3(glm::inverse(frameInfo.camera.getView())[3]);
@@ -299,13 +399,27 @@ namespace Engine
             return distA > distB;
         });
 
+        std::sort(opaqueDraws.begin(), opaqueDraws.end(), [&camPos](const GameObject* a, const GameObject* b)
+        {
+            float distA = glm::length(glm::vec3(a->currentWorldMatrix[3]) - camPos);
+            float distB = glm::length(glm::vec3(b->currentWorldMatrix[3]) - camPos);
+            return distA < distB; // Nearest first
+        });
+
         uint32_t lastBoundChunk = 999999;
 
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+        VkPipeline currentPipeline = VK_NULL_HANDLE;
 
-        glm::mat4 flipMatrix = glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+        auto bindPipeline = [&](VkPipeline newPipeline) {
+            if (currentPipeline != newPipeline) {
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, newPipeline);
+                currentPipeline = newPipeline;
+            }
+        };
 
         for (const auto* obj : opaqueDraws) {
+            bindPipeline(obj->doubleSided ? graphicsPipelineDoubleSided : graphicsPipeline);
+
             if (obj->subMesh.bufferIndex != lastBoundChunk) {
                 megaBuffer.bind(cmd, obj->subMesh.bufferIndex);
                 lastBoundChunk = obj->subMesh.bufferIndex;
@@ -319,8 +433,9 @@ namespace Engine
         }
 
         if (!transparentDraws.empty()) {
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, transparentPipeline);
             for (const auto* obj : transparentDraws) {
+                bindPipeline(obj->doubleSided ? transparentPipelineDoubleSided : transparentPipeline);
+
                 if (obj->subMesh.bufferIndex != lastBoundChunk) {
                     megaBuffer.bind(cmd, obj->subMesh.bufferIndex);
                     lastBoundChunk = obj->subMesh.bufferIndex;

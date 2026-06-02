@@ -41,6 +41,8 @@ layout(set = 0, binding = 0) readonly buffer MaterialBuffer {
 layout(set = 0, binding = 1) uniform SceneData {
     vec4 cameraPosition;
     vec4 directionalLight;
+    float maxReflectionLod;
+    uint blueNoiseTexIndex;
 } scene;
 
 layout(set = 0, binding = 2) uniform samplerCube irradianceMap;
@@ -79,8 +81,44 @@ float interleavedGradientNoise(vec2 n) {
 }
 
 
+vec3 agxDefaultContrastApprox(vec3 x) {
+    vec3 x2 = x * x;
+    vec3 x4 = x2 * x2;
+    return 15.5 * x4 * x2 - 40.14 * x4 * x + 31.96 * x4 - 6.868 * x2 * x + 0.4298 * x2 + 0.1191 * x - 0.00232;
+}
+
+vec3 agx(vec3 color) {
+    const mat3 agx_mat = mat3(
+    0.842479062253094, 0.0423282422610123, 0.0423756549057051,
+    0.0784335999999992,  0.878468636469772,  0.0784336,
+    0.0792237451477643, 0.0791661274605434, 0.879142973793104
+    );
+    const mat3 agx_mat_inv = mat3(
+    1.19687900512017, -0.0528968517574562, -0.0529716355144438,
+    -0.0980208811401368, 1.15190312990417, -0.0980434501171241,
+    -0.0990297440797205, -0.0989611768448433, 1.15107367264116
+    );
+
+    const float minEv = -12.47393;
+    const float maxEv = 4.026069;
+
+    color = agx_mat * color;
+
+    color = clamp(log2(max(color, 1e-10)), minEv, maxEv);
+    color = (color - minEv) / (maxEv - minEv);
+
+    color = agxDefaultContrastApprox(color);
+
+    color = agx_mat_inv * color;
+
+    return clamp(color, 0.0, 1.0);
+}
+
+
 void main() {
     Material mat = materials[inTexID];
+
+    // This tanks FMA performance
     vec4 albedo = texture(textures[nonuniformEXT(mat.albedoIndex)], inUV) * mat.albedoFactor;
 
     /*
@@ -102,8 +140,18 @@ void main() {
     vec3 T = normalize(inTangent.xyz);
     vec3 N = normalize(inNormal);
     vec3 B = cross(N, T) * inTangent.w;
+
+    if (!gl_FrontFacing) {
+        T = -T;
+        B = -B;
+        N = -N;
+    }
+
     mat3 TBN = mat3(T, B, N);
+
+    // This tanks FMA performance
     vec3 tNorm = texture(textures[nonuniformEXT(mat.normalIndex)], inUV).rgb * 2.0 - 1.0;
+
     tNorm.xy  *= mat.normalScale;
     vec3 worldNormal = normalize(TBN * tNorm);
 
@@ -140,22 +188,33 @@ void main() {
     vec3 irradiance      = texture(irradianceMap, sampleN).rgb;
     vec3 diffuse_ambient = irradiance * albedo.rgb;
 
-    float MAX_REFLECTION_LOD = float(textureQueryLevels(prefilterMap) - 1);
+    // This tanks TEX perfomance
+    float MAX_REFLECTION_LOD = scene.maxReflectionLod;
     vec3  R                  = reflect(-V, worldNormal);
 
     vec3 sampleR = vec3(R.x, -R.y, R.z);
 
     vec3  prefilteredColor   = textureLod(prefilterMap, sampleR, roughness * MAX_REFLECTION_LOD).rgb;
     vec2  envBRDF            = texture(brdfLUT, vec2(NdotV, roughness)).rg;
+
+    // This tanks FMA performance
     vec3  specular_ambient   = prefilteredColor * (F_ambient * envBRDF.x + envBRDF.y);
 
     vec3 ambient    = kD_ambient * diffuse_ambient + specular_ambient;
     vec3 finalColor = ambient + Lo;
 
-    float exposure = 1.2;
-    finalColor = vec3(1.0) - exp(-finalColor * exposure);
+    float exposure = 0.1;
+    finalColor *= exposure;
 
-    float dither = interleavedGradientNoise(gl_FragCoord.xy) - 0.5;
+    finalColor = agx(finalColor);
+
+    ivec2 pixelCoord = ivec2(gl_FragCoord.xy);
+
+    ivec2 noiseSize = textureSize(textures[nonuniformEXT(scene.blueNoiseTexIndex)], 0);
+
+    ivec2 noiseCoord = pixelCoord % noiseSize;
+
+    float dither = texelFetch(textures[nonuniformEXT(scene.blueNoiseTexIndex)], noiseCoord, 0).r - 0.5;
 
     finalColor += dither / 255.0;
 

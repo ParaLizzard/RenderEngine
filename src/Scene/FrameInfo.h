@@ -5,6 +5,7 @@
 
 namespace Engine
 {
+    class JobSystem;
     class RenderGraph;
 
     struct FrameInfo
@@ -16,11 +17,15 @@ namespace Engine
         Camera& camera;
         std::vector<GameObject>& gameObjects;
         const RenderGraph* renderGraph = nullptr;
+        JobSystem* jobSystem;
     };
 
     struct SceneUbo
     {
         glm::vec4 cameraPosition;
         glm::vec4 directionalLight;
+        float maxReflectionLod;
+        uint32_t blueNoiseTexIndex;
+        glm::vec2 padding;
     };
 }

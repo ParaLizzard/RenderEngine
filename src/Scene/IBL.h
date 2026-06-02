@@ -16,6 +16,7 @@ namespace Engine
         VkImage image;
         VkImageView imageView;
         VkSampler sampler;
+        uint32_t mipLevels;
     };
 
     class IBL

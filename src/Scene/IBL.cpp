@@ -601,6 +601,7 @@ namespace Engine
     {
         const VkFormat format = VK_FORMAT_R16G16B16A16_SFLOAT;
         const uint32_t numMips = static_cast<uint32_t>(floor(log2(dimPrefilter))) + 1;
+        prefilteredCube.mipLevels = numMips;
 
         VkImageCreateInfo imageCI{};
         imageCI.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;

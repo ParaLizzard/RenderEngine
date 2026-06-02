@@ -48,5 +48,7 @@ namespace Engine
         VkPipelineLayout pipelineLayout{VK_NULL_HANDLE};
         VkPipeline graphicsPipeline{VK_NULL_HANDLE};
         VkPipeline transparentPipeline = VK_NULL_HANDLE;
+        VkPipeline graphicsPipelineDoubleSided = VK_NULL_HANDLE;
+        VkPipeline transparentPipelineDoubleSided = VK_NULL_HANDLE;
     };
 }

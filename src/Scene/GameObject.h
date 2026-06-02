@@ -45,6 +45,8 @@ namespace Engine
         glm::mat4 currentWorldMatrix{1.0f};
 
         AlphaMode alphaMode = AlphaMode::Opaque;
+        bool doubleSided = false;
+        glm::vec4 boundingSphere{0.0f, 0.0f, 0.0f, 0.0f};
 
     private:
         GameObject(id_t objId);

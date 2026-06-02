@@ -1,7 +1,9 @@
 #include "Application.h"
+
+#include <stb_image.h>
+
 #include "Passes/ForwardPassNode.h"
 #include "Passes/FxaaPassNode.h"
-#include "Passes/ZPrePassNode.h"
 #include "Scene/IBL.h"
 #include "Scene/LoaderGLTF.h"
 
@@ -94,20 +96,19 @@ namespace Engine
         Camera camera{};
         camera.setViewTarget(glm::vec3{0.0f, 0.0f, -5.0f}, glm::vec3{0.0f, 0.0f, 0.0f});
 
-        ZPrePassNode zPrePass{device, renderer, megaBuffer, resourceHeap};
         ForwardPassNode forwardPass{device, renderer, megaBuffer, resourceHeap};
         FxaaPassNode fxaaPass{device, renderer, megaBuffer, resourceHeap};
 
 
         std::vector<std::future<ParsedGLTF>> pendingLoads;
         //pendingLoads.push_back(LoaderGLTF::loadAsync(jobSystem, "models/pbr_sphere.glb"));
-        //pendingLoads.push_back(LoaderGLTF::loadAsync(
-            //jobSystem, "C:/Users/Jan Varga/Downloads/main_sponza (1)/main_sponza/NewSponza_Main_glTF_003.gltf"));
-        //pendingLoads.push_back(LoaderGLTF::loadAsync(
-            //jobSystem, "C:/Users/Jan Varga/Downloads/pkg_a_curtains/pkg_a_curtains/NewSponza_Curtains_glTF.gltf"));
+        pendingLoads.push_back(LoaderGLTF::loadAsync(
+            jobSystem, "C:/Users/Jan Varga/Downloads/main_sponza (1)/main_sponza/NewSponza_Main_glTF_003.gltf"));
+        pendingLoads.push_back(LoaderGLTF::loadAsync(
+            jobSystem, "C:/Users/Jan Varga/Downloads/pkg_a_curtains/pkg_a_curtains/NewSponza_Curtains_glTF.gltf"));
         //pendingLoads.push_back(LoaderGLTF::loadAsync(
             //jobSystem, "C:/Users/Jan Varga/Downloads/pkg_b_ivy1/pkg_b_ivy/NewSponza_IvyGrowth_glTF.gltf"));
-        pendingLoads.push_back(LoaderGLTF::loadAsync(jobSystem, "C:/Users/Martin Varga/Downloads/metallic--roughness--test/source/Metallic_Roughness_Test.glb"));
+        //pendingLoads.push_back(LoaderGLTF::loadAsync(jobSystem, "C:/Users/Martin Varga/Downloads/metallic--roughness--test/source/Metallic_Roughness_Test.glb"));
 
         auto cubeFuture = LoaderGLTF::loadAsync(jobSystem, "models/cube.glb");
         ParsedGLTF cubeParsed = cubeFuture.get();
@@ -122,6 +123,16 @@ namespace Engine
                 break;
             }
         }
+
+        int noiseW, noiseH, noiseC;
+        stbi_uc* noisePixels = stbi_load("assets/blue_noise.png", &noiseW, &noiseH, &noiseC, STBI_rgb_alpha);
+        if (!noisePixels) throw std::runtime_error("Failed to load blue noise texture!");
+
+        Texture2D blueNoiseTex;
+        blueNoiseTex.fromBuffer(noisePixels, noiseW * noiseH * 4, VK_FORMAT_R8G8B8A8_UNORM, noiseW, noiseH, &device, resourceHeap, VK_FILTER_NEAREST);
+        stbi_image_free(noisePixels);
+        uint32_t blueNoiseSlot = blueNoiseTex.heapHandle.index;
+        sceneTextures.push_back(std::move(blueNoiseTex));
 
         std::array<std::string, 6> skyboxFaces = {
             "assets/px.png", // Layer 0: Positive X (Right)
@@ -215,6 +226,9 @@ namespace Engine
             SceneUbo uboData{};
             uboData.cameraPosition = glm::vec4(cameraObject->transform.translation, 1.0f);
             uboData.directionalLight = glm::vec4(glm::normalize(glm::vec3(cos(time), -1.0f, sin(time))), 1.0f);
+            uboData.maxReflectionLod = static_cast<float>(ibl.prefilteredCube.mipLevels - 1);
+            uboData.blueNoiseTexIndex = blueNoiseSlot;
+
             sceneUboBuffer->writeToBuffer(&uboData, sizeof(SceneUbo), 0);
             sceneUboBuffer->flush(sizeof(SceneUbo), 0);
 
@@ -264,7 +278,6 @@ namespace Engine
                                                   renderer.getSwapChain().getDepthFormat(), currentExtent,
                                                   VK_IMAGE_LAYOUT_UNDEFINED);
 
-                renderGraph.addPass(&zPrePass);
                 renderGraph.addPass(&forwardPass);
                 renderGraph.addPass(&fxaaPass);
                 renderGraph.compile();
@@ -293,7 +306,8 @@ namespace Engine
                 .commandBuffer = cmd,
                 .camera = camera,
                 .gameObjects = gameObjects,
-                .renderGraph = &renderGraph
+                .renderGraph = &renderGraph,
+                .jobSystem = &jobSystem
             };
 
             renderGraph.execute(cmd, info);

@@ -380,6 +380,7 @@ namespace Engine
 
                     bool isMask = (resourceHeap.getMaterials()[globalMatID].flags & 1u) != 0u;
                     bool isBlend = (resourceHeap.getMaterials()[globalMatID].flags & 2u) != 0u;
+                    bool isDoubleSided = (resourceHeap.getMaterials()[globalMatID].flags & 4u) != 0u;
 
                     AlphaMode mode = AlphaMode::Opaque;
                     if (isBlend) mode = AlphaMode::Blend;
@@ -388,10 +389,25 @@ namespace Engine
                     std::vector<Model::Vertex> vertices = prim.vertices;
                     for (auto& v : vertices) v.texId = globalMatID;
 
+                    glm::vec3 minAABB = glm::vec3(std::numeric_limits<float>::max());
+                    glm::vec3 maxAABB = glm::vec3(std::numeric_limits<float>::lowest());
+                    for (const auto& v : vertices) {
+                        minAABB = glm::min(minAABB, v.position);
+                        maxAABB = glm::max(maxAABB, v.position);
+                    }
+                    glm::vec3 center = (minAABB + maxAABB) * 0.5f;
+                    float radius = 0.0f;
+                    for (const auto& v : vertices) {
+                        radius = glm::max(radius, glm::distance(center, v.position));
+                    }
+                    glm::vec4 boundingSphere = glm::vec4(center, radius);
+
                     if (p == 0)
                     {
                         obj.subMesh = megaBuffer.registerMesh(vertices, prim.indices);
                         obj.alphaMode = mode;
+                        obj.doubleSided = isDoubleSided;
+                        obj.boundingSphere = boundingSphere;
                     }
                     else
                     {
@@ -399,6 +415,8 @@ namespace Engine
                         child.transform = parsedNode.transform;
                         child.subMesh = megaBuffer.registerMesh(vertices, prim.indices);
                         child.alphaMode = mode;
+                        child.doubleSided = isDoubleSided;
+                        child.boundingSphere = boundingSphere;
 
                         extraNodes.push_back(std::move(child));
                     }

@@ -42,5 +42,6 @@ namespace Engine
 
         std::deque<Texture2D> sceneTextures;
         std::vector<GameObject> gameObjects;
+
     };
 }
