@@ -279,7 +279,7 @@ namespace Engine
 
     void IBL::generateIrradiance()
     {
-        const VkFormat format = VK_FORMAT_R32G32B32A32_SFLOAT;
+        const VkFormat format = VK_FORMAT_R16G16B16A16_SFLOAT;
         const uint32_t numMips = static_cast<uint32_t>(floor(log2(dimIrradiance))) + 1;
 
         VkImageCreateInfo imageCI{};
@@ -443,15 +443,23 @@ namespace Engine
         dynamicState.pDynamicStates = dynamicStateEnables.data();
         dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStateEnables.size());
 
-        auto bindingDesc = Engine::Model::Vertex::getBindingDescriptions();
-        auto attrDesc = Engine::Model::Vertex::getAttributeDescriptions();
+        VkVertexInputBindingDescription bindingDesc{};
+        bindingDesc.binding = 0;
+        bindingDesc.stride = sizeof(Engine::Model::VertexPosition);
+        bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+        VkVertexInputAttributeDescription attrDesc{};
+        attrDesc.binding = 0;
+        attrDesc.location = 0;
+        attrDesc.format = VK_FORMAT_R32G32B32_SFLOAT;
+        attrDesc.offset = offsetof(Engine::Model::VertexPosition, position);
 
         VkPipelineVertexInputStateCreateInfo vertexInputState{};
         vertexInputState.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-        vertexInputState.vertexBindingDescriptionCount = static_cast<uint32_t>(bindingDesc.size());
-        vertexInputState.pVertexBindingDescriptions = bindingDesc.data();
-        vertexInputState.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDesc.size());
-        vertexInputState.pVertexAttributeDescriptions = attrDesc.data();
+        vertexInputState.vertexBindingDescriptionCount = 1;
+        vertexInputState.pVertexBindingDescriptions = &bindingDesc;
+        vertexInputState.vertexAttributeDescriptionCount = 1;
+        vertexInputState.pVertexAttributeDescriptions = &attrDesc;
 
         auto vertCode = ShaderUtils::readFile("shaders/filtercube.vert.spv");
         auto fragCode = ShaderUtils::readFile("shaders/irradiancecube.frag.spv");
@@ -561,7 +569,7 @@ namespace Engine
                 vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelinelayout, 0, 1, &descriptorset,
                                         0, nullptr);
 
-                megaBuffer.bind(cmdBuf, cube.subMesh.bufferIndex);
+                megaBuffer.bind(cmdBuf);
                 vkCmdDrawIndexed(cmdBuf, cube.subMesh.indexCount, 1, cube.subMesh.firstIndex, cube.subMesh.vertexOffset,
                                  0);
 
@@ -765,15 +773,23 @@ namespace Engine
         dynamicState.pDynamicStates = dynamicStateEnables.data();
         dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStateEnables.size());
 
-        auto bindingDesc = Engine::Model::Vertex::getBindingDescriptions();
-        auto attrDesc = Engine::Model::Vertex::getAttributeDescriptions();
+        VkVertexInputBindingDescription bindingDesc{};
+        bindingDesc.binding = 0;
+        bindingDesc.stride = sizeof(Engine::Model::VertexPosition);
+        bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+        VkVertexInputAttributeDescription attrDesc{};
+        attrDesc.binding = 0;
+        attrDesc.location = 0;
+        attrDesc.format = VK_FORMAT_R32G32B32_SFLOAT;
+        attrDesc.offset = offsetof(Engine::Model::VertexPosition, position);
 
         VkPipelineVertexInputStateCreateInfo vertexInputState{};
         vertexInputState.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-        vertexInputState.vertexBindingDescriptionCount = static_cast<uint32_t>(bindingDesc.size());
-        vertexInputState.pVertexBindingDescriptions = bindingDesc.data();
-        vertexInputState.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDesc.size());
-        vertexInputState.pVertexAttributeDescriptions = attrDesc.data();
+        vertexInputState.vertexBindingDescriptionCount = 1;
+        vertexInputState.pVertexBindingDescriptions = &bindingDesc;
+        vertexInputState.vertexAttributeDescriptionCount = 1;
+        vertexInputState.pVertexAttributeDescriptions = &attrDesc;
 
         auto vertCode = ShaderUtils::readFile("shaders/filtercube.vert.spv");
         auto fragCode = ShaderUtils::readFile("shaders/prefilterenvmap.frag.spv");
@@ -884,7 +900,7 @@ namespace Engine
                 vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelinelayout, 0, 1, &descriptorset,
                                         0, nullptr);
 
-                megaBuffer.bind(cmdBuf, cube.subMesh.bufferIndex);
+                megaBuffer.bind(cmdBuf);
 
                 vkCmdDrawIndexed(cmdBuf, cube.subMesh.indexCount, 1, cube.subMesh.firstIndex, cube.subMesh.vertexOffset,
                                  0);

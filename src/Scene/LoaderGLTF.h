@@ -22,16 +22,19 @@ namespace Engine
 {
     struct ParsedImage
     {
-        std::vector<unsigned char> pixels;
+        std::vector<unsigned char> data;
         uint32_t width = 0;
         uint32_t height = 0;
         bool isValid = false;
         bool isSRGB = false;
+        bool isKTX2 = false;
+        void* ktxTexPtr = nullptr;
     };
 
     struct ParsedPrimitive
     {
-        std::vector<Model::Vertex> vertices;
+        std::vector<Model::VertexPosition> positions;
+        std::vector<Model::VertexAttribute> attributes;
         std::vector<uint32_t> indices;
         uint32_t localMaterialIndex = 0; // 0 = Default, index+1 = GLTF Material Index
     };

@@ -38,5 +38,7 @@ namespace Engine
         VkDescriptorPool descriptorPool{VK_NULL_HANDLE};
         std::vector<VkDescriptorSet> descriptorSets;
         VkSampler sampler{VK_NULL_HANDLE};
+
+        std::vector<VkImageView> cachedViews;
     };
 }

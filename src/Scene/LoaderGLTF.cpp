@@ -50,21 +50,29 @@ namespace Engine
                 auto& gltfImage = asset.images[i];
                 auto& parsedImg = outData.images[i];
 
-                int width, height, channels;
-                stbi_uc* pixels = nullptr;
+                const uint8_t* rawData = nullptr;
+                size_t rawSize = 0;
+                std::vector<uint8_t> fileBuffer; // To hold data if loaded via URI
 
+                // 1. Extract raw bytes regardless of source type
                 std::visit(fastgltf::visitor{
                                [&](fastgltf::sources::URI& uriSource)
                                {
                                    std::string path = (assetDir / uriSource.uri.path()).string();
-                                   pixels = stbi_load(path.c_str(), &width, &height, &channels, STBI_rgb_alpha);
+                                   std::ifstream file(path, std::ios::binary | std::ios::ate);
+                                   if (file)
+                                   {
+                                       rawSize = file.tellg();
+                                       file.seekg(0, std::ios::beg);
+                                       fileBuffer.resize(rawSize);
+                                       file.read(reinterpret_cast<char*>(fileBuffer.data()), rawSize);
+                                       rawData = fileBuffer.data();
+                                   }
                                },
                                [&](fastgltf::sources::Array& arraySource)
                                {
-                                   pixels = stbi_load_from_memory(
-                                       reinterpret_cast<const stbi_uc*>(arraySource.bytes.data()),
-                                       static_cast<int>(arraySource.bytes.size()),
-                                       &width, &height, &channels, STBI_rgb_alpha);
+                                   rawData = reinterpret_cast<const uint8_t*>(arraySource.bytes.data());
+                                   rawSize = arraySource.bytes.size();
                                },
                                [&](fastgltf::sources::BufferView& viewSource)
                                {
@@ -74,19 +82,21 @@ namespace Engine
                                    std::visit(fastgltf::visitor{
                                                   [&](fastgltf::sources::Array& arraySource)
                                                   {
-                                                      pixels = stbi_load_from_memory(
-                                                          reinterpret_cast<const stbi_uc*>(arraySource.bytes.data() +
-                                                              bufferView.byteOffset),
-                                                          static_cast<int>(bufferView.byteLength),
-                                                          &width, &height, &channels, STBI_rgb_alpha);
+                                                      rawData = reinterpret_cast<const uint8_t*>(arraySource.bytes.
+                                                          data() + bufferView.byteOffset);
+                                                      rawSize = bufferView.byteLength;
                                                   },
                                                   [&](fastgltf::sources::Vector& vectorSource)
                                                   {
-                                                      pixels = stbi_load_from_memory(
-                                                          reinterpret_cast<const stbi_uc*>(vectorSource.bytes.data() +
-                                                              bufferView.byteOffset),
-                                                          static_cast<int>(bufferView.byteLength),
-                                                          &width, &height, &channels, STBI_rgb_alpha);
+                                                      rawData = reinterpret_cast<const uint8_t*>(vectorSource.bytes.
+                                                          data() + bufferView.byteOffset);
+                                                      rawSize = bufferView.byteLength;
+                                                  },
+                                                  [&](fastgltf::sources::ByteView& byteViewSource)
+                                                  {
+                                                      rawData = reinterpret_cast<const uint8_t*>(byteViewSource.bytes.
+                                                          data() + bufferView.byteOffset);
+                                                      rawSize = bufferView.byteLength;
                                                   },
                                                   [&](auto&)
                                                   {
@@ -98,14 +108,58 @@ namespace Engine
                                }
                            }, gltfImage.data);
 
-                if (pixels)
+                if (rawData && rawSize > 0)
                 {
-                    parsedImg.width = static_cast<uint32_t>(width);
-                    parsedImg.height = static_cast<uint32_t>(height);
-                    size_t imageSize = width * height * 4;
-                    parsedImg.pixels.assign(pixels, pixels + imageSize);
-                    parsedImg.isValid = true;
-                    stbi_image_free(pixels);
+                    // 2. Sniff the Magic Number for KTX2 (12 bytes)
+                    bool isKTX2 = false;
+                    if (rawSize >= 12)
+                    {
+                        const uint8_t ktx2Magic[] = {
+                            0xAB, 0x4B, 0x54, 0x58, 0x20, 0x32, 0x30, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A
+                        };
+                        if (memcmp(rawData, ktx2Magic, 12) == 0)
+                        {
+                            isKTX2 = true;
+                        }
+                    }
+
+                    if (isKTX2)
+                    {
+                        parsedImg.isKTX2 = true;
+
+                        ktxTexture* ktxTex = nullptr;
+                        if (ktxTexture_CreateFromMemory(rawData, rawSize, KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &ktxTex) == KTX_SUCCESS)
+                        {
+                            if (ktxTexture_NeedsTranscoding(ktxTex))
+                            {
+                                ktxTexture2* k2 = reinterpret_cast<ktxTexture2*>(ktxTex);
+                                ktxTexture2_TranscodeBasis(k2, KTX_TTF_BC7_RGBA, 0);
+                            }
+                            parsedImg.ktxTexPtr = ktxTex;
+                            parsedImg.isValid = true;
+                        }
+                        else
+                        {
+                            parsedImg.isValid = false;
+                        }
+                    }
+                    else
+                    {
+                        // Fallback: Decode PNG/JPEG to raw RGBA pixels
+                        int width, height, channels;
+                        stbi_uc* pixels = stbi_load_from_memory(rawData, static_cast<int>(rawSize), &width, &height,
+                                                                &channels, STBI_rgb_alpha);
+                        if (pixels)
+                        {
+                            parsedImg.width = static_cast<uint32_t>(width);
+                            parsedImg.height = static_cast<uint32_t>(height);
+                            size_t imageSize = width * height * 4;
+                            parsedImg.data.assign(pixels, pixels + imageSize);
+                            parsedImg.isKTX2 = false;
+                            parsedImg.isValid = true;
+                            stbi_image_free(pixels);
+                        }
+                    }
                 }
             }));
         }
@@ -120,11 +174,22 @@ namespace Engine
     {
         auto getTexIndex = [&](const auto& texInfo, bool isSRGB = false) -> uint32_t
         {
-            if (texInfo.has_value() && asset.textures[texInfo->textureIndex].imageIndex.has_value())
+            if (texInfo.has_value())
             {
-                uint32_t imgIdx = static_cast<uint32_t>(asset.textures[texInfo->textureIndex].imageIndex.value());
-                if (isSRGB) outData.images[imgIdx].isSRGB = true;
-                return imgIdx;
+                auto& texture = asset.textures[texInfo->textureIndex];
+
+                if (texture.basisuImageIndex.has_value())
+                {
+                    uint32_t imgIdx = static_cast<uint32_t>(texture.basisuImageIndex.value());
+                    if (isSRGB) outData.images[imgIdx].isSRGB = true;
+                    return imgIdx;
+                }
+                else if (texture.imageIndex.has_value())
+                {
+                    uint32_t imgIdx = static_cast<uint32_t>(texture.imageIndex.value());
+                    if (isSRGB) outData.images[imgIdx].isSRGB = true;
+                    return imgIdx;
+                }
             }
             return ResourceHeap::INVALID_HANDLE;
         };
@@ -133,11 +198,11 @@ namespace Engine
         {
             ResourceHeap::MaterialData cpuMat{};
 
-            cpuMat.albedoIndex = getTexIndex(mat.pbrData.baseColorTexture, true);
-            cpuMat.normalIndex = getTexIndex(mat.normalTexture, false);
+            cpuMat.albedoIndex            = getTexIndex(mat.pbrData.baseColorTexture, true);
+            cpuMat.normalIndex            = getTexIndex(mat.normalTexture, false);
             cpuMat.roughnessMetallicIndex = getTexIndex(mat.pbrData.metallicRoughnessTexture, false);
-            cpuMat.emissiveIndex = getTexIndex(mat.emissiveTexture, true);
-            cpuMat.occlusionIndex = getTexIndex(mat.occlusionTexture, false);
+            cpuMat.emissiveIndex          = getTexIndex(mat.emissiveTexture, true);
+            cpuMat.occlusionIndex         = getTexIndex(mat.occlusionTexture, false);
 
             cpuMat.albedoFactor = glm::vec4(mat.pbrData.baseColorFactor[0], mat.pbrData.baseColorFactor[1],
                                             mat.pbrData.baseColorFactor[2], mat.pbrData.baseColorFactor[3]);
@@ -204,17 +269,18 @@ namespace Engine
                                                         : 0;
 
                     auto& posAccessor = asset.accessors[positionIt->accessorIndex];
-                    parsedPrim.vertices.resize(posAccessor.count);
+                    parsedPrim.positions.resize(posAccessor.count);
+                    parsedPrim.attributes.resize(posAccessor.count);
 
                     // --- BASE VERTEX DATA (Positions & Defaults) ---
                     fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(
                         asset, posAccessor, [&](fastgltf::math::fvec3 p, std::size_t idx)
                         {
-                            parsedPrim.vertices[idx].position = glm::vec3(p.x(), p.y(), p.z());
-                            parsedPrim.vertices[idx].color = glm::vec3(1.0f);
-                            parsedPrim.vertices[idx].normal = glm::vec3(0.0f, 1.0f, 0.0f);
-                            parsedPrim.vertices[idx].tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
-                            parsedPrim.vertices[idx].uv = glm::vec2(0.0f);
+                            parsedPrim.positions[idx].position = glm::vec3(p.x(), p.y(), p.z());
+                            parsedPrim.attributes[idx].color = glm::vec3(1.0f);
+                            parsedPrim.attributes[idx].normal = glm::vec3(0.0f, 1.0f, 0.0f);
+                            parsedPrim.attributes[idx].tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
+                            parsedPrim.attributes[idx].uv = glm::vec2(0.0f);
                         });
 
                     // --- UVS ---
@@ -224,7 +290,7 @@ namespace Engine
                         fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec2>(
                             asset, asset.accessors[uvIt->accessorIndex], [&](fastgltf::math::fvec2 uv, std::size_t idx)
                             {
-                                parsedPrim.vertices[idx].uv = glm::vec2(uv.x(), uv.y());
+                                parsedPrim.attributes[idx].uv = glm::vec2(uv.x(), uv.y());
                             });
                     }
 
@@ -236,7 +302,7 @@ namespace Engine
                             asset, asset.accessors[normalIt->accessorIndex],
                             [&](fastgltf::math::fvec3 n, std::size_t idx)
                             {
-                                parsedPrim.vertices[idx].normal = glm::vec3(n.x(), n.y(), n.z());
+                                parsedPrim.attributes[idx].normal = glm::vec3(n.x(), n.y(), n.z());
                             });
                     }
 
@@ -248,7 +314,7 @@ namespace Engine
                             asset, asset.accessors[tangentIt->accessorIndex],
                             [&](fastgltf::math::fvec4 t, std::size_t idx)
                             {
-                                parsedPrim.vertices[idx].tangent = glm::vec4(t.x(), t.y(), t.z(), t.w());
+                                parsedPrim.attributes[idx].tangent = glm::vec4(t.x(), t.y(), t.z(), t.w());
                             });
                     }
 
@@ -260,7 +326,7 @@ namespace Engine
                             asset, asset.accessors[colorIt->accessorIndex],
                             [&](fastgltf::math::fvec4 c, std::size_t idx)
                             {
-                                parsedPrim.vertices[idx].color = glm::vec3(c.x(), c.y(), c.z());
+                                parsedPrim.attributes[idx].color = glm::vec3(c.x(), c.y(), c.z());
                             });
                     }
 
@@ -297,20 +363,31 @@ namespace Engine
         for (size_t i = 0; i < parsedData.images.size(); ++i)
         {
             auto& parsedImg = parsedData.images[i];
-            if (!parsedImg.isValid || parsedImg.pixels.empty()) continue;
+            bool hasData = parsedImg.isKTX2 ? (parsedImg.ktxTexPtr != nullptr) : (!parsedImg.data.empty());
+            if (!parsedImg.isValid || !hasData) continue;
 
             outTextures.emplace_back();
-
             Texture2D& tex = outTextures.back();
 
-            tex.fromBuffer(
-                parsedImg.pixels.data(),
-                parsedImg.pixels.size(),
-                parsedImg.isSRGB ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM,
-                parsedImg.width,
-                parsedImg.height,
-                &device,
-                resourceHeap);
+            if (parsedImg.isKTX2)
+            {
+                tex.fromKTXPtr(
+                    parsedImg.ktxTexPtr,
+                    &device,
+                    resourceHeap);
+            }
+            else
+            {
+                // Fallback for standard uncompressed PNG/JPGs
+                tex.fromBuffer(
+                    parsedImg.data.data(),
+                    parsedImg.data.size(),
+                    parsedImg.isSRGB ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM,
+                    parsedImg.width,
+                    parsedImg.height,
+                    &device,
+                    resourceHeap);
+            }
 
             imageIndexToHeapSlot[i] = tex.heapHandle.index;
         }
@@ -386,25 +463,29 @@ namespace Engine
                     if (isBlend) mode = AlphaMode::Blend;
                     else if (isMask) mode = AlphaMode::Mask;
 
-                    std::vector<Model::Vertex> vertices = prim.vertices;
-                    for (auto& v : vertices) v.texId = globalMatID;
+                    std::vector<Model::VertexPosition> positions = prim.positions;
+                    std::vector<Model::VertexAttribute> attributes = prim.attributes;
+
+                    for (auto& v : attributes) v.texId = globalMatID;
 
                     glm::vec3 minAABB = glm::vec3(std::numeric_limits<float>::max());
                     glm::vec3 maxAABB = glm::vec3(std::numeric_limits<float>::lowest());
-                    for (const auto& v : vertices) {
+                    for (const auto& v : positions)
+                    {
                         minAABB = glm::min(minAABB, v.position);
                         maxAABB = glm::max(maxAABB, v.position);
                     }
                     glm::vec3 center = (minAABB + maxAABB) * 0.5f;
                     float radius = 0.0f;
-                    for (const auto& v : vertices) {
+                    for (const auto& v : positions)
+                    {
                         radius = glm::max(radius, glm::distance(center, v.position));
                     }
                     glm::vec4 boundingSphere = glm::vec4(center, radius);
 
                     if (p == 0)
                     {
-                        obj.subMesh = megaBuffer.registerMesh(vertices, prim.indices);
+                        obj.subMesh = megaBuffer.registerMesh(positions, attributes, prim.indices);
                         obj.alphaMode = mode;
                         obj.doubleSided = isDoubleSided;
                         obj.boundingSphere = boundingSphere;
@@ -412,11 +493,15 @@ namespace Engine
                     else
                     {
                         GameObject child = GameObject::createGameObject();
-                        child.transform = parsedNode.transform;
-                        child.subMesh = megaBuffer.registerMesh(vertices, prim.indices);
+
+                        child.transform = TransformComponent{};
+
+                        child.subMesh = megaBuffer.registerMesh(positions, attributes, prim.indices);
                         child.alphaMode = mode;
                         child.doubleSided = isDoubleSided;
                         child.boundingSphere = boundingSphere;
+
+                        obj.addChild(child);
 
                         extraNodes.push_back(std::move(child));
                     }
@@ -439,7 +524,8 @@ namespace Engine
         static constexpr auto supportedExtensions =
             fastgltf::Extensions::KHR_mesh_quantization |
             fastgltf::Extensions::KHR_texture_transform |
-            fastgltf::Extensions::KHR_materials_variants;
+            fastgltf::Extensions::KHR_materials_variants |
+            fastgltf::Extensions::KHR_texture_basisu;
 
         fastgltf::Parser parser(supportedExtensions);
 

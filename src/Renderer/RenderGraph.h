@@ -43,6 +43,8 @@ namespace Engine
         std::string name;
         VkFormat format;
         VkExtent2D extent;
+        VkImageUsageFlags usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        VkClearValue clearValue = {};
     };
 
     struct TransientResource
@@ -112,6 +114,7 @@ namespace Engine
 
         bool isDepthFormat(VkFormat format);
         VkImageView getImageView(const std::string& name) const;
+        VkImage getImage(const std::string& name) const;
 
     private:
         Device& device;
@@ -158,7 +161,12 @@ namespace Engine
             VkPipelineStageFlags2 stageMask,
             VkAccessFlags2 accessMask);
 
-        void createTransientImage(const std::string& name, VkFormat format, VkExtent2D extent);
+        void createTransientImage(
+            const std::string& name,
+            VkFormat format,
+            VkExtent2D extent,
+            VkImageUsageFlags usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+            VkClearValue clearValue = {});
 
     private:
         std::vector<ImageUsageDeclaration>& imageUsages;

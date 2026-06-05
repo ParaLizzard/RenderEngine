@@ -5,39 +5,10 @@ const float PI = 3.141592;
 const vec3 Fdielectric = vec3(0.04);
 const float Epsilon = 0.00001;
 
-layout (location = 0) in vec3 inWorldPos;
-layout (location = 1) in vec3 inNormal;
-layout (location = 2) in vec2 inUV;
-layout (location = 3) in vec4 inTangent;
-layout (location = 4) in flat uint inTexID;
-layout (location = 5) in vec3 inColor;
-
+layout (location = 0) in vec2 inUV; // from fullscreen.vert
 layout (location = 0) out vec4 color;
 
-struct Material {
-    vec4  albedoFactor;
-    vec4  emissiveFactor;
-    uint  albedoIndex;
-    uint  normalIndex;
-    uint  roughnessMetallicIndex;
-    uint  emissiveIndex;
-    uint  occlusionIndex;
-    uint  flags;
-    float alphaCutoff;
-    float normalScale;
-    float roughnessFactor;
-    float metallicFactor;
-    uint  padding[2];
-};
-
-layout(push_constant) uniform PushConsts {
-    layout(offset = 128) uint debugIsTransparent;
-} push;
-
-layout(set = 0, binding = 0) readonly buffer MaterialBuffer {
-    Material materials[];
-};
-
+// --- Set 0: Scene Data & IBL ---
 layout(set = 0, binding = 1) uniform SceneData {
     vec4 cameraPosition;
     vec4 directionalLight;
@@ -48,9 +19,21 @@ layout(set = 0, binding = 1) uniform SceneData {
 layout(set = 0, binding = 2) uniform samplerCube irradianceMap;
 layout(set = 0, binding = 3) uniform samplerCube prefilterMap;
 layout(set = 0, binding = 4) uniform sampler2D   brdfLUT;
+layout(set = 0, binding = 5) uniform sampler2D   textures[]; // For blue noise
 
-layout(set = 0, binding = 5) uniform sampler2D textures[];
+// --- Set 1: G-Buffer Inputs ---
+layout(set = 1, binding = 0) uniform sampler2D gAlbedoMetallic;
+layout(set = 1, binding = 1) uniform sampler2D gNormalRoughness;
+layout(set = 1, binding = 2) uniform sampler2D gDepth;
+layout(set = 1, binding = 3) uniform sampler2D gSsao;
 
+layout(push_constant) uniform PushConsts {
+    mat4 invViewProjection;
+    uint debugIsTransparent;
+    uint ssao;
+} push;
+
+// --- PBR Helper Functions ---
 float ndfGGX(float cosLh, float roughness) {
     float alpha   = roughness * roughness;
     float alphaSq = alpha * alpha;
@@ -76,11 +59,6 @@ vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness) {
     return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
-float interleavedGradientNoise(vec2 n) {
-    return fract(52.9829189 * fract(dot(n, vec2(0.06711056, 0.00583715))));
-}
-
-
 vec3 agxDefaultContrastApprox(vec3 x) {
     vec3 x2 = x * x;
     vec3 x4 = x2 * x2;
@@ -91,71 +69,59 @@ vec3 agx(vec3 color) {
     const mat3 agx_mat = mat3(
     0.842479062253094, 0.0423282422610123, 0.0423756549057051,
     0.0784335999999992,  0.878468636469772,  0.0784336,
-    0.0792237451477643, 0.0791661274605434, 0.879142973793104
-    );
+    0.0792237451477643, 0.0791661274605434, 0.879142973793104);
     const mat3 agx_mat_inv = mat3(
     1.19687900512017, -0.0528968517574562, -0.0529716355144438,
     -0.0980208811401368, 1.15190312990417, -0.0980434501171241,
-    -0.0990297440797205, -0.0989611768448433, 1.15107367264116
-    );
+    -0.0990297440797205, -0.0989611768448433, 1.15107367264116);
 
     const float minEv = -12.47393;
     const float maxEv = 4.026069;
 
     color = agx_mat * color;
-
     color = clamp(log2(max(color, 1e-10)), minEv, maxEv);
     color = (color - minEv) / (maxEv - minEv);
-
     color = agxDefaultContrastApprox(color);
-
     color = agx_mat_inv * color;
 
     return clamp(color, 0.0, 1.0);
 }
 
+// Reconstruct world position from depth
+vec3 reconstructWorldPos(vec2 uv, float depth) {
+    vec4 ndc = vec4(uv * 2.0 - 1.0, depth, 1.0);
+    vec4 worldPos = push.invViewProjection * ndc;
+    return worldPos.xyz / worldPos.w;
+}
 
 void main() {
-    Material mat = materials[inTexID];
+    float depth = texture(gDepth, inUV).r;
 
-    // This tanks FMA performance
-    vec4 albedo = texture(textures[nonuniformEXT(mat.albedoIndex)], inUV) * mat.albedoFactor;
-
-    /*
-    if (push.debugIsTransparent == 1u) {
-        if (albedo.a < 0.1) {
-            color = vec4(albedo.rgb + vec3(0.0, 0.2, 0.0), 1.0);
-            return;
-        }
-    }*/
-
-    uint isMask = mat.flags & 1u;
-    if (isMask != 0u && albedo.a < mat.alphaCutoff) {
-        discard;
+    // Background discard (assuming clear depth is 1.0)
+    if (depth >= 1.0) {
+        color = vec4(0.02, 0.02, 0.02, 1.0);
+        return;
     }
 
-    float roughness = texture(textures[nonuniformEXT(mat.roughnessMetallicIndex)], inUV).g * mat.roughnessFactor;
-    float metalness = texture(textures[nonuniformEXT(mat.roughnessMetallicIndex)], inUV).b * mat.metallicFactor;
+    // Unpack G-Buffer
+    vec4 albedoMetallic = texture(gAlbedoMetallic, inUV);
+    vec3 albedo = albedoMetallic.rgb;
+    float metalness = albedoMetallic.a;
 
-    vec3 T = normalize(inTangent.xyz);
-    vec3 N = normalize(inNormal);
-    vec3 B = cross(N, T) * inTangent.w;
+    vec4 normalRoughness = texture(gNormalRoughness, inUV);
+    vec3 worldNormal = normalize(normalRoughness.xyz * 2.0 - 1.0);
 
-    if (!gl_FrontFacing) {
-        T = -T;
-        B = -B;
-        N = -N;
-    }
+    float roughness = normalRoughness.a;
 
-    mat3 TBN = mat3(T, B, N);
+    vec3 worldPos = reconstructWorldPos(inUV, depth);
 
-    // This tanks FMA performance
-    vec3 tNorm = texture(textures[nonuniformEXT(mat.normalIndex)], inUV).rgb * 2.0 - 1.0;
+    // AO handling
+    ivec2 pixelCoord = ivec2(gl_FragCoord.xy);
+    float totalAo = texture(gSsao, inUV).r;
+    if(push.ssao == 0) totalAo = 1.0;
 
-    tNorm.xy  *= mat.normalScale;
-    vec3 worldNormal = normalize(TBN * tNorm);
-
-    vec3 V = normalize(scene.cameraPosition.xyz - inWorldPos);
+    // Direct Lighting Variables
+    vec3 V = normalize(scene.cameraPosition.xyz - worldPos);
     vec3 L = normalize(-scene.directionalLight.xyz);
     vec3 H = normalize(V + L);
 
@@ -165,12 +131,11 @@ void main() {
 
     vec3 F0 = mix(Fdielectric, albedo.rgb, metalness);
 
-    vec3 Lo = vec3(0.0);
-
+    // Direct Lighting Calculation
     float wrap = 0.5;
     float NdotL_diffuse = clamp((rawNdotL + wrap) / (1.0 + wrap), 0.0, 1.0);
-
     float lightRoughness = max(roughness, 0.05);
+
     float NDF = ndfGGX(max(dot(worldNormal, H), 0.0), lightRoughness);
     float G   = gaSchlickGGX(NdotL, NdotV, lightRoughness);
     vec3  F   = fresnelSchlick(F0, max(dot(H, V), 0.0));
@@ -178,48 +143,37 @@ void main() {
     vec3 specular = (NDF * G * F) / (4.0 * NdotV * NdotL + Epsilon);
     vec3 kD       = (vec3(1.0) - F) * (1.0 - metalness);
 
-    Lo = (kD * albedo.rgb / PI * NdotL_diffuse + specular * NdotL) * vec3(2.0);
+    vec3 Lo = (kD * albedo.rgb / PI * NdotL_diffuse + specular * NdotL) * vec3(2.0);
 
+    // IBL / Ambient Calculation
     vec3 F_ambient  = fresnelSchlickRoughness(NdotV, F0, roughness);
     vec3 kD_ambient = (vec3(1.0) - F_ambient) * (1.0 - metalness);
 
     vec3 sampleN = vec3(worldNormal.x, -worldNormal.y, worldNormal.z);
-
-    vec3 irradiance      = texture(irradianceMap, sampleN).rgb;
+    vec3 irradiance = texture(irradianceMap, sampleN).rgb;
     vec3 diffuse_ambient = irradiance * albedo.rgb;
 
-    // This tanks TEX perfomance
     float MAX_REFLECTION_LOD = scene.maxReflectionLod;
-    vec3  R                  = reflect(-V, worldNormal);
-
+    vec3 R = reflect(-V, worldNormal);
     vec3 sampleR = vec3(R.x, -R.y, R.z);
 
-    vec3  prefilteredColor   = textureLod(prefilterMap, sampleR, roughness * MAX_REFLECTION_LOD).rgb;
-    vec2  envBRDF            = texture(brdfLUT, vec2(NdotV, roughness)).rg;
+    vec3 prefilteredColor = textureLod(prefilterMap, sampleR, roughness * MAX_REFLECTION_LOD).rgb;
+    vec2 envBRDF = texture(brdfLUT, vec2(NdotV, roughness)).rg;
+    vec3 specular_ambient = prefilteredColor * (F_ambient * envBRDF.x + envBRDF.y);
 
-    // This tanks FMA performance
-    vec3  specular_ambient   = prefilteredColor * (F_ambient * envBRDF.x + envBRDF.y);
-
-    vec3 ambient    = kD_ambient * diffuse_ambient + specular_ambient;
+    vec3 ambient = (kD_ambient * diffuse_ambient + specular_ambient) * totalAo;
     vec3 finalColor = ambient + Lo;
 
+    // Tonemapping
     float exposure = 0.1;
     finalColor *= exposure;
-
     finalColor = agx(finalColor);
 
-    ivec2 pixelCoord = ivec2(gl_FragCoord.xy);
-
+    // Dither
     ivec2 noiseSize = textureSize(textures[nonuniformEXT(scene.blueNoiseTexIndex)], 0);
-
     ivec2 noiseCoord = pixelCoord % noiseSize;
-
     float dither = texelFetch(textures[nonuniformEXT(scene.blueNoiseTexIndex)], noiseCoord, 0).r - 0.5;
-
     finalColor += dither / 255.0;
 
-    //finalColor = pow(finalColor, vec3(1.0 / 2.2));
-
-
-    color = vec4(finalColor, albedo.a);
+    color = vec4(finalColor, 1.0);
 }

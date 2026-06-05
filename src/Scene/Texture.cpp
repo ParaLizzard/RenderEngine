@@ -478,6 +478,108 @@ namespace Engine
         this->heapHandle = resourceHeap.registerTexture(this->descriptor);
     }
 
+    void Texture2D::fromKTXPtr(void* ktxTexPtr, Device* device, ResourceHeap& resourceHeap, VkFilter filter, VkImageUsageFlags imageUsageFlags, VkImageLayout imageLayout)
+    {
+        if (!ktxTexPtr) throw std::runtime_error("Texture: KTX Pointer is null");
+
+        // Cast the async-transcoded pointer back to a ktxTexture
+        ktxTexture* ktxTexture = reinterpret_cast<::ktxTexture*>(ktxTexPtr);
+
+        this->device = device;
+        width = ktxTexture->baseWidth;
+        height = ktxTexture->baseHeight;
+        mipLevels = ktxTexture->numLevels;
+
+        VkFormat format = ktxTexture_GetVkFormat(ktxTexture);
+
+        ktx_uint8_t* ktxTextureData = ktxTexture_GetData(ktxTexture);
+        ktx_size_t ktxTextureSize = ktxTexture_GetDataSize(ktxTexture);
+
+        Buffer stgBuffer{*device, ktxTextureSize, 1, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, {}, 0};
+        stgBuffer.writeToBuffer(ktxTextureData, ktxTextureSize, 0);
+        stgBuffer.flush(ktxTextureSize, 0);
+
+        std::vector<VkBufferImageCopy> bufferCopyRegions;
+        for (uint32_t i = 0; i < mipLevels; i++)
+        {
+            ktx_size_t offset;
+            ktxTexture_GetImageOffset(ktxTexture, i, 0, 0, &offset);
+
+            VkBufferImageCopy bufferCopyRegion = {};
+            bufferCopyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            bufferCopyRegion.imageSubresource.mipLevel = i;
+            bufferCopyRegion.imageSubresource.baseArrayLayer = 0;
+            bufferCopyRegion.imageSubresource.layerCount = 1;
+            bufferCopyRegion.imageExtent.width = std::max(1u, ktxTexture->baseWidth >> i);
+            bufferCopyRegion.imageExtent.height = std::max(1u, ktxTexture->baseHeight >> i);
+            bufferCopyRegion.imageExtent.depth = 1;
+            bufferCopyRegion.bufferOffset = offset;
+            bufferCopyRegions.push_back(bufferCopyRegion);
+        }
+
+        VkImageCreateInfo imageCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            .imageType = VK_IMAGE_TYPE_2D,
+            .format = format,
+            .extent = {width, height, 1},
+            .mipLevels = mipLevels,
+            .arrayLayers = 1,
+            .samples = VK_SAMPLE_COUNT_1_BIT,
+            .tiling = VK_IMAGE_TILING_OPTIMAL,
+            .usage = imageUsageFlags | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
+        };
+
+        VmaAllocationCreateInfo allocInfo{};
+        allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+        if (vmaCreateImage(device->getAllocator(), &imageCreateInfo, &allocInfo, &image, &allocation, {}) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Failed to allocate KTX texture image");
+        }
+
+        VkCommandBuffer copyCmd = device->beginSingleTimeCommands();
+        VkImageSubresourceRange subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, mipLevels, 0, 1};
+
+        transitionImageLayout(copyCmd, image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, subresourceRange);
+        vkCmdCopyBufferToImage(copyCmd, stgBuffer.getBuffer(), image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, static_cast<uint32_t>(bufferCopyRegions.size()), bufferCopyRegions.data());
+
+        this->imageLayout = imageLayout;
+        transitionImageLayout(copyCmd, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, imageLayout, subresourceRange);
+
+        device->endSingleTimeCommands(copyCmd);
+
+        // Clean up the CPU texture memory now that it's on the GPU
+        ktxTexture_Destroy(ktxTexture);
+
+        // Create View and Sampler
+        VkImageViewCreateInfo viewCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .image = image,
+            .viewType = VK_IMAGE_VIEW_TYPE_2D,
+            .format = format,
+            .subresourceRange = subresourceRange
+        };
+        vkCreateImageView(device->getDevice(), &viewCreateInfo, nullptr, &view);
+
+        VkSamplerCreateInfo samplerCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+            .magFilter = filter, .minFilter = filter,
+            .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+            .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT, .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT, .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+            .mipLodBias = 0.0f,
+            .anisotropyEnable = VK_TRUE, .maxAnisotropy = device->getMaxAnisotoropy(),
+            .compareOp = VK_COMPARE_OP_NEVER,
+            .minLod = 0.0f, .maxLod = (float)mipLevels,
+            .borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE
+        };
+        vkCreateSampler(device->getDevice(), &samplerCreateInfo, nullptr, &sampler);
+
+        updateDescriptor();
+        this->heapHandle = resourceHeap.registerTexture(this->descriptor);
+    }
+
     void Texture2D::createDefaultTexture(Device* device, uint8_t r, uint8_t g, uint8_t b, uint8_t a,
                                          ResourceHeap& resourceHeap)
     {

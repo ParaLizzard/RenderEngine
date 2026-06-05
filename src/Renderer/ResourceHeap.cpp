@@ -79,7 +79,7 @@ namespace Engine
         bindings[5].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
 
         std::array<VkDescriptorBindingFlags, 6> bindingFlags{};
-        bindingFlags[0] = 0;
+        bindingFlags[0] = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
         bindingFlags[1] = 0;
         bindingFlags[2] = 0;
         bindingFlags[3] = 0;

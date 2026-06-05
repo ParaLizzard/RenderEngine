@@ -36,14 +36,11 @@ void main() {
     outColor = inColor;
 
     mat4 modelMatrix = objectData[gl_InstanceIndex].modelMatrix;
-
     vec4 locPos = modelMatrix * vec4(inPos, 1.0);
     outWorldPos = locPos.xyz;
-
     outUV = inUV;
 
     mat3 normalMatrix = mat3(objectData[gl_InstanceIndex].normalMatrix);
-
     outNormal = normalize(normalMatrix * inNormal);
 
     vec3 worldTangent = normalMatrix * inTangent.xyz;

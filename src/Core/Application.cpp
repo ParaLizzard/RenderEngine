@@ -2,8 +2,10 @@
 
 #include <stb_image.h>
 
-#include "Passes/ForwardPassNode.h"
+#include "Passes/GBufferPassNode.h"
 #include "Passes/FxaaPassNode.h"
+#include "Passes/LightPassNode.h"
+#include "Passes/SsaoPassNode.h"
 #include "Scene/IBL.h"
 #include "Scene/LoaderGLTF.h"
 
@@ -89,6 +91,10 @@ namespace Engine
 
     Application::~Application()
     {
+        for (auto& tex : sceneTextures)
+        {
+            tex.destroy();
+        }
     }
 
     void Application::run()
@@ -96,14 +102,18 @@ namespace Engine
         Camera camera{};
         camera.setViewTarget(glm::vec3{0.0f, 0.0f, -5.0f}, glm::vec3{0.0f, 0.0f, 0.0f});
 
-        ForwardPassNode forwardPass{device, renderer, megaBuffer, resourceHeap};
+        LightPassNode geometryPrepass(device, renderer, megaBuffer, resourceHeap);
+        SsaoPassNode ssaoPass{device,renderer, megaBuffer, resourceHeap};
+        GBufferPassNode forwardPass{device, renderer, megaBuffer, resourceHeap, geometryPrepass};
         FxaaPassNode fxaaPass{device, renderer, megaBuffer, resourceHeap};
 
 
         std::vector<std::future<ParsedGLTF>> pendingLoads;
         //pendingLoads.push_back(LoaderGLTF::loadAsync(jobSystem, "models/pbr_sphere.glb"));
+        //pendingLoads.push_back(LoaderGLTF::loadAsync(
+          //  jobSystem, "C:/Users/Jan Varga/Downloads/main_sponza (1)/main_sponza/NewSponza_Main_glTF_003.gltf"));
         pendingLoads.push_back(LoaderGLTF::loadAsync(
-            jobSystem, "C:/Users/Jan Varga/Downloads/main_sponza (1)/main_sponza/NewSponza_Main_glTF_003.gltf"));
+            jobSystem, "models/sponza_optimized.glb"));
         pendingLoads.push_back(LoaderGLTF::loadAsync(
             jobSystem, "C:/Users/Jan Varga/Downloads/pkg_a_curtains/pkg_a_curtains/NewSponza_Curtains_glTF.gltf"));
         //pendingLoads.push_back(LoaderGLTF::loadAsync(
@@ -154,6 +164,8 @@ namespace Engine
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
         );
 
+        megaBuffer.uploadToGPU();
+
         IBL ibl = IBL(device, skyBox, resourceHeap, megaBuffer, *cubeMeshNode);
 
         VkDescriptorImageInfo irradianceInfo{
@@ -185,6 +197,8 @@ namespace Engine
         resourceHeap.writeSceneUboDescriptor(uboInfo);
 
         flattenSceneGraph(gameObjects);
+        geometryPrepass.markSceneDirty();
+
 
         cameraObject = std::make_shared<GameObject>(GameObject::createGameObject());
         cameraObject->transform.translation = {0.f, 0.f, -5.f};
@@ -196,6 +210,16 @@ namespace Engine
         while (!window.shouldClose())
         {
             glfwPollEvents();
+
+            if (glfwGetKey(window.getGLFWWinodow(), GLFW_KEY_O) == GLFW_PRESS) {
+                if (!ssaoKeyPressed) {
+                    enableSSAO = !enableSSAO;
+                    ssaoKeyPressed = true;
+                    std::cout << "SSAO is now: " << (enableSSAO ? "ON" : "OFF") << "\n";
+                }
+            } else {
+                ssaoKeyPressed = false;
+            }
 
             float currentTime = static_cast<float>(glfwGetTime());
             float deltaTime = currentTime - lastTime;
@@ -217,6 +241,9 @@ namespace Engine
                     resourceHeap.uploadMaterialBuffer();
                     resourceHeap.writeMaterialDescriptor();
 
+                    megaBuffer.uploadToGPU();
+                    geometryPrepass.markSceneDirty();
+
                     std::cout << "Successfully streamed in async model!" << std::endl;
 
                     pendingLoads.erase(pendingLoads.begin() + i);
@@ -225,7 +252,7 @@ namespace Engine
 
             SceneUbo uboData{};
             uboData.cameraPosition = glm::vec4(cameraObject->transform.translation, 1.0f);
-            uboData.directionalLight = glm::vec4(glm::normalize(glm::vec3(cos(time), -1.0f, sin(time))), 1.0f);
+            uboData.directionalLight = glm::vec4(glm::normalize(glm::vec3(0.f, -50.0f, 0.f)), 1.0f);
             uboData.maxReflectionLod = static_cast<float>(ibl.prefilteredCube.mipLevels - 1);
             uboData.blueNoiseTexIndex = blueNoiseSlot;
 
@@ -278,6 +305,8 @@ namespace Engine
                                                   renderer.getSwapChain().getDepthFormat(), currentExtent,
                                                   VK_IMAGE_LAYOUT_UNDEFINED);
 
+                renderGraph.addPass(&geometryPrepass);
+                renderGraph.addPass(&ssaoPass);
                 renderGraph.addPass(&forwardPass);
                 renderGraph.addPass(&fxaaPass);
                 renderGraph.compile();
@@ -307,7 +336,8 @@ namespace Engine
                 .camera = camera,
                 .gameObjects = gameObjects,
                 .renderGraph = &renderGraph,
-                .jobSystem = &jobSystem
+                .jobSystem = &jobSystem,
+                .enableSSAO = enableSSAO
             };
 
             renderGraph.execute(cmd, info);
@@ -317,10 +347,5 @@ namespace Engine
         }
 
         vkDeviceWaitIdle(device.getDevice());
-
-        for (auto& tex : sceneTextures)
-        {
-            tex.destroy();
-        }
     }
 }

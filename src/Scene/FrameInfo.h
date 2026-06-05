@@ -18,6 +18,7 @@ namespace Engine
         std::vector<GameObject>& gameObjects;
         const RenderGraph* renderGraph = nullptr;
         JobSystem* jobSystem;
+        bool enableSSAO = true;
     };
 
     struct SceneUbo
@@ -28,4 +29,6 @@ namespace Engine
         uint32_t blueNoiseTexIndex;
         glm::vec2 padding;
     };
+
+
 }

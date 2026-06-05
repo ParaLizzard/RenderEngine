@@ -143,6 +143,8 @@ set(CORE_SOURCES
         src/Core/Device.cpp
         src/Core/Buffer.cpp
         src/Core/JobSystem.h
+        src/Core/Descriptor.cpp
+        src/Core/Descriptor.h
 )
 
 set(RENDERER_SOURCES
@@ -168,12 +170,14 @@ set(SCENE_SOURCES
 )
 
 set(PASSES_SOURCES
-        src/Passes/ForwardPassNode.cpp
-        src/Passes/ForwardPassNode.h
+        src/Passes/GBufferPassNode.cpp
+        src/Passes/GBufferPassNode.h
         src/Passes/FxaaPassNode.h
         src/Passes/FxaaPassNode.cpp
-        src/Passes/ZPrePassNode.cpp
-        src/Passes/ZPrePassNode.h
+        src/Passes/LightPassNode.cpp
+        src/Passes/LightPassNode.h
+        src/Passes/SsaoPassNode.cpp
+        src/Passes/SsaoPassNode.h
 )
 
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/models" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")

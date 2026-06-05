@@ -15,54 +15,56 @@ namespace Engine
     public:
         struct SubMesh
         {
-            uint32_t bufferIndex = 0;
             uint32_t indexCount = 0;
             uint32_t firstIndex = 0;
             int32_t  vertexOffset = 0;
         };
 
-        struct Vertex
+        struct VertexPosition
         {
             glm::vec3 position{};
+
+            static std::vector<VkVertexInputBindingDescription> getBindingDescriptions();
+            static std::vector<VkVertexInputAttributeDescription> getAttributeDescriptions();
+        };
+
+        struct VertexAttribute
+        {
             glm::vec3 color{};
             glm::vec3 normal{};
             glm::vec2 uv{};
             glm::vec4 tangent{};
             uint32_t texId{0};
-
-            static std::vector<VkVertexInputBindingDescription> getBindingDescriptions();
-            static std::vector<VkVertexInputAttributeDescription> getAttributeDescriptions();
-
-            bool operator==(const Vertex& other) const {
-                return position == other.position && color == other.color && normal == other.normal &&
-                       uv == other.uv && tangent == other.tangent && texId == other.texId;
-            }
         };
 
-        Model(Device& device, uint32_t chunkVertexCapacity = 500000, uint32_t chunkIndexCapacity = 1000000);
+        Model(Device& device);
         ~Model();
 
         Model(const Model&) = delete;
         Model& operator=(const Model&) = delete;
 
-        SubMesh registerMesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices);
+        SubMesh registerMesh(const std::vector<VertexPosition>& positions,
+                             const std::vector<VertexAttribute>& attributes,
+                             const std::vector<uint32_t>& indices);
 
+        void uploadToGPU();
 
-        void bind(VkCommandBuffer commandBuffer, uint32_t chunkIndex);
+        void bind(VkCommandBuffer commandBuffer);
 
     private:
-
-        void createNewChunk();
-
         Device& device;
 
-        std::vector<std::unique_ptr<Buffer>> vertexBuffers;
-        std::vector<std::unique_ptr<Buffer>> indexBuffers;
+        uint32_t totalAllocatedVertices = 0;
+        uint32_t totalAllocatedIndices = 0;
 
-        uint32_t chunkVertexCapacity;
-        uint32_t chunkIndexCapacity;
+        // CPU staging arrays
+        std::vector<VertexPosition> cpuPositions;
+        std::vector<VertexAttribute> cpuAttributes;
+        std::vector<uint32_t> cpuIndices;
 
-        uint32_t activeChunkVertexCount = 0;
-        uint32_t activeChunkIndexCount = 0;
+        // Unified GPU-Only
+        std::unique_ptr<Buffer> positionBuffer;
+        std::unique_ptr<Buffer> attributeBuffer;
+        std::unique_ptr<Buffer> indexBuffer;
     };
 }

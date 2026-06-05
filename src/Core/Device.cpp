@@ -30,6 +30,7 @@ namespace Engine
         createLogicalDevice();
         createCommandPool();
         createAllocator();
+        createPipelineCache();
     }
 
     Device::~Device()
@@ -47,6 +48,11 @@ namespace Engine
         if (allocator != VK_NULL_HANDLE)
         {
             vmaDestroyAllocator(allocator);
+        }
+
+        if (pipelineCache != VK_NULL_HANDLE) {
+            savePipelineCache();
+            vkDestroyPipelineCache(device, pipelineCache, nullptr);
         }
 
         if (device != VK_NULL_HANDLE)
@@ -68,6 +74,7 @@ namespace Engine
         {
             vkDestroyInstance(instance, nullptr);
         }
+
     }
 
     void Device::createInstance()
@@ -373,6 +380,7 @@ namespace Engine
         vulkan13Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
         vulkan13Features.synchronization2 = VK_TRUE;
         vulkan13Features.dynamicRendering = VK_TRUE;
+        vulkan13Features.shaderDemoteToHelperInvocation = VK_TRUE;
 
 
         VkPhysicalDeviceVulkan12Features vulkan12Features{};
@@ -383,14 +391,15 @@ namespace Engine
         vulkan12Features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
         vulkan12Features.descriptorBindingPartiallyBound = VK_TRUE;
         vulkan12Features.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+        vulkan12Features.descriptorBindingStorageBufferUpdateAfterBind = VK_TRUE;
         vulkan12Features.descriptorBindingVariableDescriptorCount = VK_TRUE;
         vulkan12Features.bufferDeviceAddress = VK_TRUE;
+        vulkan12Features.drawIndirectCount = VK_TRUE;
 
         VkPhysicalDeviceFeatures2 deviceFeatures2{};
         deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
         deviceFeatures2.pNext = &vulkan12Features;
-        deviceFeatures2.features = {.samplerAnisotropy = VK_TRUE};
-
+        deviceFeatures2.features = {.multiDrawIndirect = VK_TRUE, .samplerAnisotropy = VK_TRUE};
 
         VkDeviceCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -645,5 +654,46 @@ namespace Engine
         dependencyInfo.pImageMemoryBarriers = &barrier;
 
         vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
+    }
+
+    void Device::createPipelineCache()
+    {
+        VkPipelineCacheCreateInfo cacheInfo{};
+        cacheInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+
+        std::vector<char> cacheData;
+        std::ifstream file("pipeline_cache.bin", std::ios::ate | std::ios::binary);
+        if (file.is_open()) {
+            size_t fileSize = (size_t)file.tellg();
+            cacheData.resize(fileSize);
+            file.seekg(0);
+            file.read(cacheData.data(), fileSize);
+            file.close();
+
+            cacheInfo.initialDataSize = cacheData.size();
+            cacheInfo.pInitialData = cacheData.data();
+            std::cout << "Loaded Pipeline Cache from disk (" << fileSize << " bytes)\n";
+        }
+
+        if (vkCreatePipelineCache(device, &cacheInfo, nullptr, &pipelineCache) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create pipeline cache!");
+        }
+    }
+
+    void Device::savePipelineCache()
+    {
+        size_t cacheSize = 0;
+        vkGetPipelineCacheData(device, pipelineCache, &cacheSize, nullptr);
+
+        if (cacheSize > 0) {
+            std::vector<char> cacheData(cacheSize);
+            vkGetPipelineCacheData(device, pipelineCache, &cacheSize, cacheData.data());
+
+            std::ofstream file("pipeline_cache.bin", std::ios::binary);
+            if (file.is_open()) {
+                file.write(cacheData.data(), cacheSize);
+                file.close();
+            }
+        }
     }
 }

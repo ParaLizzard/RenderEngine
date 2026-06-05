@@ -32,13 +32,16 @@ namespace Engine
     private:
         Window window{WIDTH,HEIGHT,"Render Engine"};
         Device device{window};
+        Renderer renderer{window,device};
+        Model megaBuffer{device};
         ResourceHeap resourceHeap{device};
         RenderGraph renderGraph{device};
-        Renderer renderer{window,device};
-        Model megaBuffer{device, 2000000, 5000000};
         KeyboardMovementController cameraController{};
         std::shared_ptr<GameObject> cameraObject;
         JobSystem jobSystem{ std::max(1u, std::thread::hardware_concurrency() - 1) };
+
+        bool enableSSAO = true;
+        bool ssaoKeyPressed = false;
 
         std::deque<Texture2D> sceneTextures;
         std::vector<GameObject> gameObjects;

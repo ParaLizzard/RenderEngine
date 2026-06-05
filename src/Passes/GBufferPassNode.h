@@ -4,10 +4,22 @@
 #include "Scene/Model.h"
 #include "Renderer/RenderPassNode.h"
 #include "Renderer/Swapchain.h"
+#include "Renderer/RenderGraph.h"
+#include "Renderer/Renderer.h"
+#include "Passes/LightPassNode.h"
+#include <stdexcept>
+#include <fstream>
+#include <vector>
+#include <array>
+#include <future>
+
+#include "Core/JobSystem.h"
+#include "Renderer/ShaderUtils.h"
 
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
 #include <memory>
+#include <Core/Descriptor.h>
 
 #include "Renderer/ResourceHeap.h"
 
@@ -17,38 +29,43 @@ namespace Engine
 
     struct ForwardPushConstants
     {
-        glm::mat4 modelMatrix{1.0f};
         glm::mat4 viewProjection{1.0f};
         uint32_t debugIsTransparent;
+        uint32_t ssao;
     };
 
-    class ForwardPassNode : public RenderPassNode
+    class GBufferPassNode : public RenderPassNode
     {
     public:
-        ForwardPassNode(Device& device, Renderer& renderer, Model& megaBuffer, ResourceHeap& resourceHeap);
-        ~ForwardPassNode() override;
+        GBufferPassNode(Device& device, Renderer& renderer, Model& megaBuffer, ResourceHeap& resourceHeap, LightPassNode& prepassNode);
+        ~GBufferPassNode() override;
 
-        ForwardPassNode(const ForwardPassNode&) = delete;
-        ForwardPassNode& operator=(const ForwardPassNode&) = delete;
+        GBufferPassNode(const GBufferPassNode&) = delete;
+        GBufferPassNode& operator=(const GBufferPassNode&) = delete;
 
         void setup(RenderGraphBuilder& renderGraph) override;
         void execute(VkCommandBuffer& cmd, FrameInfo& frameInfo) override;
-
+        void resolve(const RenderGraph& graph, const FrameInfo& frameInfo) override;
     private:
         void createPipelineLayout();
         void createPipeline();
-
-        //VkFormat colorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
 
         Device& device;
         Renderer& renderer;
         Model& megaBuffer;
         ResourceHeap& resourceHeap;
+        LightPassNode& prepassNode;
 
         VkPipelineLayout pipelineLayout{VK_NULL_HANDLE};
         VkPipeline graphicsPipeline{VK_NULL_HANDLE};
         VkPipeline transparentPipeline = VK_NULL_HANDLE;
         VkPipeline graphicsPipelineDoubleSided = VK_NULL_HANDLE;
         VkPipeline transparentPipelineDoubleSided = VK_NULL_HANDLE;
+
+        std::unique_ptr<LveDescriptorPool> descriptorPool;
+        std::unique_ptr<LveDescriptorSetLayout> ssaoSetLayout;
+        std::vector<VkDescriptorSet> ssaoDescriptorSets;
+        VkSampler ssaoSampler{VK_NULL_HANDLE};
+        VkSampler linearSampler{VK_NULL_HANDLE};
     };
 }

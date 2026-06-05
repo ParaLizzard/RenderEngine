@@ -13,7 +13,12 @@ namespace Engine
             vkDestroyImageView(device.getDevice(), pair.second.view, nullptr);
             vmaDestroyImage(device.getAllocator(), pair.second.image, pair.second.allocation);
         }
+
         transientCache.clear();
+        registeredPasses.clear();
+        imageRegistry.clear();
+        bufferRegistry.clear();
+
         clear();
     }
 
@@ -99,10 +104,7 @@ namespace Engine
                 imageInfo.mipLevels = 1;
                 imageInfo.arrayLayers = 1;
                 imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-                imageInfo.usage = (isDepth ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
-                                  | VK_IMAGE_USAGE_SAMPLED_BIT
-                                  | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-
+                imageInfo.usage = decl.usage;
                 imageInfo.extent = {decl.extent.width, decl.extent.height, 1};
                 imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
                 imageInfo.pNext = nullptr;
@@ -377,9 +379,10 @@ namespace Engine
         bufferUsages.push_back({name, stageMask, accessMask, ResourceUsageType::ReadWrite});
     }
 
-    void RenderGraphBuilder::createTransientImage(const std::string& name, VkFormat format, VkExtent2D extent)
+    void RenderGraphBuilder::createTransientImage(
+        const std::string& name, VkFormat format, VkExtent2D extent, VkImageUsageFlags usage, VkClearValue clearValue)
     {
-        transientImageUsages.push_back({name, format, extent});
+        transientImageUsages.push_back({name, format, extent, usage, clearValue});
     }
 
     void RenderGraph::updateImageHandle(const std::string& name, VkImage image, VkImageView view, VkExtent2D extent)
@@ -405,5 +408,15 @@ namespace Engine
             it->second.buffer = buffer;
             it->second.size = size;
         }
+    }
+
+    VkImage RenderGraph::getImage(const std::string& name) const
+    {
+        auto it = imageRegistry.find(name);
+        if (it != imageRegistry.end())
+        {
+            return it->second.image;
+        }
+        throw std::runtime_error("RenderGraph: Attempted to fetch unregistered image: " + name);
     }
 }

@@ -2,133 +2,160 @@
 
 namespace Engine
 {
-    Model::Model(Device& device, uint32_t chunkVertexCapacity, uint32_t chunkIndexCapacity):device(device), chunkVertexCapacity(chunkVertexCapacity), chunkIndexCapacity(chunkIndexCapacity)
-    {
-        createNewChunk();
-    }
+    Model::Model(Device& device) : device(device) {}
 
     Model::~Model()
     {
         vkDeviceWaitIdle(device.getDevice());
     }
 
-    std::vector<VkVertexInputBindingDescription> Model::Vertex::getBindingDescriptions()
+    std::vector<VkVertexInputBindingDescription> Model::VertexPosition::getBindingDescriptions()
     {
-        std::vector<VkVertexInputBindingDescription> bindingDescriptions(1);
+        std::vector<VkVertexInputBindingDescription> bindingDescriptions(2);
 
+        // Binding 0: Position
         bindingDescriptions[0].binding = 0;
-        bindingDescriptions[0].stride = sizeof(Vertex);
+        bindingDescriptions[0].stride = sizeof(VertexPosition);
         bindingDescriptions[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+        // Binding 1: Attributes
+        bindingDescriptions[1].binding = 1;
+        bindingDescriptions[1].stride = sizeof(VertexAttribute);
+        bindingDescriptions[1].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
         return bindingDescriptions;
     }
 
-    std::vector<VkVertexInputAttributeDescription> Model::Vertex::getAttributeDescriptions()
+    std::vector<VkVertexInputAttributeDescription> Model::VertexPosition::getAttributeDescriptions()
     {
         std::vector<VkVertexInputAttributeDescription> attributeDescriptions(6);
 
-        // Location 0: Position (vec3)
+        // Location 0: Position (Binding 0)
         attributeDescriptions[0].binding = 0;
         attributeDescriptions[0].location = 0;
         attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attributeDescriptions[0].offset = offsetof(Vertex, position);
+        attributeDescriptions[0].offset = offsetof(VertexPosition, position);
 
-        // Location 1: Color (vec3)
-        attributeDescriptions[1].binding = 0;
+        // Location 1: Color (Binding 1)
+        attributeDescriptions[1].binding = 1;
         attributeDescriptions[1].location = 1;
         attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attributeDescriptions[1].offset = offsetof(Vertex, color);
+        attributeDescriptions[1].offset = offsetof(VertexAttribute, color);
 
-        // Location 2: Normal (vec3)
-        attributeDescriptions[2].binding = 0;
+        // Location 2: Normal (Binding 1)
+        attributeDescriptions[2].binding = 1;
         attributeDescriptions[2].location = 2;
         attributeDescriptions[2].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attributeDescriptions[2].offset = offsetof(Vertex, normal);
+        attributeDescriptions[2].offset = offsetof(VertexAttribute, normal);
 
-        // Location 3: UV (vec2)
-        attributeDescriptions[3].binding = 0;
+        // Location 3: UV (Binding 1)
+        attributeDescriptions[3].binding = 1;
         attributeDescriptions[3].location = 3;
         attributeDescriptions[3].format = VK_FORMAT_R32G32_SFLOAT;
-        attributeDescriptions[3].offset = offsetof(Vertex, uv);
+        attributeDescriptions[3].offset = offsetof(VertexAttribute, uv);
 
-        // Location 4: Tangent (vec4)
-        attributeDescriptions[4].binding = 0;
+        // Location 4: Tangent (Binding 1)
+        attributeDescriptions[4].binding = 1;
         attributeDescriptions[4].location = 4;
         attributeDescriptions[4].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-        attributeDescriptions[4].offset = offsetof(Vertex, tangent);
+        attributeDescriptions[4].offset = offsetof(VertexAttribute, tangent);
 
-        // Location 5: texture ID (uint)
-        attributeDescriptions[5].binding = 0;
+        // Location 5: texture ID (Binding 1)
+        attributeDescriptions[5].binding = 1;
         attributeDescriptions[5].location = 5;
         attributeDescriptions[5].format = VK_FORMAT_R32_UINT;
-        attributeDescriptions[5].offset = offsetof(Vertex, texId);
+        attributeDescriptions[5].offset = offsetof(VertexAttribute, texId);
 
         return attributeDescriptions;
     }
 
-    Model::SubMesh Model::registerMesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices)
+    Model::SubMesh Model::registerMesh(const std::vector<VertexPosition>& positions,
+                                       const std::vector<VertexAttribute>& attributes,
+                                       const std::vector<uint32_t>& indices)
     {
-        uint32_t verticesCount = vertices.size();
-        uint32_t indexCount = indices.size();
-
-        //assert(verticesCount <= chunkVertexCapacity && indexCount <= chunkIndexCapacity && "Mesh is too big");
-
-        if (verticesCount > chunkVertexCapacity || indexCount > chunkIndexCapacity)
-        {
-            chunkVertexCapacity = std::max(chunkVertexCapacity, verticesCount);
-            chunkIndexCapacity  = std::max(chunkIndexCapacity, indexCount);
-
-            std::cout << "Model: Upgrading chunk capacity to "
-                      << chunkVertexCapacity << " vertices and "
-                      << chunkIndexCapacity << " indices to fit giant mesh!\n";
-        }
-
-        if (activeChunkVertexCount + verticesCount > chunkVertexCapacity ||
-            activeChunkIndexCount + indexCount > chunkIndexCapacity)
-        {
-            createNewChunk();
-        }
-
-        uint32_t vertexByteOffset = activeChunkVertexCount * sizeof(Vertex);
-        uint32_t indexByteOffset = activeChunkIndexCount * sizeof(uint32_t);
-
-        vertexBuffers.back()->writeToBuffer((void*)vertices.data(), verticesCount * sizeof(Vertex), activeChunkVertexCount * sizeof(Vertex));
-        indexBuffers.back()->writeToBuffer((void*)indices.data(), indexCount * sizeof(uint32_t), activeChunkIndexCount * sizeof(uint32_t));
-
-        vertexBuffers.back()->flush(VK_WHOLE_SIZE, 0);
-        indexBuffers.back()->flush(VK_WHOLE_SIZE, 0);
-
         SubMesh subMesh{};
-        subMesh.bufferIndex = vertexBuffers.size() - 1;
-        subMesh.indexCount = indexCount;
-        subMesh.firstIndex = activeChunkIndexCount;
-        subMesh.vertexOffset = (int32_t)activeChunkVertexCount;
+        subMesh.indexCount = indices.size();
+        // Offset by whatever is ALREADY on the GPU, plus whatever is waiting in the CPU queue
+        subMesh.firstIndex = totalAllocatedIndices + cpuIndices.size();
+        subMesh.vertexOffset = totalAllocatedVertices + cpuPositions.size();
 
-        activeChunkVertexCount += verticesCount;
-        activeChunkIndexCount += indexCount;
+        cpuPositions.insert(cpuPositions.end(), positions.begin(), positions.end());
+        cpuAttributes.insert(cpuAttributes.end(), attributes.begin(), attributes.end());
+        cpuIndices.insert(cpuIndices.end(), indices.begin(), indices.end());
 
         return subMesh;
     }
 
-    void Model::bind(VkCommandBuffer commandBuffer, uint32_t chunkIndex)
+    void Model::uploadToGPU()
     {
-        VkBuffer vertexBuffer = vertexBuffers[chunkIndex]->getBuffer();
-        VkBuffer indexBuffer = indexBuffers[chunkIndex]->getBuffer();
+        if (cpuPositions.empty() || cpuIndices.empty()) return;
 
-        VkDeviceSize offset = 0;
+        VkDeviceSize newPosSize = cpuPositions.size() * sizeof(VertexPosition);
+        VkDeviceSize newAttrSize = cpuAttributes.size() * sizeof(VertexAttribute);
+        VkDeviceSize newIdxSize = cpuIndices.size() * sizeof(uint32_t);
 
-        vkCmdBindVertexBuffers(commandBuffer, 0, 1,&vertexBuffer,&offset);
-        vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+        VkDeviceSize oldPosSize = positionBuffer ? positionBuffer->getBufferSize() : 0;
+        VkDeviceSize oldAttrSize = attributeBuffer ? attributeBuffer->getBufferSize() : 0;
+        VkDeviceSize oldIdxSize = indexBuffer ? indexBuffer->getBufferSize() : 0;
+
+        Buffer stagingPositions(device, newPosSize, 1, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY, 0, 0);
+        Buffer stagingAttributes(device, newAttrSize, 1, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY, 0, 0);
+        Buffer stagingIndices(device, newIdxSize, 1, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY, 0, 0);
+
+        stagingPositions.writeToBuffer(cpuPositions.data(), newPosSize, 0);
+        stagingAttributes.writeToBuffer(cpuAttributes.data(), newAttrSize, 0);
+        stagingIndices.writeToBuffer(cpuIndices.data(), newIdxSize, 0);
+
+        auto expandedPosBuffer = std::make_unique<Buffer>(device, oldPosSize + newPosSize, 1, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_GPU_ONLY, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
+        auto expandedAttrBuffer = std::make_unique<Buffer>(device, oldAttrSize + newAttrSize, 1, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_GPU_ONLY, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
+        auto expandedIdxBuffer = std::make_unique<Buffer>(device, oldIdxSize + newIdxSize, 1, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_GPU_ONLY, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
+
+        VkCommandBuffer copyCmd = device.beginSingleTimeCommands();
+
+        if (oldPosSize > 0) {
+            VkBufferCopy cpyPos{0, 0, oldPosSize};
+            vkCmdCopyBuffer(copyCmd, positionBuffer->getBuffer(), expandedPosBuffer->getBuffer(), 1, &cpyPos);
+
+            VkBufferCopy cpyAttr{0, 0, oldAttrSize};
+            vkCmdCopyBuffer(copyCmd, attributeBuffer->getBuffer(), expandedAttrBuffer->getBuffer(), 1, &cpyAttr);
+        }
+        if (oldIdxSize > 0) {
+            VkBufferCopy cpyIdx{0, 0, oldIdxSize};
+            vkCmdCopyBuffer(copyCmd, indexBuffer->getBuffer(), expandedIdxBuffer->getBuffer(), 1, &cpyIdx);
+        }
+
+        VkBufferCopy posCpy{0, oldPosSize, newPosSize};
+        vkCmdCopyBuffer(copyCmd, stagingPositions.getBuffer(), expandedPosBuffer->getBuffer(), 1, &posCpy);
+
+        VkBufferCopy attrCpy{0, oldAttrSize, newAttrSize};
+        vkCmdCopyBuffer(copyCmd, stagingAttributes.getBuffer(), expandedAttrBuffer->getBuffer(), 1, &attrCpy);
+
+        VkBufferCopy idxCpy{0, oldIdxSize, newIdxSize};
+        vkCmdCopyBuffer(copyCmd, stagingIndices.getBuffer(), expandedIdxBuffer->getBuffer(), 1, &idxCpy);
+
+        device.endSingleTimeCommands(copyCmd);
+
+        // 5. Swap pointers and track totals
+        positionBuffer = std::move(expandedPosBuffer);
+        attributeBuffer = std::move(expandedAttrBuffer);
+        indexBuffer = std::move(expandedIdxBuffer);
+
+        totalAllocatedVertices += cpuPositions.size();
+        totalAllocatedIndices += cpuIndices.size();
+
+        cpuPositions.clear(); cpuPositions.shrink_to_fit();
+        cpuAttributes.clear(); cpuAttributes.shrink_to_fit();
+        cpuIndices.clear(); cpuIndices.shrink_to_fit();
     }
 
-    void Model::createNewChunk()
+    void Model::bind(VkCommandBuffer commandBuffer)
     {
-        std::unique_ptr<Buffer> vertexBuffer = std::make_unique<Buffer>(device, (uint32_t)sizeof(Vertex), chunkVertexCapacity, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, 0, 0);
-        vertexBuffers.push_back(std::move(vertexBuffer));
-        std::unique_ptr<Buffer> indexBuffer = std::make_unique<Buffer>(device, (uint32_t)sizeof(uint32_t), chunkIndexCapacity, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, 0, 0);
-        indexBuffers.push_back(std::move(indexBuffer));
+        if (!positionBuffer || !indexBuffer) return;
 
-        activeChunkVertexCount = 0;
-        activeChunkIndexCount = 0;
+        VkBuffer vertexBuffers[] = {positionBuffer->getBuffer(), attributeBuffer->getBuffer()};
+        VkDeviceSize offsets[] = {0, 0};
+
+        vkCmdBindVertexBuffers(commandBuffer, 0, 2, vertexBuffers, offsets);
+        vkCmdBindIndexBuffer(commandBuffer, indexBuffer->getBuffer(), 0, VK_INDEX_TYPE_UINT32);
     }
 }

@@ -53,6 +53,7 @@ namespace Engine
         VkPhysicalDevice getPhysicalDevice(){return physicalDevice;}
         VkCommandPool getCommandPool(){return commandPool;}
         VmaAllocator getAllocator(){return allocator;}
+        VkPipelineCache getPipelineCache() { return pipelineCache; }
         float getMaxAnisotoropy();
         uint32_t getGraphicsFamilyIndex() {return indices.graphicsFamily;}
         uint32_t getPresentFamilyIndex() {return indices.presentFamily;}
@@ -67,7 +68,7 @@ namespace Engine
            VkImageSubresourceRange subresourceRange);
 
     private:
-        bool enableValidationLayers = false;
+        bool enableValidationLayers = true;
 
         VkDevice device = VK_NULL_HANDLE;
         VkInstance instance = VK_NULL_HANDLE;
@@ -82,6 +83,8 @@ namespace Engine
         VkQueue graphicsQueue_;
         VkQueue presentQueue_;
 
+        VkPipelineCache pipelineCache = VK_NULL_HANDLE;
+
         void createInstance();
         std::vector<const char*> getRequiredExtensions();
         void setupDebugMessenger();
@@ -95,10 +98,11 @@ namespace Engine
         void createLogicalDevice();
         void createCommandPool();
         void createAllocator();
-
+        void createPipelineCache();
+        void savePipelineCache();
 
         const std::vector<const char *> validationLayers = {"VK_LAYER_KHRONOS_validation"};
-        const std::vector<const char *> deviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+        const std::vector<const char *> deviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, "VK_EXT_shader_demote_to_helper_invocation"};
     };
 }
 
