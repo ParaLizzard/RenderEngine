@@ -30,11 +30,11 @@ namespace Engine
         uint32_t isDoubleSided;
     };
 
-    struct ObjectData {
+    /*struct ObjectData {
         glm::mat4 modelMatrix;
         glm::mat4 normalMatrix;
         glm::vec4 boundingSphere;
-    };
+    };*/
 
     struct ComputePushConstants {
         glm::mat4 viewProjection;

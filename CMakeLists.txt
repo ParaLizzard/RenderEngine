@@ -174,10 +174,12 @@ set(PASSES_SOURCES
         src/Passes/GBufferPassNode.h
         src/Passes/FxaaPassNode.h
         src/Passes/FxaaPassNode.cpp
-        src/Passes/LightPassNode.cpp
-        src/Passes/LightPassNode.h
         src/Passes/SsaoPassNode.cpp
         src/Passes/SsaoPassNode.h
+        src/Passes/VisibilityPassNode.cpp
+        src/Passes/VisibilityPassNode.h
+        src/Passes/CullPassNode.cpp
+        src/Passes/CullPassNode.h
 )
 
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/models" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")

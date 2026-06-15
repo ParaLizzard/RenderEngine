@@ -2,12 +2,16 @@
 
 #include <stb_image.h>
 
-#include "Passes/GBufferPassNode.h"
+//#include "Passes/GBufferPassNode.h"
 #include "Passes/FxaaPassNode.h"
-#include "Passes/LightPassNode.h"
+#include "Passes/CullPassNode.h"
 #include "Passes/SsaoPassNode.h"
+#include "Passes/VisibilityPassNode.h"
 #include "Scene/IBL.h"
 #include "Scene/LoaderGLTF.h"
+
+
+
 
 namespace Engine
 {
@@ -87,6 +91,7 @@ namespace Engine
 
     Application::Application()
     {
+
     }
 
     Application::~Application()
@@ -102,22 +107,23 @@ namespace Engine
         Camera camera{};
         camera.setViewTarget(glm::vec3{0.0f, 0.0f, -5.0f}, glm::vec3{0.0f, 0.0f, 0.0f});
 
-        LightPassNode geometryPrepass(device, renderer, megaBuffer, resourceHeap);
-        SsaoPassNode ssaoPass{device,renderer, megaBuffer, resourceHeap};
-        GBufferPassNode forwardPass{device, renderer, megaBuffer, resourceHeap, geometryPrepass};
+        CullPassNode cullPass(device, renderer, megaBuffer);
+        VisibilityPassNode visPass{device,renderer,megaBuffer,cullPass};
+        SsaoPassNode ssaoPass{device, renderer, megaBuffer, resourceHeap};
+        //GBufferPassNode forwardPass{device, renderer, megaBuffer, resourceHeap, cullPass};
         FxaaPassNode fxaaPass{device, renderer, megaBuffer, resourceHeap};
 
 
         std::vector<std::future<ParsedGLTF>> pendingLoads;
         //pendingLoads.push_back(LoaderGLTF::loadAsync(jobSystem, "models/pbr_sphere.glb"));
         //pendingLoads.push_back(LoaderGLTF::loadAsync(
-          //  jobSystem, "C:/Users/Jan Varga/Downloads/main_sponza (1)/main_sponza/NewSponza_Main_glTF_003.gltf"));
+        //  jobSystem, "C:/Users/Jan Varga/Downloads/main_sponza (1)/main_sponza/NewSponza_Main_glTF_003.gltf"));
         pendingLoads.push_back(LoaderGLTF::loadAsync(
             jobSystem, "models/sponza_optimized.glb"));
         pendingLoads.push_back(LoaderGLTF::loadAsync(
             jobSystem, "C:/Users/Jan Varga/Downloads/pkg_a_curtains/pkg_a_curtains/NewSponza_Curtains_glTF.gltf"));
         //pendingLoads.push_back(LoaderGLTF::loadAsync(
-            //jobSystem, "C:/Users/Jan Varga/Downloads/pkg_b_ivy1/pkg_b_ivy/NewSponza_IvyGrowth_glTF.gltf"));
+        //jobSystem, "C:/Users/Jan Varga/Downloads/pkg_b_ivy1/pkg_b_ivy/NewSponza_IvyGrowth_glTF.gltf"));
         //pendingLoads.push_back(LoaderGLTF::loadAsync(jobSystem, "C:/Users/Martin Varga/Downloads/metallic--roughness--test/source/Metallic_Roughness_Test.glb"));
 
         auto cubeFuture = LoaderGLTF::loadAsync(jobSystem, "models/cube.glb");
@@ -139,7 +145,8 @@ namespace Engine
         if (!noisePixels) throw std::runtime_error("Failed to load blue noise texture!");
 
         Texture2D blueNoiseTex;
-        blueNoiseTex.fromBuffer(noisePixels, noiseW * noiseH * 4, VK_FORMAT_R8G8B8A8_UNORM, noiseW, noiseH, &device, resourceHeap, VK_FILTER_NEAREST);
+        blueNoiseTex.fromBuffer(noisePixels, noiseW * noiseH * 4, VK_FORMAT_R8G8B8A8_UNORM, noiseW, noiseH, &device,
+                                resourceHeap, VK_FILTER_NEAREST);
         stbi_image_free(noisePixels);
         uint32_t blueNoiseSlot = blueNoiseTex.heapHandle.index;
         sceneTextures.push_back(std::move(blueNoiseTex));
@@ -197,7 +204,7 @@ namespace Engine
         resourceHeap.writeSceneUboDescriptor(uboInfo);
 
         flattenSceneGraph(gameObjects);
-        geometryPrepass.markSceneDirty();
+        cullPass.markSceneDirty();
 
 
         cameraObject = std::make_shared<GameObject>(GameObject::createGameObject());
@@ -211,13 +218,17 @@ namespace Engine
         {
             glfwPollEvents();
 
-            if (glfwGetKey(window.getGLFWWinodow(), GLFW_KEY_O) == GLFW_PRESS) {
-                if (!ssaoKeyPressed) {
+            if (glfwGetKey(window.getGLFWWinodow(), GLFW_KEY_O) == GLFW_PRESS)
+            {
+                if (!ssaoKeyPressed)
+                {
                     enableSSAO = !enableSSAO;
                     ssaoKeyPressed = true;
                     std::cout << "SSAO is now: " << (enableSSAO ? "ON" : "OFF") << "\n";
                 }
-            } else {
+            }
+            else
+            {
                 ssaoKeyPressed = false;
             }
 
@@ -242,7 +253,7 @@ namespace Engine
                     resourceHeap.writeMaterialDescriptor();
 
                     megaBuffer.uploadToGPU();
-                    geometryPrepass.markSceneDirty();
+                    cullPass.markSceneDirty();
 
                     std::cout << "Successfully streamed in async model!" << std::endl;
 
@@ -294,6 +305,23 @@ namespace Engine
                                                    resourceHeap.getMaterialBufferInfo().range,
                                                    VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_HOST_WRITE_BIT);
 
+                renderGraph.registerPhysicalBuffer("CullCompactedIndirectCommands",
+                                       cullPass.getCompactedIndirectBuffer(currentFrame),
+                                       100000 * sizeof(VkDrawIndexedIndirectCommand),
+                                       VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                                       VK_ACCESS_2_SHADER_WRITE_BIT);
+
+                renderGraph.registerPhysicalBuffer("CullDrawCount",
+                                                   cullPass.getDrawCountBuffer(currentFrame),
+                                                   sizeof(uint32_t),
+                                                   VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                                                   VK_ACCESS_2_SHADER_WRITE_BIT);
+                renderGraph.registerPhysicalBuffer("CullObjectData",
+                                   cullPass.getGpuObjectBuffer(currentFrame),
+                                   100000 * sizeof(ObjectData),
+                                   VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                                   VK_ACCESS_2_SHADER_WRITE_BIT);
+
                 renderGraph.registerPhysicalImage("SwapChainImage",
                                                   renderer.getSwapChain().getImage(imgIdx),
                                                   renderer.getSwapChain().getImageView(imgIdx),
@@ -305,9 +333,10 @@ namespace Engine
                                                   renderer.getSwapChain().getDepthFormat(), currentExtent,
                                                   VK_IMAGE_LAYOUT_UNDEFINED);
 
-                renderGraph.addPass(&geometryPrepass);
+                renderGraph.addPass(&cullPass);
+                renderGraph.addPass(&visPass);
                 renderGraph.addPass(&ssaoPass);
-                renderGraph.addPass(&forwardPass);
+                //renderGraph.addPass(&forwardPass);
                 renderGraph.addPass(&fxaaPass);
                 renderGraph.compile();
 
@@ -318,6 +347,16 @@ namespace Engine
             renderGraph.updateBufferHandle("MaterialSSBO",
                                            resourceHeap.getMaterialBufferInfo().buffer,
                                            resourceHeap.getMaterialBufferSize());
+            renderGraph.updateBufferHandle("CullCompactedIndirectCommands",
+                               cullPass.getCompactedIndirectBuffer(currentFrame),
+                               100000 * sizeof(VkDrawIndexedIndirectCommand));
+            renderGraph.updateBufferHandle("CullObjectData",
+                               cullPass.getGpuObjectBuffer(currentFrame),
+                               100000 * sizeof(ObjectData));
+
+            renderGraph.updateBufferHandle("CullDrawCount",
+                                           cullPass.getDrawCountBuffer(currentFrame),
+                                           sizeof(uint32_t));
             renderGraph.updateImageHandle("SwapChainImage",
                                           renderer.getSwapChain().getImage(imgIdx),
                                           renderer.getSwapChain().getImageView(imgIdx), currentExtent);

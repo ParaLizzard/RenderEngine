@@ -21,9 +21,16 @@ layout(std430, set = 0, binding = 0) readonly buffer ObjectBuffer {
     ObjectData objects[];
 };
 
-// Binding 1: The indirect draw commands we are going to modify
-layout(std430, set = 0, binding = 1) buffer IndirectBuffer {
-    VkDrawIndexedIndirectCommand commands[];
+layout(std430, set = 0, binding = 1) readonly buffer BlueprintBuffer {
+    VkDrawIndexedIndirectCommand blueprints[];
+};
+
+layout(std430, set = 0, binding = 2) buffer DrawCountBuffer {
+    uint drawCount;
+};
+
+layout(std430, set = 0, binding = 3) buffer CompactedIndirectBuffer {
+    VkDrawIndexedIndirectCommand compactedCommands[];
 };
 
 layout(push_constant) uniform PushConsts {
@@ -38,37 +45,41 @@ void main() {
     vec4 sphere = objects[gID].boundingSphere;
     mat4 model  = objects[gID].modelMatrix;
 
-    // 1. Transform sphere to world space (model matrix already includes your flipMatrix!)
     vec3 worldCenter = (model * vec4(sphere.xyz, 1.0)).xyz;
 
-    // 2. Extract max scale from the matrix to scale the radius
     float scaleX = length(vec3(model[0]));
     float scaleY = length(vec3(model[1]));
     float scaleZ = length(vec3(model[2]));
     float maxScale = max(max(scaleX, scaleY), scaleZ);
     float worldRadius = sphere.w * maxScale;
 
-    // 3. Extract frustum planes from ViewProjection
     mat4 tvp = transpose(push.viewProjection);
     vec4 planes[6];
     planes[0] = tvp[3] + tvp[0]; // Left
     planes[1] = tvp[3] - tvp[0]; // Right
     planes[2] = tvp[3] + tvp[1]; // Bottom
     planes[3] = tvp[3] - tvp[1]; // Top
-    planes[4] = tvp[2];          // Near (Vulkan 0..1 depth)
+    planes[4] = tvp[2];          // Near
     planes[5] = tvp[3] - tvp[2]; // Far
 
-    // 4. Test against planes
     bool visible = true;
     for (int i = 0; i < 6; i++) {
         float len = length(planes[i].xyz);
-        planes[i] /= len; // Normalize
+        planes[i] /= len;
         if (dot(planes[i].xyz, worldCenter) + planes[i].w < -worldRadius) {
             visible = false;
             break;
         }
     }
 
-    // 5. The Magic: Toggle the draw command on or off!
-    commands[gID].instanceCount = visible ? 1 : 0;
+    if (visible) {
+        uint uniqueOutIndex = atomicAdd(drawCount, 1);
+
+        VkDrawIndexedIndirectCommand cmd = blueprints[gID];
+        cmd.instanceCount = 1;
+
+        cmd.firstInstance = gID;
+
+        compactedCommands[uniqueOutIndex] = cmd;
+    }
 }

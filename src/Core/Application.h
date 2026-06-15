@@ -11,7 +11,6 @@
 #include <unordered_map>
 #include <limits>
 #include "Core/JobSystem.h"
-
 #include "Scene/KeyboardMovement.h"
 
 namespace Engine
