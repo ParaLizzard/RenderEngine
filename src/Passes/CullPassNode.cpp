@@ -17,7 +17,6 @@ namespace Engine
         ssboBindings[0].descriptorCount = 1;
         ssboBindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
 
-
         ssboBindings[1].binding = 1;
         ssboBindings[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         ssboBindings[1].descriptorCount = 1;

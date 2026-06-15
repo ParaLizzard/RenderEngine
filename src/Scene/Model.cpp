@@ -75,7 +75,6 @@ namespace Engine
     {
         SubMesh subMesh{};
         subMesh.indexCount = indices.size();
-        // Offset by whatever is ALREADY on the GPU, plus whatever is waiting in the CPU queue
         subMesh.firstIndex = totalAllocatedIndices + cpuIndices.size();
         subMesh.vertexOffset = totalAllocatedVertices + cpuPositions.size();
 
@@ -106,9 +105,17 @@ namespace Engine
         stagingAttributes.writeToBuffer(cpuAttributes.data(), newAttrSize, 0);
         stagingIndices.writeToBuffer(cpuIndices.data(), newIdxSize, 0);
 
-        auto expandedPosBuffer = std::make_unique<Buffer>(device, oldPosSize + newPosSize, 1, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_GPU_ONLY, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
-        auto expandedAttrBuffer = std::make_unique<Buffer>(device, oldAttrSize + newAttrSize, 1, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_GPU_ONLY, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
-        auto expandedIdxBuffer = std::make_unique<Buffer>(device, oldIdxSize + newIdxSize, 1, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_GPU_ONLY, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
+        auto expandedPosBuffer = std::make_unique<Buffer>(device, oldPosSize + newPosSize, 1,
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            VMA_MEMORY_USAGE_GPU_ONLY, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
+
+        auto expandedAttrBuffer = std::make_unique<Buffer>(device, oldAttrSize + newAttrSize, 1,
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            VMA_MEMORY_USAGE_GPU_ONLY, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
+
+        auto expandedIdxBuffer = std::make_unique<Buffer>(device, oldIdxSize + newIdxSize, 1,
+            VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            VMA_MEMORY_USAGE_GPU_ONLY, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
 
         VkCommandBuffer copyCmd = device.beginSingleTimeCommands();
 
@@ -135,7 +142,6 @@ namespace Engine
 
         device.endSingleTimeCommands(copyCmd);
 
-        // 5. Swap pointers and track totals
         positionBuffer = std::move(expandedPosBuffer);
         attributeBuffer = std::move(expandedAttrBuffer);
         indexBuffer = std::move(expandedIdxBuffer);
@@ -156,6 +162,17 @@ namespace Engine
         VkDeviceSize offsets[] = {0, 0};
 
         vkCmdBindVertexBuffers(commandBuffer, 0, 2, vertexBuffers, offsets);
+        vkCmdBindIndexBuffer(commandBuffer, indexBuffer->getBuffer(), 0, VK_INDEX_TYPE_UINT32);
+    }
+
+    void Model::bindPositionOnly(VkCommandBuffer commandBuffer)
+    {
+        if (!positionBuffer || !indexBuffer) return;
+
+        VkBuffer vertexBuffers[] = {positionBuffer->getBuffer()};
+        VkDeviceSize offsets[] = {0};
+
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
         vkCmdBindIndexBuffer(commandBuffer, indexBuffer->getBuffer(), 0, VK_INDEX_TYPE_UINT32);
     }
 }

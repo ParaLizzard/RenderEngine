@@ -51,6 +51,12 @@ namespace Engine
 
         void bind(VkCommandBuffer commandBuffer);
 
+        void bindPositionOnly(VkCommandBuffer commandBuffer);
+
+        VkBuffer getPositionBuffer() const { return positionBuffer ? positionBuffer->getBuffer() : VK_NULL_HANDLE; }
+        VkBuffer getAttributeBuffer() const { return attributeBuffer ? attributeBuffer->getBuffer() : VK_NULL_HANDLE; }
+        VkBuffer getIndexBuffer() const { return indexBuffer ? indexBuffer->getBuffer() : VK_NULL_HANDLE; }
+
     private:
         Device& device;
 

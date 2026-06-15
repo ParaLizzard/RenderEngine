@@ -100,7 +100,7 @@ namespace Engine
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
     vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(glm::mat4), &viewProjection);
-    megaBuffer.bind(cmd);
+    megaBuffer.bindPositionOnly(cmd);
 
     vkCmdDrawIndexedIndirectCount(
         cmd,

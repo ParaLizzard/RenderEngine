@@ -180,6 +180,8 @@ set(PASSES_SOURCES
         src/Passes/VisibilityPassNode.h
         src/Passes/CullPassNode.cpp
         src/Passes/CullPassNode.h
+        src/Passes/MaterialPassNode.cpp
+        src/Passes/MaterialPassNode.h
 )
 
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/models" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
