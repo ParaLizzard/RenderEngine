@@ -22,7 +22,7 @@ namespace Engine
 
         void setup(RenderGraphBuilder& renderGraph) override;
         void execute(VkCommandBuffer& cmd, FrameInfo& frameInfo) override;
-        void resolve(const RenderGraph& graph, const FrameInfo& frameInfo) override;
+        void resolve(RenderGraph& graph, const FrameInfo& frameInfo) override;
     private:
         void createPipelineLayout();
         void createPipeline();
@@ -39,6 +39,6 @@ namespace Engine
         std::vector<VkDescriptorSet> descriptorSets;
         VkSampler sampler{VK_NULL_HANDLE};
 
-        std::vector<VkImageView> cachedViews;
+        std::vector<VkBuffer> cachedBuffers;
     };
 }

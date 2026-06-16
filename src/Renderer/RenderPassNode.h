@@ -13,7 +13,7 @@ namespace Engine
     public:
         virtual ~RenderPassNode() = default;
         virtual void setup(RenderGraphBuilder& renderGraph) = 0;
-        virtual void resolve(const RenderGraph& graph, const FrameInfo& frameInfo) {}
+        virtual void resolve(RenderGraph& graph, const FrameInfo& frameInfo) {}
         virtual void execute(VkCommandBuffer& cmd, FrameInfo& frameInfo) = 0;
     };
 }

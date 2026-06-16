@@ -1,40 +1,52 @@
 #version 460
 
 layout(location = 0) in vec2 inUV;
-
 layout(location = 0) out vec4 outColor;
 
-layout(binding = 0) uniform sampler2D sceneTexture;
+struct CompactMaterial {
+    uint packedNormal;
+    uint packedRadiance;
+    uint packedAO;
+    uint padding;
+};
 
+layout(push_constant) uniform Constants {
+    vec2 resolution;
+} pc;
+
+layout(set = 0, binding = 0) uniform sampler2D inputImage;
+
+// Helper function to sample from the SSBO like a texture
+vec4 sampleSceneColor(vec2 uv) {
+    ivec2 coords = ivec2(uv * pc.resolution);
+    coords = clamp(coords, ivec2(0), ivec2(pc.resolution) - 1);
+
+    uint index = coords.y * int(pc.resolution.x) + coords.x;
+    //uint packedCol = materials[index].packedRadiance;
+
+    return texture(inputImage, uv);
+}
 
 // Standard FXAA 3.11 Quality Parameters
 const float FXAA_SUBPIX = 0.8;
 const float FXAA_EDGE_THRESHOLD = 0.18;
 const float FXAA_EDGE_THRESHOLD_MIN = 0.01;
 
-// Quality Preset 12 Search Steps
 const int FXAA_SEARCH_STEPS = 10;
 const float FXAA_SEARCH_OFFSETS[5] = float[](1.0, 1.5, 2.0, 4.0, 12.0);
 
-// Helper: Calculate Luma
-// FXAA traditionally expects luma in the alpha channel for performance.
-// If your pipeline doesn't pack luma into alpha, you can compute it inline here:
-// return dot(color.rgb, vec3(0.299, 0.587, 0.114));
 float fxaaLuma(vec4 color) {
     return dot(color.rgb, vec3(0.299, 0.587, 0.114));
-    //return color.a;
 }
 
-// Main FXAA Function
-vec4 applyFXAA(sampler2D tex, vec2 uv, vec2 rcpFrame) {
-    // 1. Center Sample & Early Exit Contrast Check
-    vec4 colorCenter = textureLod(tex, uv, 0.0);
+vec4 applyFXAA(vec2 uv, vec2 rcpFrame) {
+    vec4 colorCenter = sampleSceneColor(uv);
     float lumaM = fxaaLuma(colorCenter);
 
-    float lumaS = fxaaLuma(textureLod(tex, uv + vec2( 0.0,  1.0) * rcpFrame, 0.0));
-    float lumaE = fxaaLuma(textureLod(tex, uv + vec2( 1.0,  0.0) * rcpFrame, 0.0));
-    float lumaN = fxaaLuma(textureLod(tex, uv + vec2( 0.0, -1.0) * rcpFrame, 0.0));
-    float lumaW = fxaaLuma(textureLod(tex, uv + vec2(-1.0,  0.0) * rcpFrame, 0.0));
+    float lumaS = fxaaLuma(sampleSceneColor(uv + vec2( 0.0,  1.0) * rcpFrame));
+    float lumaE = fxaaLuma(sampleSceneColor(uv + vec2( 1.0,  0.0) * rcpFrame));
+    float lumaN = fxaaLuma(sampleSceneColor(uv + vec2( 0.0, -1.0) * rcpFrame));
+    float lumaW = fxaaLuma(sampleSceneColor(uv + vec2(-1.0,  0.0) * rcpFrame));
 
     float maxSM = max(lumaS, lumaM);
     float minSM = min(lumaS, lumaM);
@@ -48,16 +60,14 @@ vec4 applyFXAA(sampler2D tex, vec2 uv, vec2 rcpFrame) {
     float rangeMaxScaled = rangeMax * FXAA_EDGE_THRESHOLD;
     float range = rangeMax - rangeMin;
     float rangeMaxClamped = max(FXAA_EDGE_THRESHOLD_MIN, rangeMaxScaled);
-
     if(range < rangeMaxClamped) {
         return colorCenter;
     }
 
-    // 2. Corner Samples & Edge Direction
-    float lumaNW = fxaaLuma(textureLod(tex, uv + vec2(-1.0, -1.0) * rcpFrame, 0.0));
-    float lumaSE = fxaaLuma(textureLod(tex, uv + vec2( 1.0,  1.0) * rcpFrame, 0.0));
-    float lumaNE = fxaaLuma(textureLod(tex, uv + vec2( 1.0, -1.0) * rcpFrame, 0.0));
-    float lumaSW = fxaaLuma(textureLod(tex, uv + vec2(-1.0,  1.0) * rcpFrame, 0.0));
+    float lumaNW = fxaaLuma(sampleSceneColor(uv + vec2(-1.0, -1.0) * rcpFrame));
+    float lumaSE = fxaaLuma(sampleSceneColor(uv + vec2( 1.0,  1.0) * rcpFrame));
+    float lumaNE = fxaaLuma(sampleSceneColor(uv + vec2( 1.0, -1.0) * rcpFrame));
+    float lumaSW = fxaaLuma(sampleSceneColor(uv + vec2(-1.0,  1.0) * rcpFrame));
 
     float lumaNS = lumaN + lumaS;
     float lumaWE = lumaW + lumaE;
@@ -65,7 +75,6 @@ vec4 applyFXAA(sampler2D tex, vec2 uv, vec2 rcpFrame) {
     float subpixNSWE = lumaNS + lumaWE;
     float edgeHorz1 = (-2.0 * lumaM) + lumaNS;
     float edgeVert1 = (-2.0 * lumaM) + lumaWE;
-
     float lumaNESE = lumaNE + lumaSE;
     float lumaNWNE = lumaNW + lumaNE;
     float edgeHorz2 = (-2.0 * lumaE) + lumaNESE;
@@ -77,7 +86,6 @@ vec4 applyFXAA(sampler2D tex, vec2 uv, vec2 rcpFrame) {
     float edgeVert4 = (abs(edgeVert1) * 2.0) + abs(edgeVert2);
     float edgeHorz3 = (-2.0 * lumaW) + lumaNWSW;
     float edgeVert3 = (-2.0 * lumaS) + lumaSWSE;
-
     float edgeHorz = abs(edgeHorz3) + edgeHorz4;
     float edgeVert = abs(edgeVert3) + edgeVert4;
 
@@ -85,7 +93,6 @@ vec4 applyFXAA(sampler2D tex, vec2 uv, vec2 rcpFrame) {
     float lengthSign = rcpFrame.x;
     bool horzSpan = edgeHorz >= edgeVert;
     float subpixA = subpixNSWE * 2.0 + subpixNWSWNESE;
-
     if(!horzSpan) lumaN = lumaW;
     if(!horzSpan) lumaS = lumaE;
     if(horzSpan) lengthSign = rcpFrame.y;
@@ -101,7 +108,6 @@ vec4 applyFXAA(sampler2D tex, vec2 uv, vec2 rcpFrame) {
     if(pairN) lengthSign = -lengthSign;
     float subpixC = clamp(abs(subpixB) * subpixRcpRange, 0.0, 1.0);
 
-    // 3. Subpixel Shift & Edge Search Prep
     vec2 posB = uv;
     vec2 offNP = horzSpan ? vec2(rcpFrame.x, 0.0) : vec2(0.0, rcpFrame.y);
 
@@ -119,30 +125,26 @@ vec4 applyFXAA(sampler2D tex, vec2 uv, vec2 rcpFrame) {
     float lumaMM = lumaM - lumaNN * 0.5;
     float subpixF = subpixD * subpixE;
     bool lumaMLTZero = lumaMM < 0.0;
-
-    float lumaEndN = fxaaLuma(textureLod(tex, posN, 0.0)) - lumaNN * 0.5;
-    float lumaEndP = fxaaLuma(textureLod(tex, posP, 0.0)) - lumaNN * 0.5;
+    float lumaEndN = fxaaLuma(sampleSceneColor(posN)) - lumaNN * 0.5;
+    float lumaEndP = fxaaLuma(sampleSceneColor(posP)) - lumaNN * 0.5;
     bool doneN = abs(lumaEndN) >= gradientScaled;
     bool doneP = abs(lumaEndP) >= gradientScaled;
 
-    // 4. Edge Search Loop (Replaces macro unrolling)
     for (int i = 1; i < FXAA_SEARCH_STEPS; ++i) {
         if (!doneN) posN -= offNP * FXAA_SEARCH_OFFSETS[i];
         if (!doneP) posP += offNP * FXAA_SEARCH_OFFSETS[i];
 
         if (doneN && doneP) break;
 
-        if (!doneN) lumaEndN = fxaaLuma(textureLod(tex, posN, 0.0)) - lumaNN * 0.5;
-        if (!doneP) lumaEndP = fxaaLuma(textureLod(tex, posP, 0.0)) - lumaNN * 0.5;
+        if (!doneN) lumaEndN = fxaaLuma(sampleSceneColor(posN)) - lumaNN * 0.5;
+        if (!doneP) lumaEndP = fxaaLuma(sampleSceneColor(posP)) - lumaNN * 0.5;
 
         doneN = abs(lumaEndN) >= gradientScaled;
         doneP = abs(lumaEndP) >= gradientScaled;
     }
 
-    // 5. Final Offset & Fetch
     float dstN = horzSpan ? (uv.x - posN.x) : (uv.y - posN.y);
     float dstP = horzSpan ? (posP.x - uv.x) : (posP.y - uv.y);
-
     bool goodSpanN = (lumaEndN < 0.0) != lumaMLTZero;
     bool goodSpanP = (lumaEndP < 0.0) != lumaMLTZero;
     float spanLength = (dstP + dstN);
@@ -163,12 +165,12 @@ vec4 applyFXAA(sampler2D tex, vec2 uv, vec2 rcpFrame) {
     if(!horzSpan) posFinal.x += pixelOffsetSubpix * lengthSign;
     if( horzSpan) posFinal.y += pixelOffsetSubpix * lengthSign;
 
-    return textureLod(tex, posFinal, 0.0);
+    return sampleSceneColor(posFinal);
 }
 
 void main(){
-    vec2 texSize = textureSize(sceneTexture, 0);
-    vec2 rcpFrame = 1.0 / texSize;
+    vec2 rcpFrame = 1.0 / pc.resolution;
+    outColor = applyFXAA(inUV, rcpFrame);
 
-    outColor = applyFXAA(sceneTexture, inUV, rcpFrame);
+    //outColor = vec4(inUV.x, inUV.y, 0.0, 1.0);
 }

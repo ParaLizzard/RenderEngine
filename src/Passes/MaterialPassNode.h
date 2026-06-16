@@ -9,7 +9,7 @@ namespace Engine
 {
     struct MaterialPushConstants
     {
-        glm::mat4 invViewProj;
+        glm::mat4 viewProj;
         glm::mat4 view;
         glm::vec3 cameraPos;
         glm::uint frameWidth;
@@ -43,10 +43,14 @@ namespace Engine
 
         void setup(RenderGraphBuilder& renderGraph) override;
         void execute(VkCommandBuffer& cmd, FrameInfo& frameInfo) override;
-        void resolve(const RenderGraph& graph, const FrameInfo& frameInfo) override;
+        void resolve(RenderGraph& graph, const FrameInfo& frameInfo) override;
 
         VkBuffer getCompactMaterialBuffer(size_t frameIndex) {
             return compactMaterialBuffers[frameIndex]->getBuffer();
+        }
+
+        VkBuffer getWorldPositionBuffer(uint32_t frameIndex) const {
+            return worldPositionBuffers[frameIndex]->getBuffer();
         }
     private:
         void createPipelineLayout();
@@ -66,6 +70,7 @@ namespace Engine
         std::vector<VkDescriptorSet> descriptorSets;
 
         VkSampler sampler{VK_NULL_HANDLE};
+        VkSampler nearestSampler = VK_NULL_HANDLE;
 
         std::vector<std::unique_ptr<Buffer>> meshBuffers;
         std::vector<std::unique_ptr<Buffer>> compactMaterialBuffers;

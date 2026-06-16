@@ -8,8 +8,8 @@ namespace Engine
         glm::vec3 rotate{0};
         if (glfwGetKey(window, keys.lookRight) == GLFW_PRESS) rotate.y += 1.f;
         if (glfwGetKey(window, keys.lookLeft) == GLFW_PRESS) rotate.y -= 1.f;
-        if (glfwGetKey(window, keys.lookUp) == GLFW_PRESS) rotate.x += 1.f;
-        if (glfwGetKey(window, keys.lookDown) == GLFW_PRESS) rotate.x -= 1.f;
+        if (glfwGetKey(window, keys.lookUp) == GLFW_PRESS) rotate.x -= 1.f;
+        if (glfwGetKey(window, keys.lookDown) == GLFW_PRESS) rotate.x += 1.f;
 
         if (glm::dot(rotate, rotate) > std::numeric_limits<float>::epsilon())
         {
@@ -43,7 +43,7 @@ namespace Engine
         // Extract actual forward and right directions from the quaternion
         const glm::vec3 forwardDir = glm::normalize(gameObject->transform.rotation * glm::vec3(0, 0, 1));
         const glm::vec3 rightDir = glm::normalize(gameObject->transform.rotation * glm::vec3(1, 0, 0));
-        const glm::vec3 upDir{0.f, -1.f, 0.f}; // World up
+        const glm::vec3 upDir{0.f, 1.f, 0.f};
 
         // For FPS movement, use forward projected onto XZ plane
         glm::vec3 forwardDirXZ = glm::normalize(glm::vec3(forwardDir.x, 0.0f, forwardDir.z));

@@ -58,19 +58,19 @@ namespace Engine
         bindings[2].binding         = 2;
         bindings[2].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         bindings[2].descriptorCount = 1;
-        bindings[2].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+        bindings[2].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
 
         // Binding 3: Prefilter Map (Cube)
         bindings[3].binding         = 3;
         bindings[3].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         bindings[3].descriptorCount = 1;
-        bindings[3].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+        bindings[3].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
 
         // Binding 4: BRDF LUT (2D)
         bindings[4].binding         = 4;
         bindings[4].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         bindings[4].descriptorCount = 1;
-        bindings[4].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+        bindings[4].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
 
         // Binding 5: Variable Textures (Must be last!)
         bindings[5].binding         = 5;

@@ -55,8 +55,8 @@ namespace Engine
 
     glm::mat4 projection = frameInfo.camera->getProjection();
     glm::mat4 view = frameInfo.camera->getView();
-    glm::mat4 flipMatrix = glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-    glm::mat4 viewProjection = projection * view * flipMatrix;
+        glm::mat4 clipMatrix = glm::mat4(1.0f);
+    glm::mat4 viewProjection = clipMatrix * projection * view;
 
     VkRenderingAttachmentInfo colorAttachment{};
     colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -99,8 +99,13 @@ namespace Engine
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
+        VkDescriptorSet cullingSet = cullPass.getObjectDescriptorSet(currentFrame);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &cullingSet, 0, nullptr);
+
     vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(glm::mat4), &viewProjection);
     megaBuffer.bindPositionOnly(cmd);
+
+
 
     vkCmdDrawIndexedIndirectCount(
         cmd,
@@ -115,7 +120,7 @@ namespace Engine
     vkCmdEndRendering(cmd);
 }
 
-    void VisibilityPassNode::resolve(const RenderGraph& graph, const FrameInfo& frameInfo)
+    void VisibilityPassNode::resolve(RenderGraph& graph, const FrameInfo& frameInfo)
     {
         RenderPassNode::resolve(graph, frameInfo);
     }
@@ -127,12 +132,14 @@ namespace Engine
         pushConstantRange.offset = 0;
         pushConstantRange.size = sizeof(VisbilityPushConstants);
 
+        VkDescriptorSetLayout layouts[] = { cullPass.getObjectSetLayout() };
+
         VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         pipelineLayoutInfo.pushConstantRangeCount = 1;
         pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
-        pipelineLayoutInfo.setLayoutCount = 0;
-        pipelineLayoutInfo.pSetLayouts = nullptr;
+        pipelineLayoutInfo.setLayoutCount = 1;
+        pipelineLayoutInfo.pSetLayouts = layouts;
 
         vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &pipelineLayout);
     }
@@ -179,6 +186,7 @@ namespace Engine
         rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
         rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
         rasterizer.lineWidth = 1.0f;
+        //rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
         rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
         rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 

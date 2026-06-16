@@ -18,7 +18,7 @@ namespace Engine
     {
         globalPool = LveDescriptorPool::Builder(device)
                      .setMaxSets(Renderer::MAX_FRAMES_IN_FLIGHT)
-                     .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, Renderer::MAX_FRAMES_IN_FLIGHT * 6)
+                     .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, Renderer::MAX_FRAMES_IN_FLIGHT * 7)
                      .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, Renderer::MAX_FRAMES_IN_FLIGHT * 2)
                      .build();
 
@@ -57,6 +57,21 @@ namespace Engine
             throw std::runtime_error("MaterialPassNode: Failed to create texture sampler");
         }
 
+        VkSamplerCreateInfo nearestSamplerInfo{};
+        nearestSamplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        nearestSamplerInfo.magFilter = VK_FILTER_NEAREST;
+        nearestSamplerInfo.minFilter = VK_FILTER_NEAREST;
+        nearestSamplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+        nearestSamplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        nearestSamplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        nearestSamplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        nearestSamplerInfo.maxAnisotropy = 1.0f;
+        nearestSamplerInfo.pNext = VK_NULL_HANDLE;
+        if (vkCreateSampler(device.getDevice(), &nearestSamplerInfo, nullptr, &nearestSampler) != VK_SUCCESS)
+        {
+            throw std::runtime_error("MaterialPassNode: Failed to create nearest texture sampler");
+        }
+
         const uint32_t MAX_SCENE_OBJECTS = 100000;
         VkExtent2D extent = renderer.getSwapChain().getSwapChainExtent();
         lastWidth = extent.width;
@@ -71,7 +86,7 @@ namespace Engine
         {
             meshBuffers[i] = std::make_unique<Buffer>(
                 device, sizeof(GPUMeshInfo), MAX_SCENE_OBJECTS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                VMA_MEMORY_USAGE_GPU_ONLY,
+                VMA_MEMORY_USAGE_CPU_TO_GPU,
                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 0
             );
 
@@ -88,6 +103,13 @@ namespace Engine
 
         descriptorSets.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
 
+        for (size_t i = 0; i < Renderer::MAX_FRAMES_IN_FLIGHT; i++)
+        {
+            if (!globalPool->allocateDescriptor(globalSetLayout->getDescriptorSetLayout(), descriptorSets[i]))
+            {
+                throw std::runtime_error("MaterialPassNode: Failed to allocate descriptor sets!");
+            }
+        }
 
         createPipelineLayout();
         createPipeline();
@@ -95,6 +117,8 @@ namespace Engine
 
     MaterialPassNode::~MaterialPassNode()
     {
+        if (nearestSampler != VK_NULL_HANDLE)
+            vkDestroySampler(device.getDevice(), nearestSampler, nullptr);
         if (sampler != VK_NULL_HANDLE)
             vkDestroySampler(device.getDevice(), sampler, nullptr);
         if (pipeline != VK_NULL_HANDLE)
@@ -125,7 +149,6 @@ namespace Engine
         uint32_t currentFrame = renderer.getFrameIndex();
         VkExtent2D extent = renderer.getSwapChain().getSwapChainExtent();
 
-        // 1. Dynamic Resize: Adjust pixel buffers if target resolution changed mid-frame
         if (extent.width != lastWidth || extent.height != lastHeight)
         {
             lastWidth = extent.width;
@@ -154,7 +177,7 @@ namespace Engine
                 VkDescriptorImageInfo visBufferInfo{};
                 visBufferInfo.imageView = renderGraph.getImageView("VisBuffer");
                 visBufferInfo.imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
-                visBufferInfo.sampler = sampler;
+                visBufferInfo.sampler = nearestSampler;
 
                 VkDescriptorBufferInfo vertexBufferInfo = megaBuffer.getPositionBuffer()->descriptorInfo(
                     VK_WHOLE_SIZE, 0);
@@ -178,7 +201,6 @@ namespace Engine
             }
         }
 
-        // 2. Linearize Scene Mesh Mapping matching CullPassNode's filtering logic
         std::vector<GPUMeshInfo> meshInfos;
         meshInfos.reserve(frameInfo.gameObjects->size());
 
@@ -199,41 +221,38 @@ namespace Engine
             meshBuffers[currentFrame]->flush(VK_WHOLE_SIZE, 0);
         }
 
-        // 3. Bind Compute Pipeline and descriptor sets
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
 
         VkDescriptorSet bindlessSet = resourceHeap.getDescriptorSet();
         VkDescriptorSet sets[] = {bindlessSet, descriptorSets[currentFrame]};
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 0, 2, sets, 0, nullptr);
 
-        // 4. Update and upload Push Constants
+
         glm::mat4 projection = frameInfo.camera->getProjection();
         glm::mat4 view = frameInfo.camera->getView();
-        glm::mat4 flipMatrix = glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-        glm::mat4 viewProjection = projection * view * flipMatrix;
+
+        glm::mat4 clipMatrix = glm::mat4(1.0f);
+        glm::mat4 viewProjection = clipMatrix * projection * view;
 
         MaterialPushConstants pc{};
-        pc.invViewProj = glm::inverse(viewProjection);
+        pc.viewProj = viewProjection;
         pc.view = view;
         pc.cameraPos = glm::vec3(glm::inverse(view)[3]);
         pc.frameWidth = extent.width;
 
         vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(MaterialPushConstants), &pc);
 
-        // 5. Fullscreen Compute Workgroup Dispatch (Assuming 16x16 local sizing in your shader)
         uint32_t groupCountX = (extent.width + 15) / 16;
         uint32_t groupCountY = (extent.height + 15) / 16;
         vkCmdDispatch(cmd, groupCountX, groupCountY, 1);
     }
 
-    void MaterialPassNode::resolve(const RenderGraph& graph, const FrameInfo& frameInfo)
+    void MaterialPassNode::resolve(RenderGraph& graph, const FrameInfo& frameInfo)
     {
-        // Always call base implementation
         RenderPassNode::resolve(graph, frameInfo);
 
         uint32_t currentFrame = frameInfo.frameIndex;
 
-        // Dynamic resource binding: Fetch fresh image views compiled by the graph
         VkDescriptorImageInfo depthImageInfo{};
         depthImageInfo.imageView = graph.getImageView("DepthImage");
         depthImageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
@@ -242,9 +261,8 @@ namespace Engine
         VkDescriptorImageInfo visBufferInfo{};
         visBufferInfo.imageView = graph.getImageView("VisBuffer");
         visBufferInfo.imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
-        visBufferInfo.sampler = sampler;
+        visBufferInfo.sampler = nearestSampler;
 
-        // Query up-to-date descriptors from your global geometry allocation
         VkDescriptorBufferInfo vertexBufferInfo = megaBuffer.getPositionBuffer()->descriptorInfo(VK_WHOLE_SIZE, 0);
         VkDescriptorBufferInfo indexBufferInfo = megaBuffer.getIndexBuffer()->descriptorInfo(VK_WHOLE_SIZE, 0);
         VkDescriptorBufferInfo meshBufferInfo = meshBuffers[currentFrame]->descriptorInfo(VK_WHOLE_SIZE, 0);
@@ -255,8 +273,6 @@ namespace Engine
         VkDescriptorBufferInfo attributeBufferInfo = megaBuffer.getAttributeBuffer()->descriptorInfo(VK_WHOLE_SIZE, 0);
         VkDescriptorBufferInfo objectBufferInfo = renderGraph.getBufferInfo("CullObjectData", currentFrame);
 
-
-        // Update descriptors cleanly before command recording starts
         LveDescriptorWriter(*globalSetLayout, *globalPool)
             .writeBuffer(0, &vertexBufferInfo)
             .writeBuffer(1, &indexBufferInfo)

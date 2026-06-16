@@ -64,7 +64,7 @@ namespace Engine
         renderGraph.writeImage("SceneColorImage", VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
     }
 
-    void GBufferPassNode::resolve(const RenderGraph& graph, const FrameInfo& frameInfo)
+    void GBufferPassNode::resolve(RenderGraph& graph, const FrameInfo& frameInfo)
     {
         VkDescriptorImageInfo albedoInfo{ssaoSampler, graph.getImageView("G_AlbedoMetallic"), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
         VkDescriptorImageInfo normalInfo{ssaoSampler, graph.getImageView("G_NormalRoughness"), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};

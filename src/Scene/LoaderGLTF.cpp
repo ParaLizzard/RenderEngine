@@ -57,9 +57,8 @@ namespace Engine
 
                 const uint8_t* rawData = nullptr;
                 size_t rawSize = 0;
-                std::vector<uint8_t> fileBuffer; // To hold data if loaded via URI
+                std::vector<uint8_t> fileBuffer;
 
-                // 1. Extract raw bytes regardless of source type
                 std::visit(fastgltf::visitor{
                                [&](fastgltf::sources::URI& uriSource)
                                {
@@ -115,7 +114,6 @@ namespace Engine
 
                 if (rawData && rawSize > 0)
                 {
-                    // 2. Sniff the Magic Number for KTX2 (12 bytes)
                     bool isKTX2 = false;
                     if (rawSize >= 12)
                     {
@@ -150,7 +148,6 @@ namespace Engine
                     }
                     else
                     {
-                        // Fallback: Decode PNG/JPEG to raw RGBA pixels
                         int width, height, channels;
                         stbi_uc* pixels = stbi_load_from_memory(rawData, static_cast<int>(rawSize), &width, &height,
                                                                 &channels, STBI_rgb_alpha);

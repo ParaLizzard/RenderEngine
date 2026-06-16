@@ -513,7 +513,6 @@ namespace Engine
                                      VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, offscreenSubresourceRange);
 
         std::vector<glm::mat4> matrices = {
-            //                                 Look Target                       Up Vector
             glm::lookAt(glm::vec3(0.0f), glm::vec3( 1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)), // +X
             glm::lookAt(glm::vec3(0.0f), glm::vec3(-1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)), // -X
             glm::lookAt(glm::vec3(0.0f), glm::vec3( 0.0f,  1.0f,  0.0f), glm::vec3(0.0f,  0.0f,  1.0f)), // +Y
@@ -843,7 +842,6 @@ namespace Engine
                                      VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, offscreenSubresourceRange);
 
         std::vector<glm::mat4> matrices = {
-            //                                 Look Target                       Up Vector
             glm::lookAt(glm::vec3(0.0f), glm::vec3( 1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)), // +X
             glm::lookAt(glm::vec3(0.0f), glm::vec3(-1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)), // -X
             glm::lookAt(glm::vec3(0.0f), glm::vec3( 0.0f,  1.0f,  0.0f), glm::vec3(0.0f,  0.0f,  1.0f)), // +Y

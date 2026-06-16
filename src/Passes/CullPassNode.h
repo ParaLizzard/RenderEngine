@@ -22,12 +22,13 @@ namespace Engine
         CullPassNode(Device& device, Renderer& renderer, Model& megaBuffer);
         ~CullPassNode();
 
+
         CullPassNode(const CullPassNode&) = delete;
         CullPassNode& operator=(const CullPassNode&) = delete;
 
         void setup(RenderGraphBuilder& renderGraph) override;
         void execute(VkCommandBuffer& cmd, FrameInfo& frameInfo) override;
-        void resolve(const RenderGraph& graph, const FrameInfo& frameInfo) override;
+        void resolve(RenderGraph& graph, const FrameInfo& frameInfo) override;
 
         void markSceneDirty() { sceneDirty = true; }
 
@@ -35,6 +36,7 @@ namespace Engine
         [[nodiscard]] VkBuffer getDrawCountBuffer(uint32_t frameIdx) const { return gpuDrawCountBuffers[frameIdx]->getBuffer(); }
         [[nodiscard]] VkBuffer getGpuObjectBuffer(uint32_t frameIdx) const {return gpuObjectSSBOs[frameIdx]->getBuffer();}
         [[nodiscard]] VkDescriptorSet getObjectDescriptorSet(uint32_t frameIdx) const { return objectDescriptorSets[frameIdx]; }
+        VkDescriptorSetLayout getObjectSetLayout(){return objectSetLayout;}
         [[nodiscard]] uint32_t getMaxObjectCount() const { return static_cast<uint32_t>(objectDataArray.size()); }
     private:
         void createPipeline();

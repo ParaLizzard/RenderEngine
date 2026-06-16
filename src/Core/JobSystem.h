@@ -75,10 +75,8 @@ namespace Engine
     {
         using return_type = typename std::invoke_result_t<F, Args...>;
 
-        // 1. Bind the function and its arguments together
         auto bound_task = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
 
-        // 2. Wrap the execution with a try-catch block to surface exceptions immediately
         auto task = std::make_shared<std::packaged_task<return_type()>>(
             [bound_task = std::move(bound_task)]() mutable {
                 try {

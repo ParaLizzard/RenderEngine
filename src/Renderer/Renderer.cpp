@@ -64,7 +64,7 @@ namespace Engine
         VkSemaphoreSubmitInfo semInfo{};
         semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
         semInfo.semaphore = frames[currentFrameIndex].imageAvailableSemaphore;
-        semInfo.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+        semInfo.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
 
         VkCommandBufferSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;

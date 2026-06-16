@@ -196,8 +196,9 @@ namespace Engine
     {
         glm::mat4 projection = frameInfo.camera->getProjection();
         glm::mat4 view = frameInfo.camera->getView();
-        glm::mat4 flipMatrix = glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-        glm::mat4 viewProjection = projection * view * flipMatrix;
+        glm::mat4 clipMatrix = glm::mat4(1.0f);
+        clipMatrix[1][1] = -1.0f;
+        glm::mat4 viewProjection = clipMatrix * projection * view;
 
         uint32_t currentFrame = renderer.getFrameIndex();
         if (sceneDirty)
@@ -330,7 +331,7 @@ namespace Engine
         }
     }
 
-    void CullPassNode::resolve(const RenderGraph& graph, const FrameInfo& frameInfo)
+    void CullPassNode::resolve(RenderGraph& graph, const FrameInfo& frameInfo)
     {
         RenderPassNode::resolve(graph, frameInfo);
     }

@@ -1,7 +1,18 @@
 #version 460
 
 layout (binding = 0) uniform sampler2D samplerDepth;
-layout (binding = 1) uniform sampler2D samplerNormal;
+
+struct CompactMaterial {
+    uint packedNormal;
+    uint packedRadiance;
+    uint packedAO;
+    uint padding;
+};
+
+layout(std430, binding = 1) readonly buffer MaterialBuffer {
+    CompactMaterial materials[];
+};
+
 layout (binding = 2) uniform sampler2D ssaoNoise;
 
 layout (constant_id = 0) const int SSAO_KERNEL_SIZE = 64;
@@ -36,16 +47,22 @@ void main()
     float depth = texture(samplerDepth, inUV).r;
     vec3 fragPos = reconstructViewPos(inUV, depth);
 
-    // 2. Get the Normal and fix the math
-    vec3 worldNormal = texture(samplerNormal, inUV).rgb;
-    worldNormal = normalize(worldNormal * 2.0 - 1.0);
+    ivec2 texDim = textureSize(samplerDepth, 0);
+    ivec2 pixelCoords = ivec2(inUV * vec2(texDim));
+    uint pixelIndex = pixelCoords.y * texDim.x + pixelCoords.x;
+
+    uint packedNorm = materials[pixelIndex].packedNormal;
+
+    // Decode normal (Assuming standard RGBA8 packing. Change this if you use Octahedron decoding!)
+    vec4 unpacked = unpackUnorm4x8(packedNorm);
+    vec3 worldNormal = normalize(unpacked.xyz * 2.0 - 1.0);
 
     // Transform World Space normal to View Space to match fragPos
     vec3 normal = mat3(ubo.view) * worldNormal;
     normal = normalize(normal);
 
     // 3. Get the random vector
-    ivec2 texDim = textureSize(samplerDepth, 0);
+    //ivec2 texDim = textureSize(samplerDepth, 0);
     ivec2 noiseDim = textureSize(ssaoNoise, 0);
     vec2 noiseScale = vec2(float(texDim.x)/float(noiseDim.x), float(texDim.y)/float(noiseDim.y));
     vec3 randomVec = texture(ssaoNoise, inUV * noiseScale).xyz;

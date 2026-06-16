@@ -45,5 +45,8 @@ namespace Engine
         std::deque<Texture2D> sceneTextures;
         std::vector<GameObject> gameObjects;
 
+        float fpsTimer = 0.0f;
+        int fpsCount = 0;
+
     };
 }

@@ -54,8 +54,9 @@ namespace Engine
 
         renderGraph.readImage("DepthImage", VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
                               VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
-        renderGraph.readImage("G_NormalRoughness", VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                              VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+        renderGraph.readBuffer("CompactMaterial",
+                       VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                       VK_ACCESS_2_SHADER_READ_BIT);
 
         renderGraph.writeImage("SsaoImage", VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
@@ -63,22 +64,20 @@ namespace Engine
                                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
     }
 
-    void SsaoPassNode::resolve(const RenderGraph& graph, const FrameInfo& frameInfo)
+    void SsaoPassNode::resolve(RenderGraph& graph, const FrameInfo& frameInfo)
     {
         int i = frameInfo.frameIndex;
 
         VkDescriptorImageInfo depthInfo{
             colorSampler, graph.getImageView("DepthImage"), VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL
         };
-        VkDescriptorImageInfo normalInfo{
-            colorSampler, graph.getImageView("G_NormalRoughness"), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-        };
+        VkDescriptorBufferInfo compactMaterialInfo = graph.getBufferInfo("CompactMaterial", i);
         VkDescriptorImageInfo noiseInfo{noiseSampler, noiseView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
         VkDescriptorBufferInfo bufferInfo = uboBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
 
         LveDescriptorWriter(*ssaoSetLayout, *descriptorPool)
             .writeImage(0, &depthInfo)
-            .writeImage(1, &normalInfo)
+            .writeBuffer(1, &compactMaterialInfo)
             .writeImage(2, &noiseInfo)
             .writeBuffer(3, &bufferInfo)
             .overwrite(ssaoDescriptorSets[i]);
@@ -147,7 +146,7 @@ namespace Engine
         VkDescriptorSet sets[] = {ssaoDescriptorSets[currentFrame]};
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoPipelineLayout, 0, 1, sets, 0, nullptr);
 
-        vkCmdDraw(cmd, 3, 1, 0, 0); // Fullscreen triangle
+        vkCmdDraw(cmd, 3, 1, 0, 0);
         vkCmdEndRendering(cmd);
 
         VkImageMemoryBarrier2 barrier{};
@@ -316,10 +315,11 @@ namespace Engine
         vkCreateSampler(device.getDevice(), &samplerInfo, nullptr, &colorSampler);
 
         descriptorPool = LveDescriptorPool::Builder(device)
-                         .setMaxSets(Renderer::MAX_FRAMES_IN_FLIGHT * 2)
-                         .addPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, Renderer::MAX_FRAMES_IN_FLIGHT)
-                         .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, Renderer::MAX_FRAMES_IN_FLIGHT * 4)
-                         .build();
+                 .setMaxSets(Renderer::MAX_FRAMES_IN_FLIGHT * 2)
+                 .addPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, Renderer::MAX_FRAMES_IN_FLIGHT)
+                 .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, Renderer::MAX_FRAMES_IN_FLIGHT * 4)
+                 .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, Renderer::MAX_FRAMES_IN_FLIGHT)
+                 .build();
 
         std::default_random_engine rndEngine((unsigned)time(nullptr));
         std::uniform_real_distribution<float> rndDist(0.0f, 1.0f);
@@ -344,13 +344,11 @@ namespace Engine
         }
 
         ssaoSetLayout = LveDescriptorSetLayout::Builder(device)
-                        .addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT) // Depth
-                        .addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                                    VK_SHADER_STAGE_FRAGMENT_BIT) // Normal
-                        .addBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT) // Noise
-                        .addBinding(3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT)
-                        // Kernel + Matrices
-                        .build();
+                .addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT) // Depth
+                .addBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT) // Normal (from CompactMaterial)
+                .addBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT) // Noise
+                .addBinding(3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT) // Kernel + Matrices
+                .build();
 
         blurSetLayout = LveDescriptorSetLayout::Builder(device)
                         .addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,

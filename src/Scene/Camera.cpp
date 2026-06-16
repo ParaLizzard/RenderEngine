@@ -1,6 +1,3 @@
-//
-// Created by Martin Varga on 09.01.2026.
-//
 
 #include "Scene/Camera.h"
 
@@ -78,16 +75,13 @@ namespace Engine
     }
 
     void Camera::setViewYXZ(glm::vec3 position, glm::quat rotation) {
-        // Normalize quaternion to ensure it represents a valid rotation
         const glm::quat q = glm::normalize(rotation);
 
-        // Precompute quaternion terms (shared between both matrices)
         const float qx = q.x, qy = q.y, qz = q.z, qw = q.w;
         const float qx2 = qx * qx, qy2 = qy * qy, qz2 = qz * qz;
         const float qxy = qx * qy, qxz = qx * qz, qxw = qx * qw;
         const float qyz = qy * qz, qyw = qy * qw, qzw = qz * qw;
 
-        // Rotation matrix basis vectors (camera's right, up, forward in world space)
         const glm::vec3 right(
             1.0f - 2.0f * (qy2 + qz2),
             2.0f * (qxy + qzw),
@@ -104,8 +98,6 @@ namespace Engine
             1.0f - 2.0f * (qx2 + qy2)
         );
 
-        // View matrix = transpose(R) * translate(-position)
-        // Rows of view matrix are the basis vectors (transpose of rotation)
         viewMatrix = glm::mat4(1.0f);
         viewMatrix[0][0] = right.x;
         viewMatrix[1][0] = right.y;
@@ -120,8 +112,6 @@ namespace Engine
         viewMatrix[3][1] = -glm::dot(up, position);
         viewMatrix[3][2] = -glm::dot(forward, position);
 
-        // Inverse view matrix = translate(position) * R
-        // Columns of inverse are the basis vectors (rotation matrix)
         inverseViewMatrix = glm::mat4(1.0f);
         inverseViewMatrix[0][0] = right.x;
         inverseViewMatrix[0][1] = right.y;

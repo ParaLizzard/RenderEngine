@@ -2,11 +2,11 @@
 
 #include <stb_image.h>
 
-//#include "Passes/GBufferPassNode.h"
 #include "Passes/FxaaPassNode.h"
 #include "Passes/CullPassNode.h"
 #include "Passes/MaterialPassNode.h"
 #include "Passes/SsaoPassNode.h"
+#include "Passes/ResolvePassNode.h"
 #include "Passes/VisibilityPassNode.h"
 #include "Scene/IBL.h"
 #include "Scene/LoaderGLTF.h"
@@ -119,7 +119,7 @@ namespace Engine
         VisibilityPassNode visPass{device,renderer,megaBuffer,cullPass};
         MaterialPassNode materialPass{device,renderer,megaBuffer,resourceHeap,renderGraph};
         SsaoPassNode ssaoPass{device, renderer, megaBuffer, resourceHeap};
-        //GBufferPassNode forwardPass{device, renderer, megaBuffer, resourceHeap, cullPass};
+        ResolvePassNode resolvePass{device, renderer};
         FxaaPassNode fxaaPass{device, renderer, megaBuffer, resourceHeap};
 
 
@@ -127,13 +127,13 @@ namespace Engine
         //pendingLoads.push_back(LoaderGLTF::loadAsync(jobSystem, "models/pbr_sphere.glb"));
         //pendingLoads.push_back(LoaderGLTF::loadAsync(
         //  jobSystem, "C:/Users/Jan Varga/Downloads/main_sponza (1)/main_sponza/NewSponza_Main_glTF_003.gltf"));
-        pendingLoads.push_back(LoaderGLTF::loadAsync(
-            jobSystem, "models/sponza_optimized.glb"));
-        pendingLoads.push_back(LoaderGLTF::loadAsync(
-            jobSystem, "C:/Users/Jan Varga/Downloads/pkg_a_curtains/pkg_a_curtains/NewSponza_Curtains_glTF.gltf"));
+        //pendingLoads.push_back(LoaderGLTF::loadAsync(
+            //jobSystem, "models/sponza_optimized.glb"));
+        //pendingLoads.push_back(LoaderGLTF::loadAsync(
+            //jobSystem, "C:/Users/Jan Varga/Downloads/pkg_a_curtains/pkg_a_curtains/NewSponza_Curtains_glTF.gltf"));
         //pendingLoads.push_back(LoaderGLTF::loadAsync(
         //jobSystem, "C:/Users/Jan Varga/Downloads/pkg_b_ivy1/pkg_b_ivy/NewSponza_IvyGrowth_glTF.gltf"));
-        //pendingLoads.push_back(LoaderGLTF::loadAsync(jobSystem, "C:/Users/Martin Varga/Downloads/metallic--roughness--test/source/Metallic_Roughness_Test.glb"));
+        pendingLoads.push_back(LoaderGLTF::loadAsync(jobSystem, "C:/Users/Martin Varga/Downloads/metallic--roughness--test/source/Metallic_Roughness_Test.glb"));
 
         auto cubeFuture = LoaderGLTF::loadAsync(jobSystem, "models/cube.glb");
         ParsedGLTF cubeParsed = cubeFuture.get();
@@ -184,17 +184,22 @@ namespace Engine
 
         IBL ibl = IBL(device, skyBox, resourceHeap, megaBuffer, *cubeMeshNode);
 
-        VkDescriptorImageInfo irradianceInfo{
-            ibl.irradianceCube.sampler, ibl.irradianceCube.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-        };
-        VkDescriptorImageInfo prefilterInfo{
-            ibl.prefilteredCube.sampler, ibl.prefilteredCube.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-        };
-        VkDescriptorImageInfo brdfInfo{
-            ibl.BRDFLUT.sampler, ibl.BRDFLUT.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-        };
+        VkDescriptorImageInfo irradianceInfo{};
+        irradianceInfo.sampler = ibl.irradianceCube.sampler;
+        irradianceInfo.imageView = ibl.irradianceCube.imageView;
+        irradianceInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-        resourceHeap.writeIBLDescriptors(irradianceInfo, prefilterInfo, brdfInfo);
+        VkDescriptorImageInfo prefilterInfo{};
+        prefilterInfo.sampler = ibl.prefilteredCube.sampler;
+        prefilterInfo.imageView = ibl.prefilteredCube.imageView;
+        prefilterInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        VkDescriptorImageInfo brdfLutInfo{};
+        brdfLutInfo.sampler = ibl.BRDFLUT.sampler;
+        brdfLutInfo.imageView = ibl.BRDFLUT.imageView;
+        brdfLutInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        resourceHeap.writeIBLDescriptors(irradianceInfo, prefilterInfo, brdfLutInfo);
 
         resourceHeap.uploadMaterialBuffer();
         resourceHeap.writeMaterialDescriptor();
@@ -227,6 +232,7 @@ namespace Engine
         {
             glfwPollEvents();
 
+
             if (glfwGetKey(window.getGLFWWinodow(), GLFW_KEY_O) == GLFW_PRESS)
             {
                 if (!ssaoKeyPressed)
@@ -245,6 +251,19 @@ namespace Engine
             float deltaTime = currentTime - lastTime;
             lastTime = currentTime;
             float time = glfwGetTime();
+
+            fpsTimer += deltaTime;
+            fpsCount++;
+
+            // 3. Print every 2 seconds
+            if (fpsTimer >= 2.0f)
+            {
+                float avgFps = fpsCount / fpsTimer;
+                std::cout << "Average FPS: " << avgFps << " (Frame time: "
+                          << (fpsTimer / fpsCount) * 1000.0f << " ms)" << std::endl;
+                fpsTimer = 0.0f;
+                fpsCount = 0;
+            }
 
             for (int i = pendingLoads.size() - 1; i >= 0; --i)
             {
@@ -330,7 +349,18 @@ namespace Engine
                                    100000 * sizeof(ObjectData),
                                    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                                    VK_ACCESS_2_SHADER_WRITE_BIT);
-
+                VkDeviceSize totalBufferSize = static_cast<VkDeviceSize>(currentExtent.width) * currentExtent.height * sizeof(CompactMaterial);
+                renderGraph.registerPhysicalBuffer("CompactMaterial",
+                                   materialPass.getCompactMaterialBuffer(currentFrame),
+                                   totalBufferSize,
+                                   VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                                   VK_ACCESS_2_SHADER_WRITE_BIT);
+                VkDeviceSize worldPosBufferSize = static_cast<VkDeviceSize>(currentExtent.width) * currentExtent.height * sizeof(WorldData);
+                renderGraph.registerPhysicalBuffer("WorldPosition",
+                                   materialPass.getWorldPositionBuffer(currentFrame),
+                                   worldPosBufferSize,
+                                   VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                                   VK_ACCESS_2_SHADER_WRITE_BIT);
                 renderGraph.registerPhysicalImage("SwapChainImage",
                                                   renderer.getSwapChain().getImage(imgIdx),
                                                   renderer.getSwapChain().getImageView(imgIdx),
@@ -346,7 +376,7 @@ namespace Engine
                 renderGraph.addPass(&visPass);
                 renderGraph.addPass(&materialPass);
                 renderGraph.addPass(&ssaoPass);
-                //renderGraph.addPass(&forwardPass);
+                renderGraph.addPass(&resolvePass);
                 renderGraph.addPass(&fxaaPass);
                 renderGraph.compile();
 
@@ -369,13 +399,14 @@ namespace Engine
                                            sizeof(uint32_t));
             VkDeviceSize totalBufferSize = static_cast<VkDeviceSize>(currentExtent.width) * currentExtent.height * sizeof(CompactMaterial);
             renderGraph.updateBufferHandle("CompactMaterial", materialPass.getCompactMaterialBuffer(currentFrame), totalBufferSize);
+            VkDeviceSize worldPosBufferSize = static_cast<VkDeviceSize>(currentExtent.width) * currentExtent.height * sizeof(WorldData);
+            renderGraph.updateBufferHandle("WorldPosition", materialPass.getWorldPositionBuffer(currentFrame), worldPosBufferSize);
             renderGraph.updateImageHandle("SwapChainImage",
                                           renderer.getSwapChain().getImage(imgIdx),
                                           renderer.getSwapChain().getImageView(imgIdx), currentExtent);
             renderGraph.updateImageHandle("DepthImage",
                                           renderer.getSwapChain().getDepthImage(),
                                           renderer.getSwapChain().getDepthImageView(), currentExtent);
-            renderGraph.registerPhysicalBuffer("CompactMaterial", VK_NULL_HANDLE, 0);
 
             float aspect = renderer.getaspectRatio();
             camera.setPerspectiveProjection(glm::radians(50.0f), aspect, 0.1f, 100.0f);

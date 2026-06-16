@@ -32,10 +32,10 @@ namespace Engine
 
     void FxaaPassNode::setup(RenderGraphBuilder& renderGraph)
     {
-        renderGraph.readImage("SceneColorImage",
-                              VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                              VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                              VK_ACCESS_2_SHADER_READ_BIT);
+        renderGraph.readImage("FinalRender",
+    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+    VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+    VK_ACCESS_2_SHADER_READ_BIT);
 
         renderGraph.writeImage("SwapChainImage",
                                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
@@ -43,20 +43,12 @@ namespace Engine
                                VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
     }
 
-    void FxaaPassNode::resolve(const RenderGraph& graph, const FrameInfo& frameInfo)
+    void FxaaPassNode::resolve(RenderGraph& graph, const FrameInfo& frameInfo)
     {
-        VkImageView sceneColorView = graph.getImageView("SceneColorImage");
-
-        if (cachedViews.empty()) {
-            cachedViews.resize(Engine::Renderer::MAX_FRAMES_IN_FLIGHT, VK_NULL_HANDLE);
-        }
-
-        if (cachedViews[frameInfo.frameIndex] != sceneColorView)
-        {
-            VkDescriptorImageInfo imageInfo{};
-            imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            imageInfo.imageView = sceneColorView;
-            imageInfo.sampler = sampler;
+        VkDescriptorImageInfo imageInfo{};
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        imageInfo.imageView = graph.getImageView("FinalRender");
+        imageInfo.sampler = sampler;
 
             VkWriteDescriptorSet descriptorWrite{};
             descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -69,8 +61,6 @@ namespace Engine
 
             vkUpdateDescriptorSets(device.getDevice(), 1, &descriptorWrite, 0, nullptr);
 
-            cachedViews[frameInfo.frameIndex] = sceneColorView;
-        }
     }
 
     void FxaaPassNode::execute(VkCommandBuffer& cmd, FrameInfo& frameInfo)
@@ -118,6 +108,9 @@ namespace Engine
             &descriptorSets[frameInfo.frameIndex],
             0, nullptr
         );
+
+        glm::vec2 resolution = { static_cast<float>(frameInfo.extent.width), static_cast<float>(frameInfo.extent.height) };
+        vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(glm::vec2), &resolution);
 
         vkCmdDraw(cmd, 3, 1, 0, 0);
 
@@ -177,10 +170,17 @@ namespace Engine
         if (vkAllocateDescriptorSets(device.getDevice(), &allocInfo, descriptorSets.data()) != VK_SUCCESS)
             throw std::runtime_error("Fxaa: failed to allocate descriptor sets!");
 
+        VkPushConstantRange pushConstantRange{};
+        pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        pushConstantRange.offset = 0;
+        pushConstantRange.size = sizeof(glm::vec2);
+
         VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         pipelineLayoutInfo.setLayoutCount = 1;
         pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
+        pipelineLayoutInfo.pushConstantRangeCount = 1;
+        pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
         if (vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS)
             throw std::runtime_error("failed to create pipeline layout");
