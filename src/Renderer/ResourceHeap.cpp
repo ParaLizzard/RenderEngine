@@ -46,7 +46,7 @@ namespace Engine
         bindings[0].binding         = 0;
         bindings[0].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         bindings[0].descriptorCount = 1;
-        bindings[0].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+        bindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
 
         // Binding 1: Scene UBO
         bindings[1].binding         = 1;
@@ -76,7 +76,7 @@ namespace Engine
         bindings[5].binding         = 5;
         bindings[5].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         bindings[5].descriptorCount = maxDescriptors;
-        bindings[5].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+        bindings[5].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
 
         std::array<VkDescriptorBindingFlags, 6> bindingFlags{};
         bindingFlags[0] = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;

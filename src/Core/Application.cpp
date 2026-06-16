@@ -5,6 +5,7 @@
 //#include "Passes/GBufferPassNode.h"
 #include "Passes/FxaaPassNode.h"
 #include "Passes/CullPassNode.h"
+#include "Passes/MaterialPassNode.h"
 #include "Passes/SsaoPassNode.h"
 #include "Passes/VisibilityPassNode.h"
 #include "Scene/IBL.h"
@@ -104,11 +105,19 @@ namespace Engine
 
     void Application::run()
     {
+        FrameInfo info{};
+        info.device = &device;
+        info.resourceHeap = &resourceHeap;
+        info.renderer = &renderer;
+        info.megaBuffer = &megaBuffer;
+        info.renderGraph = &renderGraph;
+
         Camera camera{};
         camera.setViewTarget(glm::vec3{0.0f, 0.0f, -5.0f}, glm::vec3{0.0f, 0.0f, 0.0f});
 
         CullPassNode cullPass(device, renderer, megaBuffer);
         VisibilityPassNode visPass{device,renderer,megaBuffer,cullPass};
+        MaterialPassNode materialPass{device,renderer,megaBuffer,resourceHeap,renderGraph};
         SsaoPassNode ssaoPass{device, renderer, megaBuffer, resourceHeap};
         //GBufferPassNode forwardPass{device, renderer, megaBuffer, resourceHeap, cullPass};
         FxaaPassNode fxaaPass{device, renderer, megaBuffer, resourceHeap};
@@ -335,6 +344,7 @@ namespace Engine
 
                 renderGraph.addPass(&cullPass);
                 renderGraph.addPass(&visPass);
+                renderGraph.addPass(&materialPass);
                 renderGraph.addPass(&ssaoPass);
                 //renderGraph.addPass(&forwardPass);
                 renderGraph.addPass(&fxaaPass);
@@ -357,27 +367,29 @@ namespace Engine
             renderGraph.updateBufferHandle("CullDrawCount",
                                            cullPass.getDrawCountBuffer(currentFrame),
                                            sizeof(uint32_t));
+            VkDeviceSize totalBufferSize = static_cast<VkDeviceSize>(currentExtent.width) * currentExtent.height * sizeof(CompactMaterial);
+            renderGraph.updateBufferHandle("CompactMaterial", materialPass.getCompactMaterialBuffer(currentFrame), totalBufferSize);
             renderGraph.updateImageHandle("SwapChainImage",
                                           renderer.getSwapChain().getImage(imgIdx),
                                           renderer.getSwapChain().getImageView(imgIdx), currentExtent);
             renderGraph.updateImageHandle("DepthImage",
                                           renderer.getSwapChain().getDepthImage(),
                                           renderer.getSwapChain().getDepthImageView(), currentExtent);
+            renderGraph.registerPhysicalBuffer("CompactMaterial", VK_NULL_HANDLE, 0);
 
             float aspect = renderer.getaspectRatio();
             camera.setPerspectiveProjection(glm::radians(50.0f), aspect, 0.1f, 100.0f);
 
-            FrameInfo info{
-                .frameIndex = currentFrame,
-                .frameTime = time,
-                .extent = currentExtent,
-                .commandBuffer = cmd,
-                .camera = camera,
-                .gameObjects = gameObjects,
-                .renderGraph = &renderGraph,
-                .jobSystem = &jobSystem,
-                .enableSSAO = enableSSAO
-            };
+
+                info.frameIndex = currentFrame;
+                info.frameTime = time;
+                info.extent = currentExtent;
+                info.commandBuffer = cmd;
+                info.camera = &camera;
+                info.gameObjects = &gameObjects;
+                info.jobSystem = &jobSystem;
+                info.enableSSAO = enableSSAO;
+
 
             renderGraph.execute(cmd, info);
             renderGraph.transitionToPresent(cmd, "SwapChainImage");

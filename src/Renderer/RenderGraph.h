@@ -115,6 +115,7 @@ namespace Engine
         bool isDepthFormat(VkFormat format);
         VkImageView getImageView(const std::string& name) const;
         VkImage getImage(const std::string& name) const;
+        VkDescriptorBufferInfo getBufferInfo(const std::string& name, int32_t currentFrame);
 
     private:
         Device& device;

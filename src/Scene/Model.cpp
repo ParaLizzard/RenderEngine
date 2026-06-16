@@ -105,15 +105,15 @@ namespace Engine
         stagingAttributes.writeToBuffer(cpuAttributes.data(), newAttrSize, 0);
         stagingIndices.writeToBuffer(cpuIndices.data(), newIdxSize, 0);
 
-        auto expandedPosBuffer = std::make_unique<Buffer>(device, oldPosSize + newPosSize, 1,
+        auto expandedPosBuffer = std::make_shared<Buffer>(device, oldPosSize + newPosSize, 1,
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             VMA_MEMORY_USAGE_GPU_ONLY, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
 
-        auto expandedAttrBuffer = std::make_unique<Buffer>(device, oldAttrSize + newAttrSize, 1,
+        auto expandedAttrBuffer = std::make_shared<Buffer>(device, oldAttrSize + newAttrSize, 1,
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             VMA_MEMORY_USAGE_GPU_ONLY, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
 
-        auto expandedIdxBuffer = std::make_unique<Buffer>(device, oldIdxSize + newIdxSize, 1,
+        auto expandedIdxBuffer = std::make_shared<Buffer>(device, oldIdxSize + newIdxSize, 1,
             VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             VMA_MEMORY_USAGE_GPU_ONLY, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
 

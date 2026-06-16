@@ -399,7 +399,7 @@ namespace Engine
         VkPhysicalDeviceFeatures2 deviceFeatures2{};
         deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
         deviceFeatures2.pNext = &vulkan12Features;
-        deviceFeatures2.features = {.multiDrawIndirect = VK_TRUE, .samplerAnisotropy = VK_TRUE};
+        deviceFeatures2.features = {.geometryShader = VK_TRUE,.multiDrawIndirect = VK_TRUE, .samplerAnisotropy = VK_TRUE};
 
         VkDeviceCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;

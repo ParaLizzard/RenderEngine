@@ -194,8 +194,8 @@ namespace Engine
 
     void CullPassNode::execute(VkCommandBuffer& cmd, FrameInfo& frameInfo)
     {
-        glm::mat4 projection = frameInfo.camera.getProjection();
-        glm::mat4 view = frameInfo.camera.getView();
+        glm::mat4 projection = frameInfo.camera->getProjection();
+        glm::mat4 view = frameInfo.camera->getView();
         glm::mat4 flipMatrix = glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f));
         glm::mat4 viewProjection = projection * view * flipMatrix;
 
@@ -206,7 +206,7 @@ namespace Engine
             objectDataArray.clear();
             indirectCommandsArray.clear();
 
-            for (const auto& obj : frameInfo.gameObjects)
+            for (const auto& obj : *frameInfo.gameObjects)
             {
                 if (obj.subMesh.indexCount == 0) continue;
                 // VisBuffers skip transparency completely (render forward/later)

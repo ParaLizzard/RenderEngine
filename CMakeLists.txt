@@ -170,8 +170,6 @@ set(SCENE_SOURCES
 )
 
 set(PASSES_SOURCES
-        src/Passes/GBufferPassNode.cpp
-        src/Passes/GBufferPassNode.h
         src/Passes/FxaaPassNode.h
         src/Passes/FxaaPassNode.cpp
         src/Passes/SsaoPassNode.cpp

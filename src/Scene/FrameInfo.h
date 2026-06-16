@@ -3,10 +3,14 @@
 #include "Scene/Camera.h"
 #include "Scene/GameObject.h"
 
+
+
 namespace Engine
 {
     class JobSystem;
     class RenderGraph;
+    class ResourceHeap;
+    class Renderer;
 
     struct FrameInfo
     {
@@ -14,10 +18,16 @@ namespace Engine
         float frameTime;
         VkExtent2D extent;
         VkCommandBuffer commandBuffer;
-        Camera& camera;
-        std::vector<GameObject>& gameObjects;
-        const RenderGraph* renderGraph = nullptr;
-        JobSystem* jobSystem;
+        Camera* camera;
+        std::vector<GameObject>* gameObjects;
+
+        Device* device = nullptr;
+        RenderGraph* renderGraph = nullptr;
+        Renderer* renderer = nullptr;
+        Model* megaBuffer = nullptr;
+        ResourceHeap* resourceHeap = nullptr;
+        const JobSystem* jobSystem;
+
         bool enableSSAO = true;
     };
 

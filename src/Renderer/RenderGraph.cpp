@@ -419,4 +419,15 @@ namespace Engine
         }
         throw std::runtime_error("RenderGraph: Attempted to fetch unregistered image: " + name);
     }
+
+    VkDescriptorBufferInfo RenderGraph::getBufferInfo(const std::string& name, int32_t currentFrame)
+    {
+        auto it = bufferRegistry.find(name);
+        if (it != bufferRegistry.end())
+        {
+            return VkDescriptorBufferInfo{it->second.buffer, 0, VK_WHOLE_SIZE};
+        }
+
+        throw std::runtime_error("RenderGraph: Attempted to fetch unregistered buffer: " + name);
+    }
 }

@@ -1,0 +1,206 @@
+#version 460
+// FIX 1: Enable the extension required for dynamic bindless texture array indexing
+#extension GL_EXT_nonuniform_qualifier : require
+
+// =========================================================================
+// SET 0: Global Bindless Heap (ResourceHexap)
+// =========================================================================
+struct MaterialData {
+    vec4 albedoFactor;
+    vec4 emissiveFactor;
+    uint albedoIndex;
+    uint normalIndex;
+    uint roughnessMetallicIndex;
+    uint emissiveIndex;
+    uint occlusionIndex;
+    uint flags;
+    float alphaCutoff;
+    float normalScale;
+    float roughnessFactor;
+    float metallicFactor;
+    uint padding0;
+    uint padding1;
+};
+
+layout(set = 0, binding = 0) readonly buffer MaterialHeapBuffer {
+    MaterialData materials[];
+} materialHeap;
+
+layout(set = 0, binding = 5) uniform sampler2D bindlessTextures[];
+
+// =========================================================================
+// SET 1: Material Pass Specific Resources
+// =========================================================================
+layout(set = 1, binding = 0) readonly buffer VertexBuffer {
+    vec3 positions[]; // Position-only buffer matching layout binding 0
+} vertexBuffer;
+
+layout(set = 1, binding = 1) readonly buffer IndexBuffer {
+    uint indices[];
+} indexBuffer;
+
+struct Mesh {
+    uint firstIndex;
+    int vertexOffset;
+};
+layout(set = 1, binding = 2) readonly buffer MeshBuffer {
+    Mesh meshes[];
+} meshBuffer;
+
+// FIX 2: Changed from sampler2D to usampler2D to match raw VK_FORMAT_R32G32_UINT data
+layout(set = 1, binding = 3) uniform usampler2D visBufferTexture;
+layout(set = 1, binding = 4) uniform sampler2D depthTexture;
+
+struct CompactMaterial {
+    uint packedNormal;
+    uint packedRadiance;
+    uint packedAO;
+    uint padding;
+};
+layout(set = 1, binding = 5) writeonly buffer MaterialBuffer {
+    CompactMaterial materials[];
+} materialOut;
+
+layout(set = 1, binding = 6) writeonly buffer WorldBuffer {
+    vec4 worldPositions[];
+} worldOut;
+
+struct VertexAttribute {
+    vec3 color;
+    vec3 normal;
+    vec2 uv;
+    vec4 tangent;
+    uint texId;
+};
+layout(set = 1, binding = 7) readonly buffer AttributeBuffer {
+    VertexAttribute attributes[]; // Attribute buffer matching layout binding 7
+} attributeBuffer;
+
+struct ObjectData {
+    mat4 modelMatrix;
+    mat4 normalMatrix;
+    vec4 boundingSphere;
+};
+layout(set = 1, binding = 8) readonly buffer ObjectBuffer {
+    ObjectData objects[];
+} objectBuffer;
+
+layout(push_constant) uniform PushConstants {
+    mat4 invViewProj;
+    mat4 view;
+    vec3 cameraPos;
+    uint frameWidth;
+} pc;
+
+// =========================================================================
+// HELPER FUNCTIONS FOR ENCODING
+// =========================================================================
+uint encodeOctNormal(vec3 n) {
+    n /= (abs(n.x) + abs(n.y) + abs(n.z));
+    vec2 res = n.z >= 0.0 ? n.xy : (1.0 - abs(n.yx)) * sign(n.xy);
+    uvec2 packedInput = uvec2(round(clamp(res * 0.5 + 0.5, 0.0, 1.0) * 255.0));
+    return packedInput.x | (packedInput.y << 8u);
+}
+
+uint encodeRadiance(vec3 color) {
+    uvec3 quantized = uvec3(clamp(color, 0.0, 1.0) * 1023.0);
+    return quantized.x | (quantized.y << 10u) | (quantized.z << 20u);
+}
+
+// =========================================================================
+// MAIN EXECUTION
+// =========================================================================
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    if (pixel.x >= pc.frameWidth) return;
+    uint pixelIdx = pixel.y * pc.frameWidth + pixel.x;
+
+    // Read VisBuffer (now cleanly returns uvec4)
+    uvec4 visPacked = texelFetch(visBufferTexture, pixel, 0);
+
+    // FIX 3: Replaced 16-bit packing assumptions.
+    // Since your VisBuffer is uvec2 format, instanceID is in .x and primitiveID is in .y
+    uint instanceID = visPacked.x;
+    uint primitiveID = visPacked.y;
+
+    // Special case: sky/background (Check against your clear value, usually 0xFFFFFFFFu or 0xFFFFu)
+    if (instanceID == 0xFFFFFFFFu || instanceID == 0xFFFFu) {
+        materialOut.materials[pixelIdx] = CompactMaterial(0u, 0u, 0u, 0u);
+        worldOut.worldPositions[pixelIdx] = vec4(0.0, 0.0, 0.0, 0.0);
+        return;
+    }
+
+    // Fetch geometry parameters
+    Mesh mesh = meshBuffer.meshes[instanceID];
+    mat4 modelMatrix = objectBuffer.objects[instanceID].modelMatrix;
+
+    // Fetch triangle indices
+    uint globalIndexOffset = mesh.firstIndex + primitiveID * 3u;
+    uint idx0 = indexBuffer.indices[globalIndexOffset];
+    uint idx1 = indexBuffer.indices[globalIndexOffset + 1u];
+    uint idx2 = indexBuffer.indices[globalIndexOffset + 2u];
+
+    // Fetch and transform positions to World Space
+    uint vOffset = uint(mesh.vertexOffset);
+    vec3 p0 = (modelMatrix * vec4(vertexBuffer.positions[vOffset + idx0], 1.0)).xyz;
+    vec3 p1 = (modelMatrix * vec4(vertexBuffer.positions[vOffset + idx1], 1.0)).xyz;
+    vec3 p2 = (modelMatrix * vec4(vertexBuffer.positions[vOffset + idx2], 1.0)).xyz;
+
+    // Reconstruct world position from depth
+    float depth = texelFetch(depthTexture, pixel, 0).r;
+    vec2 ndc = (vec2(pixel) + 0.5) / vec2(textureSize(visBufferTexture, 0)) * 2.0 - 1.0;
+    vec4 worldPos4 = pc.invViewProj * vec4(ndc, depth, 1.0);
+    vec3 worldPos = worldPos4.xyz / worldPos4.w;
+
+    // Compute World Space Barycentric Coordinates
+    vec3 edge0 = p1 - p0;
+    vec3 edge1 = p2 - p0;
+    vec3 edge2 = worldPos - p0;
+
+    float d00 = dot(edge0, edge0);
+    float d01 = dot(edge0, edge1);
+    float d11 = dot(edge1, edge1);
+    float d20 = dot(edge2, edge0);
+    float d21 = dot(edge2, edge1);
+
+    float denom = d00 * d11 - d01 * d01;
+    float v = (d11 * d20 - d01 * d21) / (denom + 1e-6);
+    float w = (d00 * d21 - d01 * d20) / (denom + 1e-6);
+    float u = 1.0 - v - w;
+    vec3 bary = vec3(u, v, w);
+
+    // Fetch separate vertex attributes using calculated weights
+    VertexAttribute a0 = attributeBuffer.attributes[vOffset + idx0];
+    VertexAttribute a1 = attributeBuffer.attributes[vOffset + idx1];
+    VertexAttribute a2 = attributeBuffer.attributes[vOffset + idx2];
+
+    // Interpolate attributes
+    vec3 normal = normalize(bary.x * a0.normal + bary.y * a1.normal + bary.z * a2.normal);
+    vec4 tangent = bary.x * a0.tangent + bary.y * a1.tangent + bary.z * a2.tangent;
+    vec2 texCoord = bary.x * a0.uv + bary.y * a1.uv + bary.z * a2.uv;
+
+    // The vertex holds the true material tracking handle
+    uint materialId = a0.texId;
+    MaterialData mat = materialHeap.materials[materialId];
+
+    // FIX 4: Wrapped texture array indexing inside nonuniformEXT() to handle execution divergence
+    vec3 albedo = texture(bindlessTextures[nonuniformEXT(mat.albedoIndex)], texCoord).rgb * mat.albedoFactor.rgb;
+    vec3 normalMapSample = texture(bindlessTextures[nonuniformEXT(mat.normalIndex)], texCoord).rgb;
+
+    // Reconstruct normal from tangent space mapping
+    vec3 mappedNormal = normalMapSample * 2.0 - 1.0;
+    vec3 bitangent = cross(normal, tangent.xyz) * tangent.w;
+    mat3 tbn = mat3(normalize(tangent.xyz), normalize(bitangent), normal);
+    normal = normalize(tbn * mappedNormal);
+
+    // Simplified direct lighting
+    vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
+    float NdotL = max(dot(normal, lightDir), 0.0);
+    vec3 directLight = albedo * NdotL;
+
+    // Pack outputs
+    uint packedNormal = encodeOctNormal(normal);
+    uint packedRadiance = encodeRadiance(directLight);
+    materialOut.materials[pixelIdx] = CompactMaterial(packedNormal, packedRadiance, 0u, 0u);
+    worldOut.worldPositions[pixelIdx] = vec4(worldPos, 1.0);
+}

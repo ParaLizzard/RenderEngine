@@ -28,6 +28,10 @@ namespace Engine
 
                 result.success = true;
             }
+            catch (const JobSystemStoppedException&)
+            {
+
+            }
             catch (const std::exception& e)
             {
                 std::cerr << "LoaderGLTF: Async load failed: " << e.what() << '\n';
@@ -42,7 +46,8 @@ namespace Engine
     {
         outData.images.resize(asset.images.size());
         std::vector<std::future<void>> decodeJobs;
-
+        try
+        {
         for (std::size_t i = 0; i < asset.images.size(); ++i)
         {
             decodeJobs.push_back(jobSystem.enqueue([&asset, &assetDir, &outData, i]()
@@ -163,10 +168,19 @@ namespace Engine
                 }
             }));
         }
+        }
+        catch (const std::runtime_error& e)
+        {
+            if (std::string(e.what()).find("stopped JobSystem") != std::string::npos) {
+                std::clog << "LoaderGLTF: Loading canceled because JobSystem stopped.\n";
+                return;
+            }
+            throw;
+        }
 
         for (auto& job : decodeJobs)
         {
-            job.wait();
+            job.get();
         }
     }
 

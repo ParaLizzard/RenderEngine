@@ -53,9 +53,9 @@ namespace Engine
 
         void bindPositionOnly(VkCommandBuffer commandBuffer);
 
-        VkBuffer getPositionBuffer() const { return positionBuffer ? positionBuffer->getBuffer() : VK_NULL_HANDLE; }
-        VkBuffer getAttributeBuffer() const { return attributeBuffer ? attributeBuffer->getBuffer() : VK_NULL_HANDLE; }
-        VkBuffer getIndexBuffer() const { return indexBuffer ? indexBuffer->getBuffer() : VK_NULL_HANDLE; }
+        std::shared_ptr<Buffer> getPositionBuffer() const { return positionBuffer ? positionBuffer : VK_NULL_HANDLE; }
+        std::shared_ptr<Buffer> getAttributeBuffer() const { return attributeBuffer ? attributeBuffer : VK_NULL_HANDLE; }
+        std::shared_ptr<Buffer> getIndexBuffer() const { return indexBuffer ? indexBuffer : VK_NULL_HANDLE; }
 
     private:
         Device& device;
@@ -69,8 +69,8 @@ namespace Engine
         std::vector<uint32_t> cpuIndices;
 
         // Unified GPU-Only
-        std::unique_ptr<Buffer> positionBuffer;
-        std::unique_ptr<Buffer> attributeBuffer;
-        std::unique_ptr<Buffer> indexBuffer;
+        std::shared_ptr<Buffer> positionBuffer;
+        std::shared_ptr<Buffer> attributeBuffer;
+        std::shared_ptr<Buffer> indexBuffer;
     };
 }

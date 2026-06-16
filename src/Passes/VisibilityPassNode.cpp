@@ -53,8 +53,8 @@ namespace Engine
 {
     uint32_t currentFrame = renderer.getFrameIndex();
 
-    glm::mat4 projection = frameInfo.camera.getProjection();
-    glm::mat4 view = frameInfo.camera.getView();
+    glm::mat4 projection = frameInfo.camera->getProjection();
+    glm::mat4 view = frameInfo.camera->getView();
     glm::mat4 flipMatrix = glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f));
     glm::mat4 viewProjection = projection * view * flipMatrix;
 

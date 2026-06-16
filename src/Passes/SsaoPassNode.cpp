@@ -102,9 +102,9 @@ namespace Engine
         };
 
         SsaoUbo ubo{};
-        ubo.projection = frameInfo.camera.getProjection();
-        ubo.invProjection = glm::inverse(frameInfo.camera.getProjection());
-        ubo.view = frameInfo.camera.getView();
+        ubo.projection = frameInfo.camera->getProjection();
+        ubo.invProjection = glm::inverse(frameInfo.camera->getProjection());
+        ubo.view = frameInfo.camera->getView();
 
         memcpy(ubo.samples, ssaoKernel.data(), sizeof(ubo.samples));
 
