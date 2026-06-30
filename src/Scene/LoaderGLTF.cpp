@@ -287,7 +287,7 @@ namespace Engine
                     fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(
                         asset, posAccessor, [&](fastgltf::math::fvec3 p, std::size_t idx)
                         {
-                            parsedPrim.positions[idx].position = glm::vec3(p.x(), p.y(), p.z());
+                            parsedPrim.positions[idx].position = glm::vec3(p.x(), -p.y(), p.z());
                             parsedPrim.attributes[idx].color = glm::vec3(1.0f);
                             parsedPrim.attributes[idx].normal = glm::vec3(0.0f, 1.0f, 0.0f);
                             parsedPrim.attributes[idx].tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
@@ -313,7 +313,7 @@ namespace Engine
                             asset, asset.accessors[normalIt->accessorIndex],
                             [&](fastgltf::math::fvec3 n, std::size_t idx)
                             {
-                                parsedPrim.attributes[idx].normal = glm::vec3(n.x(), n.y(), n.z());
+                                parsedPrim.attributes[idx].normal = glm::vec3(n.x(), -n.y(), n.z());
                             });
                     }
 
@@ -325,7 +325,7 @@ namespace Engine
                             asset, asset.accessors[tangentIt->accessorIndex],
                             [&](fastgltf::math::fvec4 t, std::size_t idx)
                             {
-                                parsedPrim.attributes[idx].tangent = glm::vec4(t.x(), t.y(), t.z(), t.w());
+                                parsedPrim.attributes[idx].tangent = glm::vec4(t.x(), -t.y(), t.z(), t.w());
                             });
                     }
 
@@ -346,10 +346,15 @@ namespace Engine
                     parsedPrim.indices.resize(indexAccessor.count);
 
                     fastgltf::iterateAccessorWithIndex<uint32_t>(asset, indexAccessor,
-                                                                 [&](uint32_t idxValue, std::size_t idx)
-                                                                 {
-                                                                     parsedPrim.indices[idx] = idxValue;
-                                                                 });
+                                             [&](uint32_t idxValue, std::size_t idx)
+                                             {
+                                                 parsedPrim.indices[idx] = idxValue;
+                                             });
+                    
+                    for (size_t i = 0; i < parsedPrim.indices.size(); i += 3)
+                    {
+                        std::swap(parsedPrim.indices[i + 1], parsedPrim.indices[i + 2]);
+                    }
 
                     parsedNode.primitives.push_back(std::move(parsedPrim));
                 }

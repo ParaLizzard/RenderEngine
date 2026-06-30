@@ -221,7 +221,26 @@ void main() {
     float invW = (u_s / clip0.w) + (v_s / clip1.w) + (w_s / clip2.w);
     vec3 bary = vec3(u_s / clip0.w, v_s / clip1.w, w_s / clip2.w) / invW;
 
-    // Flawless world space position (Depth buffer is no longer needed)
+    // --- NEW: Analytical Delats for Compute Shader Mipmapping ---
+    vec2 invRes = 2.0 / vec2(textureSize(visBufferTexture, 0));
+
+    // Shift e2 by 1 pixel in X
+    vec2 e2_dx = e2 + vec2(invRes.x, 0.0);
+    float v_s_dx = (e2_dx.x * e1.y - e2_dx.y * e1.x) / denom;
+    float w_s_dx = (e0.x * e2_dx.y - e0.y * e2_dx.x) / denom;
+    float u_s_dx = 1.0 - v_s_dx - w_s_dx;
+    float invW_dx = (u_s_dx / clip0.w) + (v_s_dx / clip1.w) + (w_s_dx / clip2.w);
+    vec3 bary_dx = vec3(u_s_dx / clip0.w, v_s_dx / clip1.w, w_s_dx / clip2.w) / invW_dx;
+
+    // Shift e2 by 1 pixel in Y
+    vec2 e2_dy = e2 + vec2(0.0, invRes.y);
+    float v_s_dy = (e2_dy.x * e1.y - e2_dy.y * e1.x) / denom;
+    float w_s_dy = (e0.x * e2_dy.y - e0.y * e2_dy.x) / denom;
+    float u_s_dy = 1.0 - v_s_dy - w_s_dy;
+    float invW_dy = (u_s_dy / clip0.w) + (v_s_dy / clip1.w) + (w_s_dy / clip2.w);
+    vec3 bary_dy = vec3(u_s_dy / clip0.w, v_s_dy / clip1.w, w_s_dy / clip2.w) / invW_dy;
+    // ------------------------------------------------------------
+
     vec3 worldPos = bary.x * p0 + bary.y * p1 + bary.z * p2;
 
     // =========================================================
@@ -247,13 +266,20 @@ void main() {
     vec4 tangent = bary.x * t0 + bary.y * t1 + bary.z * t2;
     vec2 texCoord = bary.x * uv0 + bary.y * uv1 + bary.z * uv2;
 
+    // --- NEW: Calculate the UV gradients for textureGrad ---
+    vec2 texCoord_dx = bary_dx.x * uv0 + bary_dx.y * uv1 + bary_dx.z * uv2;
+    vec2 texCoord_dy = bary_dy.x * uv0 + bary_dy.y * uv1 + bary_dy.z * uv2;
+    vec2 ddx_uv = texCoord_dx - texCoord;
+    vec2 ddy_uv = texCoord_dy - texCoord;
+    // -------------------------------------------------------
+
     uint materialId = a0.texId;
     MaterialData mat = materialHeap.materials[materialId];
 
     // Texture Sampling
-    vec3 albedo = texture(bindlessTextures[nonuniformEXT(mat.albedoIndex)], texCoord).rgb * mat.albedoFactor.rgb;
-    vec3 normalMapSample = texture(bindlessTextures[nonuniformEXT(mat.normalIndex)], texCoord).rgb;
-    vec4 mrSample = texture(bindlessTextures[nonuniformEXT(mat.roughnessMetallicIndex)], texCoord);
+    vec3 albedo = textureGrad(bindlessTextures[nonuniformEXT(mat.albedoIndex)], texCoord, ddx_uv, ddy_uv).rgb * mat.albedoFactor.rgb;
+    vec3 normalMapSample = textureGrad(bindlessTextures[nonuniformEXT(mat.normalIndex)], texCoord, ddx_uv, ddy_uv).rgb;
+    vec4 mrSample = textureGrad(bindlessTextures[nonuniformEXT(mat.roughnessMetallicIndex)], texCoord, ddx_uv, ddy_uv);
 
     float roughness = mrSample.g * mat.roughnessFactor;
     float metalness = mrSample.b * mat.metallicFactor;

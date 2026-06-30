@@ -124,7 +124,7 @@ namespace Engine
 
 
         std::vector<std::future<ParsedGLTF>> pendingLoads;
-        //pendingLoads.push_back(LoaderGLTF::loadAsync(jobSystem, "models/pbr_sphere.glb"));
+        pendingLoads.push_back(LoaderGLTF::loadAsync(jobSystem, "models/pbr_sphere.glb"));
         //pendingLoads.push_back(LoaderGLTF::loadAsync(
         //  jobSystem, "C:/Users/Jan Varga/Downloads/main_sponza (1)/main_sponza/NewSponza_Main_glTF_003.gltf"));
         //pendingLoads.push_back(LoaderGLTF::loadAsync(
@@ -133,7 +133,7 @@ namespace Engine
             //jobSystem, "C:/Users/Jan Varga/Downloads/pkg_a_curtains/pkg_a_curtains/NewSponza_Curtains_glTF.gltf"));
         //pendingLoads.push_back(LoaderGLTF::loadAsync(
         //jobSystem, "C:/Users/Jan Varga/Downloads/pkg_b_ivy1/pkg_b_ivy/NewSponza_IvyGrowth_glTF.gltf"));
-        pendingLoads.push_back(LoaderGLTF::loadAsync(jobSystem, "C:/Users/Martin Varga/Downloads/metallic--roughness--test/source/Metallic_Roughness_Test.glb"));
+        //pendingLoads.push_back(LoaderGLTF::loadAsync(jobSystem, "C:/Users/Martin Varga/Downloads/metallic--roughness--test/source/Metallic_Roughness_Test.glb"));
 
         auto cubeFuture = LoaderGLTF::loadAsync(jobSystem, "models/cube.glb");
         ParsedGLTF cubeParsed = cubeFuture.get();
