@@ -139,7 +139,7 @@ layout(set = 1, binding = 10) readonly buffer PixelCoords {
 
 layout(push_constant) uniform PushConstants {
     mat4 viewProj;
-    vec3 cameraPos;
+    vec4 cameraPos;
     uint frameWidth;
 } pc;
 
@@ -222,6 +222,7 @@ void main() {
     vec2 ndc2 = clip2.xy / clip2.w;
 
     vec2 pixelNDC = (vec2(pixel) + 0.5) / vec2(textureSize(visBufferTexture, 0)) * 2.0 - 1.0;
+    pixelNDC.y = -pixelNDC.y;
 
     vec2 e0 = ndc1 - ndc0;
     vec2 e1 = ndc2 - ndc0;
@@ -308,18 +309,20 @@ void main() {
     float roughness = mrSample.g * mat.roughnessFactor;
     float metalness = mrSample.b * mat.metallicFactor;
 
-    // Reconstruct TBN Normal
     vec3 mappedNormal = normalMapSample * 2.0 - 1.0;
     vec3 bitangent = cross(normal, tangent.xyz) * tangent.w;
     mat3 tbn = mat3(normalize(tangent.xyz), normalize(bitangent), normal);
-    vec3 worldNormal = normalize(tbn * mappedNormal);
+
+    vec3 objectNormal = normalize(tbn * mappedNormal);
+    mat4 normalMatrix = objectBuffer.objects[instanceID].normalMatrix;
+    vec3 worldNormal = normalize((normalMatrix * vec4(objectNormal, 0.0)).xyz);
 
     // =========================================================================
     // PBR DIRECT LIGHTING
     // =========================================================================
 
     vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
-    vec3 viewDir  = normalize(pc.cameraPos - worldPos);
+    vec3 viewDir  = normalize(pc.cameraPos.xyz - worldPos);
     vec3 H        = normalize(viewDir + lightDir);
 
     float rawNdotL = dot(worldNormal, lightDir);

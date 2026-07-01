@@ -9,7 +9,8 @@
 
 namespace Engine
 {
-    MaterialPassNode::MaterialPassNode(Device& device, Renderer& renderer, Model& megaBuffer, ResourceHeap& resourceHeap, RenderGraph& renderGraph) :
+    MaterialPassNode::MaterialPassNode(Device& device, Renderer& renderer, Model& megaBuffer,
+                                       ResourceHeap& resourceHeap, RenderGraph& renderGraph) :
         device(device),
         renderer(renderer),
         megaBuffer(megaBuffer),
@@ -112,10 +113,10 @@ namespace Engine
             );
 
             binningMetaBuffers[i] = std::make_unique<Buffer>(
-                    device, sizeof(uint32_t) * 256 * 2 + 4, 1,
-                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                    VMA_MEMORY_USAGE_GPU_ONLY, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0
-                );
+                device, sizeof(uint32_t) * 256 * 2 + 4, 1,
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                VMA_MEMORY_USAGE_GPU_ONLY, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0
+            );
 
             pixelCoordBuffers[i] = std::make_unique<Buffer>(
                 device, sizeof(uint32_t), initialPixelCount,
@@ -160,8 +161,8 @@ namespace Engine
     void MaterialPassNode::setup(RenderGraphBuilder& renderGraph)
     {
         renderGraph.writeBuffer("CompactMaterial",
-                             VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-                             VK_ACCESS_2_SHADER_WRITE_BIT);
+                                VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                                VK_ACCESS_2_SHADER_WRITE_BIT);
 
         renderGraph.readBuffer("CullObjectData", VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
         renderGraph.readImage("VisBuffer", VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
@@ -221,9 +222,9 @@ namespace Engine
                 VkDescriptorBufferInfo positionBufferInfo = worldPositionBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
                 VkDescriptorBufferInfo attributeBufferInfo = megaBuffer.getAttributeBuffer()->descriptorInfo(
                     VK_WHOLE_SIZE, 0);
-                VkDescriptorBufferInfo objectBufferInfo = renderGraph.getBufferInfo("CullObjectData", currentFrame);
-                VkDescriptorBufferInfo metaBufferInfo = binningMetaBuffers[currentFrame]->descriptorInfo(VK_WHOLE_SIZE, 0);
-                VkDescriptorBufferInfo coordsBufferInfo = pixelCoordBuffers[currentFrame]->descriptorInfo(VK_WHOLE_SIZE, 0);
+                VkDescriptorBufferInfo objectBufferInfo = renderGraph.getBufferInfo("CullObjectData", i);
+                VkDescriptorBufferInfo metaBufferInfo = binningMetaBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
+                VkDescriptorBufferInfo coordsBufferInfo = pixelCoordBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
 
                 LveDescriptorWriter(*globalSetLayout, *globalPool)
                     .writeBuffer(0, &vertexBufferInfo)
@@ -242,17 +243,18 @@ namespace Engine
         }
 
         std::vector<GPUMeshInfo> meshInfos;
-        meshInfos.reserve(frameInfo.gameObjects->size());
+        meshInfos.resize(frameInfo.gameObjects->size());
 
-        for (const auto& obj : *frameInfo.gameObjects)
+        for (size_t i = 0; i < frameInfo.gameObjects->size(); i++)
         {
-            if (obj.subMesh.indexCount == 0) continue;
-            if (obj.alphaMode == AlphaMode::Blend) continue;
+            const auto& obj = (*frameInfo.gameObjects)[i];
 
             GPUMeshInfo info{};
             info.firstIndex = obj.subMesh.firstIndex;
             info.vertexOffset = obj.subMesh.vertexOffset;
-            meshInfos.push_back(info);
+
+            // Assign directly to the global index instead of push_back
+            meshInfos[i] = info;
         }
 
         if (!meshInfos.empty())
@@ -261,10 +263,12 @@ namespace Engine
             meshBuffers[currentFrame]->flush(VK_WHOLE_SIZE, 0);
         }
 
-        vkCmdFillBuffer(cmd, binningMetaBuffers[currentFrame]->getBuffer(), 0, 256 * sizeof(uint32_t), 0);
+        vkCmdFillBuffer(cmd, binningMetaBuffers[currentFrame]->getBuffer(), 0, VK_WHOLE_SIZE, 0);
 
-        VkDeviceSize compactBufferSize = static_cast<VkDeviceSize>(extent.width) * extent.height * sizeof(CompactMaterial);
+        VkDeviceSize compactBufferSize = static_cast<VkDeviceSize>(extent.width) * extent.height * sizeof(
+            CompactMaterial);
         vkCmdFillBuffer(cmd, compactMaterialBuffers[currentFrame]->getBuffer(), 0, compactBufferSize, 0);
+
 
         VkMemoryBarrier2 fillBarrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
         fillBarrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
@@ -293,7 +297,7 @@ namespace Engine
 
         MaterialPushConstants pc{};
         pc.viewProj = viewProjection;
-        pc.cameraPos = glm::vec3(glm::inverse(view)[3]);
+        pc.cameraPos = glm::vec4(glm::inverse(view)[3]);
         pc.frameWidth = extent.width;
 
         vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(MaterialPushConstants), &pc);
@@ -433,28 +437,32 @@ namespace Engine
         pipelineInfo.layout = pipelineLayout;
         pipelineInfo.stage = computeStageInfo;
 
-        if (vkCreateComputePipelines(device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, nullptr, &pipeline) !=
+        if (vkCreateComputePipelines(device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, nullptr,
+                                     &pipeline) !=
             VK_SUCCESS)
         {
             throw std::runtime_error("MaterialPassNode: Failed to create material compute pipeline");
         }
 
         computeStageInfo.module = binningModule;
-        if (vkCreateComputePipelines(device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, nullptr, &binningPipeline) !=
+        if (vkCreateComputePipelines(device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, nullptr,
+                                     &binningPipeline) !=
             VK_SUCCESS)
         {
             throw std::runtime_error("MaterialPassNode: Failed to create material compute pipeline");
         }
 
         computeStageInfo.module = classifyModule;
-        if (vkCreateComputePipelines(device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, nullptr, &classifyPipeline) !=
+        if (vkCreateComputePipelines(device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, nullptr,
+                                     &classifyPipeline) !=
             VK_SUCCESS)
         {
             throw std::runtime_error("MaterialPassNode: Failed to create material compute pipeline");
         }
 
         computeStageInfo.module = prefixModule;
-        if (vkCreateComputePipelines(device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, nullptr, &prefixSumPipeline) !=
+        if (vkCreateComputePipelines(device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, nullptr,
+                                     &prefixSumPipeline) !=
             VK_SUCCESS)
         {
             throw std::runtime_error("MaterialPassNode: Failed to create material compute pipeline");

@@ -47,6 +47,8 @@ namespace Engine
         g.layout = initialLayout;
         g.lastAccessMask = VK_ACCESS_2_NONE;
         g.lastStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+        g.mipLevels = 1;
+        g.arrayLayers = 1;
 
         imageRegistry[name] = g;
     }

@@ -73,7 +73,7 @@ void main() {
     }
 
     // debug line
-    //visible = true;
+    visible = true;
     //
 
     if (visible) {

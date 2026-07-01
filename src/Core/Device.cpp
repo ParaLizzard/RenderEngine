@@ -376,11 +376,17 @@ namespace Engine
             queueCreateInfos.push_back(queueCreateInfo);
         }
 
+        VkPhysicalDeviceVulkan11Features vulkan11Features{};
+        vulkan11Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+        vulkan11Features.shaderDrawParameters = VK_TRUE;
+
+
         VkPhysicalDeviceVulkan13Features vulkan13Features{};
         vulkan13Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
         vulkan13Features.synchronization2 = VK_TRUE;
         vulkan13Features.dynamicRendering = VK_TRUE;
         vulkan13Features.shaderDemoteToHelperInvocation = VK_TRUE;
+        vulkan13Features.pNext = &vulkan11Features;
 
 
         VkPhysicalDeviceVulkan12Features vulkan12Features{};
@@ -399,7 +405,7 @@ namespace Engine
         VkPhysicalDeviceFeatures2 deviceFeatures2{};
         deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
         deviceFeatures2.pNext = &vulkan12Features;
-        deviceFeatures2.features = {.geometryShader = VK_TRUE,.multiDrawIndirect = VK_TRUE, .samplerAnisotropy = VK_TRUE};
+        deviceFeatures2.features = {.geometryShader = VK_TRUE, .multiDrawIndirect = VK_TRUE,.drawIndirectFirstInstance = VK_TRUE, .samplerAnisotropy = VK_TRUE};
 
         VkDeviceCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;

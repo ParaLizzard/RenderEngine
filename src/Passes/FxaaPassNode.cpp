@@ -37,10 +37,8 @@ namespace Engine
     VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
     VK_ACCESS_2_SHADER_READ_BIT);
 
-        renderGraph.writeImage("SwapChainImage",
-                               VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                               VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                               VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+        renderGraph.writeImage("SwapChainImage", VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                           VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
     }
 
     void FxaaPassNode::resolve(RenderGraph& graph, const FrameInfo& frameInfo)

@@ -24,7 +24,7 @@ layout(set = 1, binding = 9) buffer BinningMeta {
 
 layout(push_constant) uniform PushConstants {
     mat4 viewProj;
-    vec3 cameraPos;
+    vec4 cameraPos;
     uint frameWidth;
 } pc;
 

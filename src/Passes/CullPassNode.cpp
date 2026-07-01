@@ -205,29 +205,26 @@ namespace Engine
             objectDataArray.clear();
             indirectCommandsArray.clear();
 
-            for (const auto& obj : *frameInfo.gameObjects)
+            for (size_t i = 0; i < frameInfo.gameObjects->size(); i++)
             {
+                const auto& obj = (*frameInfo.gameObjects)[i];
                 if (obj.subMesh.indexCount == 0) continue;
-                // VisBuffers skip transparency completely (render forward/later)
                 if (obj.alphaMode == AlphaMode::Blend) continue;
 
                 opaqueDraws.push_back(&obj);
-            }
 
-            for (const auto* obj : opaqueDraws)
-            {
                 ObjectData data{};
-                data.modelMatrix = obj->currentWorldMatrix;
-                data.normalMatrix = glm::mat4(glm::transpose(glm::inverse(glm::mat3(obj->currentWorldMatrix))));
-                data.boundingSphere = obj->boundingSphere;
+                data.modelMatrix = obj.currentWorldMatrix;
+                data.normalMatrix = glm::mat4(glm::transpose(glm::inverse(glm::mat3(obj.currentWorldMatrix))));
+                data.boundingSphere = obj.boundingSphere;
                 objectDataArray.push_back(data);
 
                 VkDrawIndexedIndirectCommand cmdCommand{};
-                cmdCommand.indexCount = obj->subMesh.indexCount;
+                cmdCommand.indexCount = obj.subMesh.indexCount;
                 cmdCommand.instanceCount = 1;
-                cmdCommand.firstIndex = obj->subMesh.firstIndex;
-                cmdCommand.vertexOffset = obj->subMesh.vertexOffset;
-                cmdCommand.firstInstance = objectDataArray.size() - 1;
+                cmdCommand.firstIndex = obj.subMesh.firstIndex;
+                cmdCommand.vertexOffset = obj.subMesh.vertexOffset;
+                cmdCommand.firstInstance = static_cast<uint32_t>(i);
                 indirectCommandsArray.push_back(cmdCommand);
             }
 
@@ -327,6 +324,13 @@ namespace Engine
             computeDependency.pBufferMemoryBarriers = indirectBarriers.data();
             vkCmdPipelineBarrier2(cmd, &computeDependency);
         }
+
+        VkDeviceSize objectBufferSize = objectDataArray.size() * sizeof(ObjectData);
+        VkDeviceSize indirectBufferSize = indirectCommandsArray.size() * sizeof(VkDrawIndexedIndirectCommand);
+
+        frameInfo.renderGraph->updateBufferHandle("CullObjectData", gpuObjectSSBOs[currentFrame]->getBuffer(), objectBufferSize);
+        frameInfo.renderGraph->updateBufferHandle("CullCompactedIndirectCommands", gpuCompactedIndirectCommandBuffers[currentFrame]->getBuffer(), indirectBufferSize);
+        frameInfo.renderGraph->updateBufferHandle("CullDrawCount", gpuDrawCountBuffers[currentFrame]->getBuffer(), sizeof(uint32_t));
     }
 
     void CullPassNode::resolve(RenderGraph& graph, const FrameInfo& frameInfo)

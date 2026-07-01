@@ -38,6 +38,10 @@ namespace Engine
                                VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT,
                                VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
 
+        renderGraph.readBuffer("CullObjectData",
+                               VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT,
+                               VK_ACCESS_2_SHADER_READ_BIT);
+
         renderGraph.writeImage("VisBuffer",
                                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
@@ -163,15 +167,23 @@ namespace Engine
         shaderStages[1].module = fragShaderModule;
         shaderStages[1].pName = "main";
 
-        auto bindingDescriptions = Model::VertexPosition::getBindingDescriptions();
-        auto attributeDescriptions = Model::VertexPosition::getAttributeDescriptions();
+        VkVertexInputBindingDescription bindingDescription{};
+        bindingDescription.binding = 0;
+        bindingDescription.stride = sizeof(Model::VertexPosition);
+        bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+        VkVertexInputAttributeDescription attributeDescription{};
+        attributeDescription.binding = 0;
+        attributeDescription.location = 0;
+        attributeDescription.format = VK_FORMAT_R32G32B32_SFLOAT;
+        attributeDescription.offset = 0;
 
         VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-        vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(bindingDescriptions.size());
-        vertexInputInfo.pVertexBindingDescriptions = bindingDescriptions.data();
-        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
-        vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
+        vertexInputInfo.vertexBindingDescriptionCount = 1;
+        vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+        vertexInputInfo.vertexAttributeDescriptionCount = 1;
+        vertexInputInfo.pVertexAttributeDescriptions = &attributeDescription;
 
         VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
         inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;

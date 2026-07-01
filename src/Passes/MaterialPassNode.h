@@ -10,7 +10,7 @@ namespace Engine
     struct MaterialPushConstants
     {
         glm::mat4 viewProj;
-        glm::vec3 cameraPos;
+        glm::vec4 cameraPos;
         glm::uint frameWidth;
     };
 
@@ -50,6 +50,13 @@ namespace Engine
 
         VkBuffer getWorldPositionBuffer(uint32_t frameIndex) const {
             return worldPositionBuffers[frameIndex]->getBuffer();
+        }
+
+        void markSceneDirty() {
+            for (auto& cache : frameCaches) {
+                cache.depthView = VK_NULL_HANDLE;
+                cache.visView = VK_NULL_HANDLE;
+            }
         }
     private:
         void createPipelineLayout();

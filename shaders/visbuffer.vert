@@ -5,7 +5,7 @@ layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec4 inTangent;
 layout(location = 3) in vec2 inTexCoord;
 
-layout(location = 0) flat out uint outInstanceID;
+layout(location = 0) flat out uint v_DrawID;
 
 struct ObjectData {
     mat4 modelMatrix;
@@ -26,7 +26,7 @@ void main() {
     uint objectID = gl_InstanceIndex;
 
     // 2. Pass it down to the VisBuffer
-    outInstanceID = objectID;
+    v_DrawID = objectID;
 
     // 3. Transform using the actual model matrix!
     mat4 model = objects[objectID].modelMatrix;

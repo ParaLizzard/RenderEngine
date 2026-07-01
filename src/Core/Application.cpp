@@ -1,5 +1,5 @@
 #include "Application.h"
-
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <stb_image.h>
 
 #include "Passes/FxaaPassNode.h"
@@ -11,8 +11,7 @@
 #include "Scene/IBL.h"
 #include "Scene/LoaderGLTF.h"
 
-
-
+#include "renderdoc_app.h"
 
 namespace Engine
 {
@@ -124,13 +123,11 @@ namespace Engine
 
 
         std::vector<std::future<ParsedGLTF>> pendingLoads;
-        pendingLoads.push_back(LoaderGLTF::loadAsync(jobSystem, "models/pbr_sphere.glb"));
+        //pendingLoads.push_back(LoaderGLTF::loadAsync(jobSystem, "models/pbr_sphere.glb"));
         //pendingLoads.push_back(LoaderGLTF::loadAsync(
         //  jobSystem, "C:/Users/Jan Varga/Downloads/main_sponza (1)/main_sponza/NewSponza_Main_glTF_003.gltf"));
-        //pendingLoads.push_back(LoaderGLTF::loadAsync(
-            //jobSystem, "models/sponza_optimized.glb"));
-        //pendingLoads.push_back(LoaderGLTF::loadAsync(
-            //jobSystem, "C:/Users/Jan Varga/Downloads/pkg_a_curtains/pkg_a_curtains/NewSponza_Curtains_glTF.gltf"));
+        pendingLoads.push_back(LoaderGLTF::loadAsync(jobSystem, "models/sponza_optimized.glb"));
+        pendingLoads.push_back(LoaderGLTF::loadAsync(jobSystem, "C:/Users/Jan Varga/Downloads/pkg_a_curtains/pkg_a_curtains/NewSponza_Curtains_glTF.gltf"));
         //pendingLoads.push_back(LoaderGLTF::loadAsync(
         //jobSystem, "C:/Users/Jan Varga/Downloads/pkg_b_ivy1/pkg_b_ivy/NewSponza_IvyGrowth_glTF.gltf"));
         //pendingLoads.push_back(LoaderGLTF::loadAsync(jobSystem, "C:/Users/Martin Varga/Downloads/metallic--roughness--test/source/Metallic_Roughness_Test.glb"));
@@ -282,6 +279,7 @@ namespace Engine
 
                     megaBuffer.uploadToGPU();
                     cullPass.markSceneDirty();
+                    materialPass.markSceneDirty();
 
                     std::cout << "Successfully streamed in async model!" << std::endl;
 
