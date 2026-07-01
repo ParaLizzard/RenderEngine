@@ -28,6 +28,8 @@ namespace Engine
         ResourceHeap* resourceHeap = nullptr;
         const JobSystem* jobSystem;
 
+        glm::vec3 cameraPos;
+
         bool enableSSAO = true;
     };
 

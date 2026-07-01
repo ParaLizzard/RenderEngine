@@ -1,7 +1,21 @@
 #include "RenderGraph.h"
 
+#include <stdexcept>
+#include <string>
+
 namespace Engine
 {
+    namespace
+    {
+        void vkCheck(VkResult result, const char* what)
+        {
+            if (result != VK_SUCCESS)
+            {
+                throw std::runtime_error(std::string("RenderGraph: ") + what + " failed with VkResult " + std::to_string(result));
+            }
+        }
+    }
+
     RenderGraph::RenderGraph(Device& device) : device(device)
     {
     }
@@ -10,16 +24,28 @@ namespace Engine
     {
         for (auto& pair : transientCache)
         {
-            vkDestroyImageView(device.getDevice(), pair.second.view, nullptr);
-            vmaDestroyImage(device.getAllocator(), pair.second.image, pair.second.allocation);
+            destroyTransientResource(pair.second);
         }
 
         transientCache.clear();
         registeredPasses.clear();
         imageRegistry.clear();
         bufferRegistry.clear();
+    }
 
-        clear();
+    void RenderGraph::destroyTransientResource(TransientResource& resource)
+    {
+        if (resource.view != VK_NULL_HANDLE)
+        {
+            vkDestroyImageView(device.getDevice(), resource.view, nullptr);
+            resource.view = VK_NULL_HANDLE;
+        }
+        if (resource.image != VK_NULL_HANDLE)
+        {
+            vmaDestroyImage(device.getAllocator(), resource.image, resource.allocation);
+            resource.image = VK_NULL_HANDLE;
+            resource.allocation = nullptr;
+        }
     }
 
     void RenderGraph::addPass(RenderPassNode* pass)
@@ -37,7 +63,9 @@ namespace Engine
         const std::string& name,
         VkImage image, VkImageView view,
         VkFormat format, VkExtent2D extent,
-        VkImageLayout initialLayout)
+        VkImageLayout initialLayout,
+        VkPipelineStageFlags2 initialStageMask,
+        VkAccessFlags2 initialAccessMask)
     {
         GraphImage g{};
         g.image = image;
@@ -45,8 +73,8 @@ namespace Engine
         g.imageFormat = format;
         g.extent = extent;
         g.layout = initialLayout;
-        g.lastAccessMask = VK_ACCESS_2_NONE;
-        g.lastStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+        g.lastAccessMask = initialAccessMask;
+        g.lastStageMask = initialStageMask;
         g.mipLevels = 1;
         g.arrayLayers = 1;
 
@@ -77,19 +105,20 @@ namespace Engine
             {
                 if (imageRegistry.find(decl.name) != imageRegistry.end()) continue;
 
-                if (transientCache.find(decl.name) != transientCache.end())
+                auto cacheIt = transientCache.find(decl.name);
+                if (cacheIt != transientCache.end())
                 {
-                    TransientResource& cached = transientCache[decl.name];
+                    TransientResource& cached = cacheIt->second;
 
                     if (cached.extent.width != decl.extent.width || cached.extent.height != decl.extent.height)
                     {
-                        vkDestroyImageView(device.getDevice(), cached.view, nullptr);
-                        vmaDestroyImage(device.getAllocator(), cached.image, cached.allocation);
-                        transientCache.erase(decl.name);
+                        destroyTransientResource(cached);
+                        transientCache.erase(cacheIt);
                     }
                     else
                     {
-                        registerPhysicalImage(decl.name, cached.image, cached.view, decl.format, decl.extent, VK_IMAGE_LAYOUT_UNDEFINED);
+                        registerPhysicalImage(decl.name, cached.image, cached.view, decl.format, decl.extent,
+                                               cached.lastLayout, cached.lastStageMask, cached.lastAccessMask);
                         continue;
                     }
                 }
@@ -120,13 +149,13 @@ namespace Engine
                 imageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
                 imageViewInfo.format = decl.format;
                 imageViewInfo.pNext = nullptr;
-                imageViewInfo.subresourceRange.aspectMask = isDepthFormat(decl.format) ?
+                imageViewInfo.subresourceRange.aspectMask = isDepth ?
                                             VK_IMAGE_ASPECT_DEPTH_BIT :
                                             VK_IMAGE_ASPECT_COLOR_BIT;
                 imageViewInfo.subresourceRange.levelCount = 1;
                 imageViewInfo.subresourceRange.layerCount = 1;
 
-                vkCreateImageView(device.getDevice(), &imageViewInfo, nullptr, &transientImageView);
+                vkCheck(vkCreateImageView(device.getDevice(), &imageViewInfo, nullptr, &transientImageView), "vkCreateImageView (transient)");
 
                 TransientResource res{};
                 res.name = decl.name;
@@ -134,6 +163,9 @@ namespace Engine
                 res.view = transientImageView;
                 res.allocation = allocation;
                 res.extent = decl.extent;
+                res.lastLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+                res.lastStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+                res.lastAccessMask = VK_ACCESS_2_NONE;
 
                 transientCache[decl.name] = res;
 
@@ -257,6 +289,16 @@ namespace Engine
 
             pass.passNode->execute(cmdBuffer, frameInfo);
         }
+
+        for (auto& pair : transientCache)
+        {
+            auto it = imageRegistry.find(pair.first);
+            if (it == imageRegistry.end()) continue;
+
+            pair.second.lastLayout = it->second.layout;
+            pair.second.lastStageMask = it->second.lastStageMask;
+            pair.second.lastAccessMask = it->second.lastAccessMask;
+        }
     }
 
     void RenderGraph::clear()
@@ -302,6 +344,14 @@ namespace Engine
         g.layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
         g.lastStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
         g.lastAccessMask = VK_ACCESS_2_NONE;
+
+        auto cacheIt = transientCache.find(imageName);
+        if (cacheIt != transientCache.end())
+        {
+            cacheIt->second.lastLayout = g.layout;
+            cacheIt->second.lastStageMask = g.lastStageMask;
+            cacheIt->second.lastAccessMask = g.lastAccessMask;
+        }
     }
 
     bool RenderGraph::isDepthFormat(VkFormat format)
@@ -354,7 +404,7 @@ namespace Engine
         VkPipelineStageFlags2 stageMask,
         VkAccessFlags2 accessMask)
     {
-        imageUsages.push_back({name, imageLayout, stageMask, accessMask,ResourceUsageType::Write});
+        imageUsages.push_back({name, imageLayout, stageMask, accessMask, ResourceUsageType::Write});
     }
 
     void RenderGraphBuilder::readBuffer(
@@ -395,6 +445,8 @@ namespace Engine
             if (it->second.image != image)
             {
                 it->second.layout = VK_IMAGE_LAYOUT_UNDEFINED;
+                it->second.lastStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+                it->second.lastAccessMask = VK_ACCESS_2_NONE;
             }
 
             it->second.image = image;
@@ -406,7 +458,8 @@ namespace Engine
     void RenderGraph::updateBufferHandle(const std::string& name, VkBuffer buffer, VkDeviceSize size)
     {
         auto it = bufferRegistry.find(name);
-        if (it != bufferRegistry.end()) {
+        if (it != bufferRegistry.end())
+        {
             it->second.buffer = buffer;
             it->second.size = size;
         }
@@ -424,6 +477,8 @@ namespace Engine
 
     VkDescriptorBufferInfo RenderGraph::getBufferInfo(const std::string& name, int32_t currentFrame)
     {
+        (void)currentFrame;
+
         auto it = bufferRegistry.find(name);
         if (it != bufferRegistry.end())
         {

@@ -27,6 +27,14 @@ vec3 decodeRadiance(uint packedRadiance) {
     return vec3(r, g, b);
 }
 
+float decodeAO(uint packedAO) {
+    return float(packedAO & 0xFFu) / 255.0;
+}
+
+vec3 tonemapReinhard(vec3 hdrColor) {
+    return hdrColor / (hdrColor + vec3(1.0));
+}
+
 void main() {
     ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
     if (pixel.x >= pc.frameWidth || pixel.y >= pc.frameHeight) return;
@@ -34,7 +42,16 @@ void main() {
     uint pixelIdx = pixel.y * pc.frameWidth + pixel.x;
     CompactMaterial mat = materialIn.materials[pixelIdx];
 
-    vec3 color = decodeRadiance(mat.packedRadiance);
+    if (mat.packedNormal == 0u) {
+        imageStore(outImage, pixel, vec4(0.0, 0.0, 0.0, 1.0));
+        return;
+    }
 
-    imageStore(outImage, pixel, vec4(color, 1.0));
+    vec3 radiance = decodeRadiance(mat.packedRadiance);
+    float ao = decodeAO(mat.packedAO);
+
+    vec3 shaded = radiance * ao;
+    vec3 tonemapped = tonemapReinhard(shaded);
+
+    imageStore(outImage, pixel, vec4(tonemapped, 1.0));
 }

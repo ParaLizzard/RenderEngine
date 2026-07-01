@@ -26,9 +26,13 @@ namespace Engine
 
         Application(const Application&) = delete;
         Application& operator=(const Application&) = delete;
+        Application(Application&&) = delete;
+        Application& operator=(Application&&) = delete;
 
         void run();
     private:
+        static unsigned int computeWorkerThreadCount();
+
         Window window{WIDTH,HEIGHT,"Render Engine"};
         Device device{window};
         Renderer renderer{window,device};
@@ -37,7 +41,7 @@ namespace Engine
         RenderGraph renderGraph{device};
         KeyboardMovementController cameraController{};
         std::shared_ptr<GameObject> cameraObject;
-        JobSystem jobSystem{ std::max(1u, std::thread::hardware_concurrency() - 1) };
+        JobSystem jobSystem{ computeWorkerThreadCount() };
 
         bool enableSSAO = true;
         bool ssaoKeyPressed = false;

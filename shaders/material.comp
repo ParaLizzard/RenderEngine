@@ -5,17 +5,14 @@
 
 layout(local_size_x = 64) in;
 
-// =========================================================================
-// PBR CONSTANTS & FUNCTIONS
-// =========================================================================
 const float PI = 3.141592;
 const vec3 Fdielectric = vec3(0.04);
 const float Epsilon = 0.00001;
 
 float ndfGGX(float cosLh, float roughness) {
-    float alpha   = roughness * roughness;
+    float alpha = roughness * roughness;
     float alphaSq = alpha * alpha;
-    float denom   = (cosLh * cosLh) * (alphaSq - 1.0) + 1.0;
+    float denom = (cosLh * cosLh) * (alphaSq - 1.0) + 1.0;
     return alphaSq / (PI * denom * denom);
 }
 
@@ -33,9 +30,6 @@ vec3 fresnelSchlick(vec3 F0, float cosTheta) {
     return F0 + (vec3(1.0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
-// =========================================================================
-// SET 0: Global Bindless Heap (ResourceHeap)
-// =========================================================================
 struct MaterialData {
     vec4 albedoFactor;
     vec4 emissiveFactor;
@@ -60,52 +54,20 @@ layout(set = 0, binding = 0) readonly buffer MaterialHeapBuffer {
 layout(set = 0, binding = 2) uniform samplerCube irradianceMap;
 layout(set = 0, binding = 3) uniform samplerCube prefilterMap;
 layout(set = 0, binding = 4) uniform sampler2D brdfLUT;
-
 layout(set = 0, binding = 5) uniform sampler2D bindlessTextures[];
 
-// =========================================================================
-// SET 1: Material Pass Specific Resources
-// =========================================================================
-
-// 12-byte aligned position (Fixes shattered geometry)
-struct PositionData {
-    float x, y, z;
-};
-layout(set = 1, binding = 0) readonly buffer VertexBuffer {
-    PositionData positions[];
-} vertexBuffer;
-
-layout(set = 1, binding = 1) readonly buffer IndexBuffer {
-    uint indices[];
-} indexBuffer;
-
-// 8-byte aligned Mesh info (Matches your C++ GPUMeshInfo)
-struct Mesh {
-    uint firstIndex;
-    int vertexOffset;
-};
-layout(set = 1, binding = 2) readonly buffer MeshBuffer {
-    Mesh meshes[];
-} meshBuffer;
-
+struct PositionData { float x, y, z; };
+layout(set = 1, binding = 0) readonly buffer VertexBuffer { PositionData positions[]; } vertexBuffer;
+layout(set = 1, binding = 1) readonly buffer IndexBuffer { uint indices[]; } indexBuffer;
+struct Mesh { uint firstIndex; int vertexOffset; };
+layout(set = 1, binding = 2) readonly buffer MeshBuffer { Mesh meshes[]; } meshBuffer;
 layout(set = 1, binding = 3) uniform usampler2D visBufferTexture;
 layout(set = 1, binding = 4) uniform sampler2D depthTexture;
 
-struct CompactMaterial {
-    uint packedNormal;
-    uint packedRadiance;
-    uint packedAO;
-    uint padding;
-};
-layout(set = 1, binding = 5) writeonly buffer MaterialBuffer {
-    CompactMaterial materials[];
-} materialOut;
+struct CompactMaterial { uint packedNormal; uint packedRadiance; uint packedAO; uint padding; };
+layout(set = 1, binding = 5) writeonly buffer MaterialBuffer { CompactMaterial materials[]; } materialOut;
+layout(set = 1, binding = 6) writeonly buffer WorldBuffer { vec4 worldPositions[]; } worldOut;
 
-layout(set = 1, binding = 6) writeonly buffer WorldBuffer {
-    vec4 worldPositions[];
-} worldOut;
-
-// Fully unwrapped attributes (Fixes 16-byte vec3 padding / pink freckles)
 struct VertexAttribute {
     float colorR, colorG, colorB;
     float normalX, normalY, normalZ;
@@ -113,29 +75,13 @@ struct VertexAttribute {
     float tangentX, tangentY, tangentZ, tangentW;
     uint texId;
 };
+layout(set = 1, binding = 7) readonly buffer AttributeBuffer { VertexAttribute attributes[]; } attributeBuffer;
 
-layout(set = 1, binding = 7) readonly buffer AttributeBuffer {
-    VertexAttribute attributes[];
-} attributeBuffer;
+struct ObjectData { mat4 modelMatrix; mat4 normalMatrix; vec4 boundingSphere; };
+layout(set = 1, binding = 8) readonly buffer ObjectBuffer { ObjectData objects[]; } objectBuffer;
 
-struct ObjectData {
-    mat4 modelMatrix;
-    mat4 normalMatrix;
-    vec4 boundingSphere;
-};
-layout(set = 1, binding = 8) readonly buffer ObjectBuffer {
-    ObjectData objects[];
-} objectBuffer;
-
-layout(set = 1, binding = 9) readonly buffer BinningMeta {
-    uint counters[256];
-    uint offsets[256];
-    uint totalPixels;
-} meta;
-
-layout(set = 1, binding = 10) readonly buffer PixelCoords {
-    uint packedCoords[];
-};
+layout(set = 1, binding = 9) readonly buffer BinningMeta { uint counters[256]; uint offsets[256]; uint totalPixels; } meta;
+layout(set = 1, binding = 10) readonly buffer PixelCoords { uint packedCoords[]; };
 
 layout(push_constant) uniform PushConstants {
     mat4 viewProj;
@@ -143,9 +89,6 @@ layout(push_constant) uniform PushConstants {
     uint frameWidth;
 } pc;
 
-// =========================================================================
-// HELPER FUNCTIONS FOR ENCODING
-// =========================================================================
 uint encodeOctNormal(vec3 n) {
     n /= (abs(n.x) + abs(n.y) + abs(n.z));
     vec2 res = n.z >= 0.0 ? n.xy : (1.0 - abs(n.yx)) * sign(n.xy);
@@ -154,7 +97,6 @@ uint encodeOctNormal(vec3 n) {
 }
 
 uint encodeRadiance(vec3 color) {
-    // 10 bits per channel (matches 0x3FF un-packing in resolve.comp)
     uvec3 quantized = uvec3(clamp(color, 0.0, 1.0) * 1023.0);
     return quantized.x | (quantized.y << 10u) | (quantized.z << 20u);
 }
@@ -163,11 +105,6 @@ vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness) {
     return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
-// =========================================================================
-// MAIN EXECUTION
-// =========================================================================
-
-
 void main() {
     uint linearId = gl_GlobalInvocationID.x;
     if (linearId >= meta.totalPixels) return;
@@ -175,32 +112,24 @@ void main() {
     uint packedCoord = packedCoords[linearId];
     ivec2 pixel = ivec2(packedCoord & 0xFFFFu, packedCoord >> 16u);
 
-    uint pixelIdx = pixel.y * pc.frameWidth + pixel.x;
-
-    // Read VisBuffer
     uvec4 visPacked = texelFetch(visBufferTexture, pixel, 0);
-
     uint instanceID = visPacked.x;
     uint primitiveID = visPacked.y;
 
-    // Special case: sky/background
-    if (instanceID == 0xFFFFFFFFu || instanceID == 0xFFFFu) {
-        materialOut.materials[pixelIdx] = CompactMaterial(0u, 0u, 0u, 0u);
-        worldOut.worldPositions[pixelIdx] = vec4(0.0, 0.0, 0.0, 0.0);
+    if (instanceID == 0xFFFFFFFFu) {
+        materialOut.materials[linearId] = CompactMaterial(0u, 0u, 0u, 0u);
+        worldOut.worldPositions[linearId] = vec4(0.0);
         return;
     }
 
-    // Fetch geometry parameters
     Mesh mesh = meshBuffer.meshes[instanceID];
     mat4 modelMatrix = objectBuffer.objects[instanceID].modelMatrix;
 
-    // Fetch triangle indices
     uint globalIndexOffset = mesh.firstIndex + primitiveID * 3u;
     uint idx0 = indexBuffer.indices[globalIndexOffset];
     uint idx1 = indexBuffer.indices[globalIndexOffset + 1u];
     uint idx2 = indexBuffer.indices[globalIndexOffset + 2u];
 
-    // Fetch and transform positions to World Space
     uint vOffset = uint(mesh.vertexOffset);
     PositionData pd0 = vertexBuffer.positions[vOffset + idx0];
     PositionData pd1 = vertexBuffer.positions[vOffset + idx1];
@@ -210,9 +139,6 @@ void main() {
     vec3 p1 = (modelMatrix * vec4(pd1.x, pd1.y, pd1.z, 1.0)).xyz;
     vec3 p2 = (modelMatrix * vec4(pd2.x, pd2.y, pd2.z, 1.0)).xyz;
 
-    // =========================================================
-    // PERSPECTIVE-CORRECT SCREEN-SPACE BARYCENTRICS
-    // =========================================================
     vec4 clip0 = pc.viewProj * vec4(p0, 1.0);
     vec4 clip1 = pc.viewProj * vec4(p1, 1.0);
     vec4 clip2 = pc.viewProj * vec4(p2, 1.0);
@@ -220,49 +146,23 @@ void main() {
     vec2 ndc0 = clip0.xy / clip0.w;
     vec2 ndc1 = clip1.xy / clip1.w;
     vec2 ndc2 = clip2.xy / clip2.w;
-
     vec2 pixelNDC = (vec2(pixel) + 0.5) / vec2(textureSize(visBufferTexture, 0)) * 2.0 - 1.0;
     pixelNDC.y = -pixelNDC.y;
 
     vec2 e0 = ndc1 - ndc0;
     vec2 e1 = ndc2 - ndc0;
     vec2 e2 = pixelNDC - ndc0;
-
     float denom = e0.x * e1.y - e0.y * e1.x;
     denom = abs(denom) < 1e-7 ? (denom >= 0.0 ? 1e-7 : -1e-7) : denom;
 
     float v_s = (e2.x * e1.y - e2.y * e1.x) / denom;
     float w_s = (e0.x * e2.y - e0.y * e2.x) / denom;
     float u_s = 1.0 - v_s - w_s;
-
     float invW = (u_s / clip0.w) + (v_s / clip1.w) + (w_s / clip2.w);
     vec3 bary = vec3(u_s / clip0.w, v_s / clip1.w, w_s / clip2.w) / invW;
 
-    // --- NEW: Analytical Delats for Compute Shader Mipmapping ---
-    vec2 invRes = 2.0 / vec2(textureSize(visBufferTexture, 0));
-
-    // Shift e2 by 1 pixel in X
-    vec2 e2_dx = e2 + vec2(invRes.x, 0.0);
-    float v_s_dx = (e2_dx.x * e1.y - e2_dx.y * e1.x) / denom;
-    float w_s_dx = (e0.x * e2_dx.y - e0.y * e2_dx.x) / denom;
-    float u_s_dx = 1.0 - v_s_dx - w_s_dx;
-    float invW_dx = (u_s_dx / clip0.w) + (v_s_dx / clip1.w) + (w_s_dx / clip2.w);
-    vec3 bary_dx = vec3(u_s_dx / clip0.w, v_s_dx / clip1.w, w_s_dx / clip2.w) / invW_dx;
-
-    // Shift e2 by 1 pixel in Y
-    vec2 e2_dy = e2 + vec2(0.0, invRes.y);
-    float v_s_dy = (e2_dy.x * e1.y - e2_dy.y * e1.x) / denom;
-    float w_s_dy = (e0.x * e2_dy.y - e0.y * e2_dy.x) / denom;
-    float u_s_dy = 1.0 - v_s_dy - w_s_dy;
-    float invW_dy = (u_s_dy / clip0.w) + (v_s_dy / clip1.w) + (w_s_dy / clip2.w);
-    vec3 bary_dy = vec3(u_s_dy / clip0.w, v_s_dy / clip1.w, w_s_dy / clip2.w) / invW_dy;
-    // ------------------------------------------------------------
-
     vec3 worldPos = bary.x * p0 + bary.y * p1 + bary.z * p2;
 
-    // =========================================================
-    // ATTRIBUTE FETCHING & RECONSTRUCTION
-    // =========================================================
     VertexAttribute a0 = attributeBuffer.attributes[vOffset + idx0];
     VertexAttribute a1 = attributeBuffer.attributes[vOffset + idx1];
     VertexAttribute a2 = attributeBuffer.attributes[vOffset + idx2];
@@ -283,28 +183,12 @@ void main() {
     vec4 tangent = bary.x * t0 + bary.y * t1 + bary.z * t2;
     vec2 texCoord = bary.x * uv0 + bary.y * uv1 + bary.z * uv2;
 
-    // --- NEW: Calculate the UV gradients for textureGrad ---
-    vec2 texCoord_dx = bary_dx.x * uv0 + bary_dx.y * uv1 + bary_dx.z * uv2;
-    vec2 texCoord_dy = bary_dy.x * uv0 + bary_dy.y * uv1 + bary_dy.z * uv2;
-    vec2 ddx_uv = texCoord_dx - texCoord;
-    vec2 ddy_uv = texCoord_dy - texCoord;
-    // -------------------------------------------------------
-
     uint materialId = a0.texId;
-    MaterialData mat;
-    if (subgroupAllEqual(materialId))
-    {
-        mat = materialHeap.materials[subgroupBroadcastFirst(materialId)];
-    }
-    else
-    {
-        mat = materialHeap.materials[materialId];
-    }
+    MaterialData mat = materialHeap.materials[materialId];
 
-    // Texture Sampling
-    vec3 albedo = textureGrad(bindlessTextures[nonuniformEXT(mat.albedoIndex)], texCoord, ddx_uv, ddy_uv).rgb * mat.albedoFactor.rgb;
-    vec3 normalMapSample = textureGrad(bindlessTextures[nonuniformEXT(mat.normalIndex)], texCoord, ddx_uv, ddy_uv).rgb;
-    vec4 mrSample = textureGrad(bindlessTextures[nonuniformEXT(mat.roughnessMetallicIndex)], texCoord, ddx_uv, ddy_uv);
+    vec3 albedo = texture(bindlessTextures[nonuniformEXT(mat.albedoIndex)], texCoord).rgb * mat.albedoFactor.rgb;
+    vec3 normalMapSample = texture(bindlessTextures[nonuniformEXT(mat.normalIndex)], texCoord).rgb;
+    vec4 mrSample = texture(bindlessTextures[nonuniformEXT(mat.roughnessMetallicIndex)], texCoord);
 
     float roughness = mrSample.g * mat.roughnessFactor;
     float metalness = mrSample.b * mat.metallicFactor;
@@ -313,66 +197,24 @@ void main() {
     vec3 bitangent = cross(normal, tangent.xyz) * tangent.w;
     mat3 tbn = mat3(normalize(tangent.xyz), normalize(bitangent), normal);
 
-    vec3 objectNormal = normalize(tbn * mappedNormal);
-    mat4 normalMatrix = objectBuffer.objects[instanceID].normalMatrix;
-    vec3 worldNormal = normalize((normalMatrix * vec4(objectNormal, 0.0)).xyz);
-
-    // =========================================================================
-    // PBR DIRECT LIGHTING
-    // =========================================================================
-
+    vec3 worldNormal = normalize((objectBuffer.objects[instanceID].normalMatrix * vec4(normalize(tbn * mappedNormal), 0.0)).xyz);
     vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
-    vec3 viewDir  = normalize(pc.cameraPos.xyz - worldPos);
-    vec3 H        = normalize(viewDir + lightDir);
+    vec3 viewDir = normalize(pc.cameraPos.xyz - worldPos);
+    vec3 H = normalize(viewDir + lightDir);
 
-    float rawNdotL = dot(worldNormal, lightDir);
-    float NdotL    = max(rawNdotL, 0.0);
-    float NdotV    = max(dot(worldNormal, viewDir), Epsilon);
+    float NdotL = max(dot(worldNormal, lightDir), 0.0);
+    float NdotV = max(dot(worldNormal, viewDir), Epsilon);
 
     vec3 F0 = mix(Fdielectric, albedo, metalness);
-
-    float wrap = 0.5;
-    float NdotL_diffuse = clamp((rawNdotL + wrap) / (1.0 + wrap), 0.0, 1.0);
-    float lightRoughness = max(roughness, 0.05);
-
-    float NDF = ndfGGX(max(dot(worldNormal, H), 0.0), lightRoughness);
-    float G   = gaSchlickGGX(NdotL, NdotV, lightRoughness);
-    vec3  F   = fresnelSchlick(F0, max(dot(H, viewDir), 0.0));
-
+    float NDF = ndfGGX(max(dot(worldNormal, H), 0.0), max(roughness, 0.05));
+    float G = gaSchlickGGX(NdotL, NdotV, max(roughness, 0.05));
+    vec3 F = fresnelSchlick(F0, max(dot(H, viewDir), 0.0));
     vec3 specular = (NDF * G * F) / (4.0 * NdotV * NdotL + Epsilon);
-    vec3 kD       = (vec3(1.0) - F) * (1.0 - metalness);
+    vec3 kD = (vec3(1.0) - F) * (1.0 - metalness);
 
-    vec3 directLight = (kD * albedo / PI * NdotL_diffuse + specular * NdotL) * vec3(2.0);
+    vec3 finalRadiance = (kD * albedo / PI * NdotL + specular * NdotL) * vec3(2.0);
+    finalRadiance += (texture(irradianceMap, worldNormal).rgb * albedo) * (1.0 - metalness);
 
-
-    vec3 F_ambient  = fresnelSchlickRoughness(NdotV, F0, roughness);
-    vec3 kD_ambient = (vec3(1.0) - F_ambient) * (1.0 - metalness);
-
-    // Irradiance (Diffuse Ambient)
-    vec3 irradiance = texture(irradianceMap, worldNormal).rgb;
-    vec3 diffuse_ambient = irradiance * albedo;
-
-    // Prefilter (Specular Ambient)
-    const float MAX_REFLECTION_LOD = 4.0; // Adjust based on your mipmap count
-    vec3 R = reflect(-viewDir, worldNormal);
-
-    // Note: your old shader flipped the Y/Z axes for sampling, keep it if your cubemap needs it!
-    vec3 prefilteredColor = textureLod(prefilterMap, R, roughness * MAX_REFLECTION_LOD).rgb;
-    vec2 envBRDF = texture(brdfLUT, vec2(NdotV, roughness)).rg;
-    vec3 specular_ambient = prefilteredColor * (F_ambient * envBRDF.x + envBRDF.y);
-
-    vec3 ambientLight = (kD_ambient * diffuse_ambient + specular_ambient);
-
-    // Final combined lighting
-    vec3 finalRadiance = directLight + ambientLight;
-
-    // =========================================================================
-    // PACK AND WRITE OUTPUTS
-    // =========================================================================
-
-    uint packedNormal = encodeOctNormal(worldNormal);
-    uint packedRadiance = encodeRadiance(finalRadiance);
-
-    materialOut.materials[pixelIdx] = CompactMaterial(packedNormal, packedRadiance, 0u, 0u);
-    worldOut.worldPositions[pixelIdx] = vec4(worldPos, 1.0);
+    materialOut.materials[linearId] = CompactMaterial(encodeOctNormal(worldNormal), encodeRadiance(finalRadiance), 0u, 0u);
+    worldOut.worldPositions[linearId] = vec4(worldPos, 1.0);
 }

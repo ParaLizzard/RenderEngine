@@ -1,31 +1,16 @@
 #version 460
-layout(local_size_x = 256) in; // Exactly 1 thread per material
-
+layout(local_size_x = 256) in;
 layout(set = 1, binding = 9) buffer BinningMeta {
     uint counters[256];
     uint offsets[256];
     uint totalPixels;
 } meta;
 
-shared uint sharedCounts[256];
-
 void main() {
-    uint tID = gl_LocalInvocationID.x;
-    uint count = meta.counters[tID];
-    sharedCounts[tID] = count;
-    barrier();
-
-    // Calculate exclusive prefix sum
-    uint offset = 0;
-    for (uint i = 0; i < tID; i++) {
-        offset += sharedCounts[i];
+    uint sum = 0;
+    for (uint i = 0; i < 256; i++) {
+        meta.offsets[i] = sum;
+        sum += meta.counters[i];
     }
-
-    meta.offsets[tID] = offset;
-
-    // Reset the counter to 0 so the Binning pass can use it as a running index!
-    meta.counters[tID] = 0;
-
-    // The last thread writes the total valid pixels
-    if (tID == 255) meta.totalPixels = offset + count;
+    meta.totalPixels = sum;
 }

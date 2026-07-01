@@ -1,5 +1,4 @@
 #version 460
-
 layout(local_size_x = 256) in;
 
 struct ObjectData {
@@ -12,78 +11,62 @@ struct VkDrawIndexedIndirectCommand {
     uint indexCount;
     uint instanceCount;
     uint firstIndex;
-    int  vertexOffset;
+    int vertexOffset;
     uint firstInstance;
 };
 
-// Binding 0: The objects
-layout(std430, set = 0, binding = 0) readonly buffer ObjectBuffer {
-    ObjectData objects[];
-};
+layout(set = 0, binding = 0) readonly buffer ObjectBuffer { ObjectData objects[]; };
+layout(set = 0, binding = 1) writeonly buffer IndirectBuffer { VkDrawIndexedIndirectCommand commands[]; };
+layout(set = 0, binding = 2) buffer DrawCountBuffer { uint count; };
+layout(set = 0, binding = 3) readonly buffer SourceCommands { VkDrawIndexedIndirectCommand srcCommands[]; };
 
-layout(std430, set = 0, binding = 1) readonly buffer BlueprintBuffer {
-    VkDrawIndexedIndirectCommand blueprints[];
-};
-
-layout(std430, set = 0, binding = 2) buffer DrawCountBuffer {
-    uint drawCount;
-};
-
-layout(std430, set = 0, binding = 3) buffer CompactedIndirectBuffer {
-    VkDrawIndexedIndirectCommand compactedCommands[];
-};
-
-layout(push_constant) uniform PushConsts {
+layout(push_constant) uniform PushConstants {
     mat4 viewProjection;
     uint objectCount;
-} push;
+} pc;
+
+struct Plane {
+    vec3 normal;
+    float distance;
+};
+
+Plane normalizePlane(vec4 p) {
+    float length = length(p.xyz);
+    return Plane(p.xyz / length, p.w / length);
+}
+
+bool isVisible(vec4 sphere, mat4 viewProj) {
+    mat4 vp = transpose(viewProj);
+    Plane planes[6];
+    planes[0] = normalizePlane(vp[3] + vp[0]);
+    planes[1] = normalizePlane(vp[3] - vp[0]);
+    planes[2] = normalizePlane(vp[3] + vp[1]);
+    planes[3] = normalizePlane(vp[3] - vp[1]);
+    planes[4] = normalizePlane(vp[3] + vp[2]);
+    planes[5] = normalizePlane(vp[3] - vp[2]);
+
+    vec3 center = sphere.xyz;
+    float radius = sphere.w;
+
+    for (int i = 0; i < 6; ++i) {
+        if (dot(planes[i].normal, center) + planes[i].distance < -radius) {
+            return false;
+        }
+    }
+    return true;
+}
 
 void main() {
     uint gID = gl_GlobalInvocationID.x;
-    if (gID >= push.objectCount) return;
+    if (gID >= pc.objectCount) return;
 
-    vec4 sphere = objects[gID].boundingSphere;
-    mat4 model  = objects[gID].modelMatrix;
+    ObjectData obj = objects[gID];
 
-    vec3 worldCenter = (model * vec4(sphere.xyz, 1.0)).xyz;
+    if (isVisible(obj.boundingSphere, pc.viewProjection)) {
+        uint slot = atomicAdd(count, 1);
 
-    float scaleX = length(vec3(model[0]));
-    float scaleY = length(vec3(model[1]));
-    float scaleZ = length(vec3(model[2]));
-    float maxScale = max(max(scaleX, scaleY), scaleZ);
-    float worldRadius = sphere.w * maxScale;
-
-    mat4 tvp = transpose(push.viewProjection);
-    vec4 planes[6];
-    planes[0] = tvp[3] + tvp[0]; // Left
-    planes[1] = tvp[3] - tvp[0]; // Right
-    planes[2] = tvp[3] + tvp[1]; // Bottom
-    planes[3] = tvp[3] - tvp[1]; // Top
-    planes[4] = tvp[2];          // Near
-    planes[5] = tvp[3] - tvp[2]; // Far
-
-    bool visible = true;
-    for (int i = 0; i < 6; i++) {
-        float len = length(planes[i].xyz);
-        planes[i] /= len;
-        if (dot(planes[i].xyz, worldCenter) + planes[i].w < -worldRadius) {
-            visible = false;
-            break;
-        }
-    }
-
-    // debug line
-    visible = true;
-    //
-
-    if (visible) {
-        uint uniqueOutIndex = atomicAdd(drawCount, 1);
-
-        VkDrawIndexedIndirectCommand cmd = blueprints[gID];
-        cmd.instanceCount = 1;
-
+        VkDrawIndexedIndirectCommand cmd = srcCommands[gID];
         cmd.firstInstance = gID;
-
-        compactedCommands[uniqueOutIndex] = cmd;
+        commands[slot] = cmd;
     }
 }

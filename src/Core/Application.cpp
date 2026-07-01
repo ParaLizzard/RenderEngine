@@ -11,8 +11,6 @@
 #include "Scene/IBL.h"
 #include "Scene/LoaderGLTF.h"
 
-#include "renderdoc_app.h"
-
 namespace Engine
 {
     static void flattenSceneGraph(std::vector<GameObject>& gameObjects)
@@ -89,6 +87,12 @@ namespace Engine
         }
     }
 
+    unsigned int Application::computeWorkerThreadCount()
+    {
+        const unsigned int hardwareThreads = std::thread::hardware_concurrency();
+        return hardwareThreads > 1 ? hardwareThreads - 1 : 1;
+    }
+
     Application::Application()
     {
 
@@ -123,14 +127,7 @@ namespace Engine
 
 
         std::vector<std::future<ParsedGLTF>> pendingLoads;
-        //pendingLoads.push_back(LoaderGLTF::loadAsync(jobSystem, "models/pbr_sphere.glb"));
-        //pendingLoads.push_back(LoaderGLTF::loadAsync(
-        //  jobSystem, "C:/Users/Jan Varga/Downloads/main_sponza (1)/main_sponza/NewSponza_Main_glTF_003.gltf"));
-        pendingLoads.push_back(LoaderGLTF::loadAsync(jobSystem, "models/sponza_optimized.glb"));
-        pendingLoads.push_back(LoaderGLTF::loadAsync(jobSystem, "C:/Users/Jan Varga/Downloads/pkg_a_curtains/pkg_a_curtains/NewSponza_Curtains_glTF.gltf"));
-        //pendingLoads.push_back(LoaderGLTF::loadAsync(
-        //jobSystem, "C:/Users/Jan Varga/Downloads/pkg_b_ivy1/pkg_b_ivy/NewSponza_IvyGrowth_glTF.gltf"));
-        //pendingLoads.push_back(LoaderGLTF::loadAsync(jobSystem, "C:/Users/Martin Varga/Downloads/metallic--roughness--test/source/Metallic_Roughness_Test.glb"));
+        pendingLoads.push_back(LoaderGLTF::loadAsync(jobSystem, "models/pbr_sphere.glb"));
 
         auto cubeFuture = LoaderGLTF::loadAsync(jobSystem, "models/cube.glb");
         ParsedGLTF cubeParsed = cubeFuture.get();
@@ -247,7 +244,7 @@ namespace Engine
             float currentTime = static_cast<float>(glfwGetTime());
             float deltaTime = currentTime - lastTime;
             lastTime = currentTime;
-            float time = glfwGetTime();
+            float time = currentTime;
 
             fpsTimer += deltaTime;
             fpsCount++;
@@ -262,29 +259,38 @@ namespace Engine
                 fpsCount = 0;
             }
 
-            for (int i = pendingLoads.size() - 1; i >= 0; --i)
+            std::vector<size_t> readyLoadIndices;
+            for (size_t i = 0; i < pendingLoads.size(); ++i)
             {
                 if (pendingLoads[i].wait_for(std::chrono::seconds(0)) == std::future_status::ready)
                 {
-                    vkDeviceWaitIdle(device.getDevice());
+                    readyLoadIndices.push_back(i);
+                }
+            }
 
+            if (!readyLoadIndices.empty())
+            {
+                vkDeviceWaitIdle(device.getDevice());
+
+                for (auto it = readyLoadIndices.rbegin(); it != readyLoadIndices.rend(); ++it)
+                {
+                    const size_t i = *it;
                     ParsedGLTF parsedData = pendingLoads[i].get();
                     auto newObjects = LoaderGLTF::finalize(parsedData, device, megaBuffer, resourceHeap, sceneTextures);
 
                     for (auto& obj : newObjects) gameObjects.push_back(std::move(obj));
-                    flattenSceneGraph(gameObjects);
-
-                    resourceHeap.uploadMaterialBuffer();
-                    resourceHeap.writeMaterialDescriptor();
-
-                    megaBuffer.uploadToGPU();
-                    cullPass.markSceneDirty();
-                    materialPass.markSceneDirty();
-
-                    std::cout << "Successfully streamed in async model!" << std::endl;
 
                     pendingLoads.erase(pendingLoads.begin() + i);
+                    std::cout << "Successfully streamed in async model!" << std::endl;
                 }
+
+                flattenSceneGraph(gameObjects);
+
+                resourceHeap.uploadMaterialBuffer();
+                resourceHeap.writeMaterialDescriptor();
+
+                megaBuffer.uploadToGPU();
+                cullPass.markSceneDirty();
             }
 
             SceneUbo uboData{};
@@ -296,8 +302,12 @@ namespace Engine
             sceneUboBuffer->writeToBuffer(&uboData, sizeof(SceneUbo), 0);
             sceneUboBuffer->flush(sizeof(SceneUbo), 0);
 
+            info.cameraPos = glm::vec3(uboData.cameraPosition);
+
             cameraController.moveInPlaneXZ(window.getGLFWWinodow(), deltaTime, cameraObject);
             camera.setViewYXZ(cameraObject->transform.translation, cameraObject->transform.rotation);
+
+
 
             for (auto& obj : gameObjects)
             {
@@ -418,7 +428,6 @@ namespace Engine
                 info.gameObjects = &gameObjects;
                 info.jobSystem = &jobSystem;
                 info.enableSSAO = enableSSAO;
-
 
             renderGraph.execute(cmd, info);
             renderGraph.transitionToPresent(cmd, "SwapChainImage");

@@ -4,14 +4,13 @@
 #include "Renderer/ResourceHeap.h"
 #include "Core/Descriptor.h"
 
-
 namespace Engine
 {
     struct MaterialPushConstants
     {
         glm::mat4 viewProj;
         glm::vec4 cameraPos;
-        glm::uint frameWidth;
+        uint32_t frameWidth;
     };
 
     struct CompactMaterial {
@@ -44,20 +43,9 @@ namespace Engine
         void execute(VkCommandBuffer& cmd, FrameInfo& frameInfo) override;
         void resolve(RenderGraph& graph, const FrameInfo& frameInfo) override;
 
-        VkBuffer getCompactMaterialBuffer(size_t frameIndex) {
-            return compactMaterialBuffers[frameIndex]->getBuffer();
-        }
+        VkBuffer getCompactMaterialBuffer(size_t frameIndex) { return compactMaterialBuffers[frameIndex]->getBuffer(); }
+        VkBuffer getWorldPositionBuffer(uint32_t frameIndex) const { return worldPositionBuffers[frameIndex]->getBuffer(); }
 
-        VkBuffer getWorldPositionBuffer(uint32_t frameIndex) const {
-            return worldPositionBuffers[frameIndex]->getBuffer();
-        }
-
-        void markSceneDirty() {
-            for (auto& cache : frameCaches) {
-                cache.depthView = VK_NULL_HANDLE;
-                cache.visView = VK_NULL_HANDLE;
-            }
-        }
     private:
         void createPipelineLayout();
         void createPipeline();
@@ -79,22 +67,12 @@ namespace Engine
         std::vector<VkDescriptorSet> descriptorSets;
 
         VkSampler sampler{VK_NULL_HANDLE};
-        VkSampler nearestSampler = VK_NULL_HANDLE;
+        VkSampler nearestSampler{VK_NULL_HANDLE};
 
         std::vector<std::unique_ptr<Buffer>> meshBuffers;
         std::vector<std::unique_ptr<Buffer>> compactMaterialBuffers;
         std::vector<std::unique_ptr<Buffer>> worldPositionBuffers;
-
         std::vector<std::unique_ptr<Buffer>> binningMetaBuffers;
         std::vector<std::unique_ptr<Buffer>> pixelCoordBuffers;
-
-        uint32_t lastWidth = 0;
-        uint32_t lastHeight = 0;
-
-        struct FrameCache {
-            VkImageView depthView = VK_NULL_HANDLE;
-            VkImageView visView = VK_NULL_HANDLE;
-        };
-        std::vector<FrameCache> frameCaches;
     };
 }

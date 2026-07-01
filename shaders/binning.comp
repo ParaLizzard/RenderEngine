@@ -1,77 +1,22 @@
 #version 460
 layout(local_size_x = 8, local_size_y = 8) in;
-
-struct Mesh {
-    uint firstIndex;
-    int vertexOffset;
-};
-
-struct VertexAttribute {
-    float colorR, colorG, colorB;
-    float normalX, normalY, normalZ;
-    float uvX, uvY;
-    float tangentX, tangentY, tangentZ, tangentW;
-    uint texId;
-};
-
-layout(set = 1, binding = 1) readonly buffer IndexBuffer { uint indices[]; };
-layout(set = 1, binding = 2) readonly buffer MeshBuffer { Mesh meshes[]; };
 layout(set = 1, binding = 3) uniform usampler2D visBufferTexture;
-layout(set = 1, binding = 7) readonly buffer AttributeBuffer { VertexAttribute attributes[]; };
-
-
 layout(set = 1, binding = 9) buffer BinningMeta {
     uint counters[256];
     uint offsets[256];
     uint totalPixels;
 } meta;
-
 layout(set = 1, binding = 10) writeonly buffer PixelCoords {
     uint packedCoords[];
 };
 
-layout(push_constant) uniform PushConstants {
-    mat4 viewProj;
-    vec4 cameraPos;
-    uint frameWidth;
-} pc;
-
-shared uint wgCounters[256];
-shared uint wgOffsets[256];
-
 void main() {
-    for(uint i = gl_LocalInvocationIndex; i < 256; i += 64) wgCounters[i] = 0;
-    barrier();
-
     ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
-    uint matID = 256; // invalid
-    uint myLocalOffset = 0;
-
-    ivec2 size = textureSize(visBufferTexture, 0);
-    if (pixel.x < pc.frameWidth && pixel.y < size.y) {
-        uvec4 vis = texelFetch(visBufferTexture, pixel, 0);
-        uint instanceID = vis.x;
-
-        if (instanceID != 0xFFFFFFFFu && instanceID != 0xFFFFu) {
-            Mesh mesh = meshes[instanceID];
-            uint idx0 = indices[mesh.firstIndex + vis.y * 3u];
-            matID = attributes[mesh.vertexOffset + idx0].texId;
-
-            matID = min(matID, 255u);
-
-            myLocalOffset = atomicAdd(wgCounters[matID], 1);
-        }
-    }
-    barrier();
-
-    for(uint i = gl_LocalInvocationIndex; i < 256; i += 64) {
-        if (wgCounters[i] > 0) wgOffsets[i] = atomicAdd(meta.counters[i], wgCounters[i]);
-    }
-    barrier();
-
-    if (matID < 256) {
-        // Calculate the exact 1D sorted index for this specific pixel
-        uint finalGlobalOffset = meta.offsets[matID] + wgOffsets[matID] + myLocalOffset;
-        packedCoords[finalGlobalOffset] = (pixel.y << 16) | pixel.x;
+    uvec4 vis = texelFetch(visBufferTexture, pixel, 0);
+    if (vis.x != 0xFFFFFFFFu) {
+        uint tileIdx = (pixel.y / 8) * (800 / 8) + (pixel.x / 8);
+        uint localOffset = atomicAdd(meta.counters[tileIdx % 256], 1);
+        uint globalIdx = meta.offsets[tileIdx % 256] + localOffset;
+        packedCoords[globalIdx] = (pixel.y << 16u) | (pixel.x & 0xFFFFu);
     }
 }

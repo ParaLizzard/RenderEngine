@@ -5,11 +5,6 @@
 
 namespace Engine
 {
-    struct VisbilityPushConstants
-    {
-        glm::mat4 viewProjection;
-    };
-
     class VisibilityPassNode : public RenderPassNode
     {
     public:
@@ -18,11 +13,12 @@ namespace Engine
 
         VisibilityPassNode(const VisibilityPassNode&) = delete;
         VisibilityPassNode& operator=(const VisibilityPassNode&) = delete;
+        VisibilityPassNode(VisibilityPassNode&&) = delete;
+        VisibilityPassNode& operator=(VisibilityPassNode&&) = delete;
 
         void setup(RenderGraphBuilder& renderGraph) override;
         void execute(VkCommandBuffer& cmd, FrameInfo& frameInfo) override;
         void resolve(RenderGraph& graph, const FrameInfo& frameInfo) override;
-
 
     private:
         void createPipelineLayout();
@@ -33,7 +29,7 @@ namespace Engine
         Renderer& renderer;
         CullPassNode& cullPass;
 
-        VkPipelineLayout pipelineLayout;
-        VkPipeline pipeline;
+        VkPipelineLayout pipelineLayout{VK_NULL_HANDLE};
+        VkPipeline pipeline{VK_NULL_HANDLE};
     };
 }

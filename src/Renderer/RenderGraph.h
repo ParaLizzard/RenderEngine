@@ -50,10 +50,13 @@ namespace Engine
     struct TransientResource
     {
         std::string name;
-        VkImage image;
-        VkImageView view;
-        VmaAllocation allocation;
-        VkExtent2D extent;
+        VkImage image = VK_NULL_HANDLE;
+        VkImageView view = VK_NULL_HANDLE;
+        VmaAllocation allocation = nullptr;
+        VkExtent2D extent = {};
+        VkImageLayout lastLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        VkPipelineStageFlags2 lastStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+        VkAccessFlags2 lastAccessMask = VK_ACCESS_2_NONE;
     };
 
 
@@ -95,7 +98,9 @@ namespace Engine
             const std::string& name,
             VkImage image, VkImageView view,
             VkFormat format, VkExtent2D extent,
-            VkImageLayout initialLayout);
+            VkImageLayout initialLayout,
+            VkPipelineStageFlags2 initialStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+            VkAccessFlags2 initialAccessMask = VK_ACCESS_2_NONE);
 
         void registerPhysicalBuffer(
             const std::string& name,
@@ -118,6 +123,8 @@ namespace Engine
         VkDescriptorBufferInfo getBufferInfo(const std::string& name, int32_t currentFrame);
 
     private:
+        void destroyTransientResource(TransientResource& resource);
+
         Device& device;
 
         std::vector<PassExecutionInfo>              registeredPasses;

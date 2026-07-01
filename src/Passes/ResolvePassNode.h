@@ -14,11 +14,17 @@ namespace Engine
         ResolvePassNode(Device& device, Renderer& renderer);
         ~ResolvePassNode() override;
 
+        ResolvePassNode(const ResolvePassNode&) = delete;
+        ResolvePassNode& operator=(const ResolvePassNode&) = delete;
+        ResolvePassNode(ResolvePassNode&&) = delete;
+        ResolvePassNode& operator=(ResolvePassNode&&) = delete;
+
         void setup(RenderGraphBuilder& renderGraph) override;
         void execute(VkCommandBuffer& cmd, FrameInfo& frameInfo) override;
         void resolve(RenderGraph& graph, const FrameInfo& frameInfo) override;
 
     private:
+        void createDescriptorResources();
         void createPipelineLayout();
         void createPipeline();
 
@@ -29,8 +35,8 @@ namespace Engine
         std::unique_ptr<LveDescriptorSetLayout> descriptorSetLayout;
         std::vector<VkDescriptorSet> descriptorSets;
 
-        VkPipelineLayout pipelineLayout;
-        VkPipeline pipeline;
+        VkPipelineLayout pipelineLayout{VK_NULL_HANDLE};
+        VkPipeline pipeline{VK_NULL_HANDLE};
 
         struct PushConstants {
             uint32_t frameWidth;

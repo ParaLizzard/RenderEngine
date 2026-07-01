@@ -56,6 +56,7 @@ namespace Engine
         std::shared_ptr<Buffer> getPositionBuffer() const { return positionBuffer ? positionBuffer : VK_NULL_HANDLE; }
         std::shared_ptr<Buffer> getAttributeBuffer() const { return attributeBuffer ? attributeBuffer : VK_NULL_HANDLE; }
         std::shared_ptr<Buffer> getIndexBuffer() const { return indexBuffer ? indexBuffer : VK_NULL_HANDLE; }
+        uint32_t getTotalVertices() {return  totalAllocatedVertices;}
 
     private:
         Device& device;
@@ -68,6 +69,11 @@ namespace Engine
         std::vector<VertexAttribute> cpuAttributes;
         std::vector<uint32_t> cpuIndices;
 
+        // Unified GPU-Only
+        /*std::shared_ptr<Buffer> positionBuffer;
+        std::shared_ptr<Buffer> attributeBuffer;
+        std::shared_ptr<Buffer> indexBuffer;
+*/
         // Unified GPU-Only
         std::shared_ptr<Buffer> positionBuffer;
         std::shared_ptr<Buffer> attributeBuffer;
