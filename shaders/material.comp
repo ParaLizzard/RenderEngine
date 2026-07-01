@@ -1,5 +1,9 @@
 #version 460
 #extension GL_EXT_nonuniform_qualifier : require
+#extension GL_KHR_shader_subgroup_vote : require
+#extension GL_KHR_shader_subgroup_ballot : require
+
+layout(local_size_x = 64) in;
 
 // =========================================================================
 // PBR CONSTANTS & FUNCTIONS
@@ -123,10 +127,18 @@ layout(set = 1, binding = 8) readonly buffer ObjectBuffer {
     ObjectData objects[];
 } objectBuffer;
 
-// Updated to use viewProj for screen-space barycentrics
+layout(set = 1, binding = 9) readonly buffer BinningMeta {
+    uint counters[256];
+    uint offsets[256];
+    uint totalPixels;
+} meta;
+
+layout(set = 1, binding = 10) readonly buffer PixelCoords {
+    uint packedCoords[];
+};
+
 layout(push_constant) uniform PushConstants {
     mat4 viewProj;
-    mat4 view;
     vec3 cameraPos;
     uint frameWidth;
 } pc;
@@ -154,11 +166,15 @@ vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness) {
 // =========================================================================
 // MAIN EXECUTION
 // =========================================================================
-layout(local_size_x = 16, local_size_y = 16) in;
+
 
 void main() {
-    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
-    if (pixel.x >= pc.frameWidth) return;
+    uint linearId = gl_GlobalInvocationID.x;
+    if (linearId >= meta.totalPixels) return;
+
+    uint packedCoord = packedCoords[linearId];
+    ivec2 pixel = ivec2(packedCoord & 0xFFFFu, packedCoord >> 16u);
+
     uint pixelIdx = pixel.y * pc.frameWidth + pixel.x;
 
     // Read VisBuffer
@@ -212,7 +228,7 @@ void main() {
     vec2 e2 = pixelNDC - ndc0;
 
     float denom = e0.x * e1.y - e0.y * e1.x;
-    denom = abs(denom) < 1e-7 ? sign(denom) * 1e-7 : denom;
+    denom = abs(denom) < 1e-7 ? (denom >= 0.0 ? 1e-7 : -1e-7) : denom;
 
     float v_s = (e2.x * e1.y - e2.y * e1.x) / denom;
     float w_s = (e0.x * e2.y - e0.y * e2.x) / denom;
@@ -274,7 +290,15 @@ void main() {
     // -------------------------------------------------------
 
     uint materialId = a0.texId;
-    MaterialData mat = materialHeap.materials[materialId];
+    MaterialData mat;
+    if (subgroupAllEqual(materialId))
+    {
+        mat = materialHeap.materials[subgroupBroadcastFirst(materialId)];
+    }
+    else
+    {
+        mat = materialHeap.materials[materialId];
+    }
 
     // Texture Sampling
     vec3 albedo = textureGrad(bindlessTextures[nonuniformEXT(mat.albedoIndex)], texCoord, ddx_uv, ddy_uv).rgb * mat.albedoFactor.rgb;

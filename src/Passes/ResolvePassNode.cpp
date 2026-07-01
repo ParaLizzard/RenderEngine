@@ -75,8 +75,8 @@ namespace Engine
 
         vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants), &pc);
 
-        uint32_t groupCountX = (frameInfo.extent.width + 15) / 16;
-        uint32_t groupCountY = (frameInfo.extent.height + 15) / 16;
+        uint32_t groupCountX = (frameInfo.extent.width + 7) / 8;
+        uint32_t groupCountY = (frameInfo.extent.height + 7) / 8;
         vkCmdDispatch(cmd, groupCountX, groupCountY, 1);
     }
 

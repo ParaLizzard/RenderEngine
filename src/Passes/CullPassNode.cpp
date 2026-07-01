@@ -196,9 +196,7 @@ namespace Engine
     {
         glm::mat4 projection = frameInfo.camera->getProjection();
         glm::mat4 view = frameInfo.camera->getView();
-        glm::mat4 clipMatrix = glm::mat4(1.0f);
-        clipMatrix[1][1] = -1.0f;
-        glm::mat4 viewProjection = clipMatrix * projection * view;
+        glm::mat4 viewProjection = projection * view;
 
         uint32_t currentFrame = renderer.getFrameIndex();
         if (sceneDirty)

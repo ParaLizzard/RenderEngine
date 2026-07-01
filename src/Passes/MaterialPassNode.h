@@ -10,7 +10,6 @@ namespace Engine
     struct MaterialPushConstants
     {
         glm::mat4 viewProj;
-        glm::mat4 view;
         glm::vec3 cameraPos;
         glm::uint frameWidth;
     };
@@ -64,6 +63,9 @@ namespace Engine
 
         VkPipelineLayout pipelineLayout{VK_NULL_HANDLE};
         VkPipeline pipeline{VK_NULL_HANDLE};
+        VkPipeline classifyPipeline{VK_NULL_HANDLE};
+        VkPipeline prefixSumPipeline{VK_NULL_HANDLE};
+        VkPipeline binningPipeline{VK_NULL_HANDLE};
 
         std::unique_ptr<LveDescriptorPool> globalPool;
         std::unique_ptr<LveDescriptorSetLayout> globalSetLayout;
@@ -76,7 +78,16 @@ namespace Engine
         std::vector<std::unique_ptr<Buffer>> compactMaterialBuffers;
         std::vector<std::unique_ptr<Buffer>> worldPositionBuffers;
 
+        std::vector<std::unique_ptr<Buffer>> binningMetaBuffers;
+        std::vector<std::unique_ptr<Buffer>> pixelCoordBuffers;
+
         uint32_t lastWidth = 0;
         uint32_t lastHeight = 0;
+
+        struct FrameCache {
+            VkImageView depthView = VK_NULL_HANDLE;
+            VkImageView visView = VK_NULL_HANDLE;
+        };
+        std::vector<FrameCache> frameCaches;
     };
 }

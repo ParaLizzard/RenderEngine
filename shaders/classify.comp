@@ -1,0 +1,61 @@
+#version 460
+layout(local_size_x = 8, local_size_y = 8) in;
+
+struct VertexAttribute {
+    float colorR, colorG, colorB;
+    float normalX, normalY, normalZ;
+    float uvX, uvY;
+    float tangentX, tangentY, tangentZ, tangentW;
+    uint texId;
+};
+struct Mesh { uint firstIndex; int vertexOffset; };
+
+layout(set = 1, binding = 1) readonly buffer IndexBuffer { uint indices[]; };
+layout(set = 1, binding = 2) readonly buffer MeshBuffer { Mesh meshes[]; };
+layout(set = 1, binding = 3) uniform usampler2D visBufferTexture;
+layout(set = 1, binding = 7) readonly buffer AttributeBuffer { VertexAttribute attributes[]; };
+
+// NEW: Combined Metadata Buffer
+layout(set = 1, binding = 9) buffer BinningMeta {
+    uint counters[256];
+    uint offsets[256];
+    uint totalPixels;
+} meta;
+
+layout(push_constant) uniform PushConstants {
+    mat4 viewProj;
+    vec3 cameraPos;
+    uint frameWidth;
+} pc;
+
+shared uint wgCounters[256]; // L1 Cache
+
+void main() {
+    // 1. Initialize shared memory safely (64 threads clear 256 slots)
+    for(uint i = gl_LocalInvocationIndex; i < 256; i += 64) wgCounters[i] = 0;
+    barrier();
+
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = textureSize(visBufferTexture, 0);
+    if (pixel.x < pc.frameWidth && pixel.y < size.y) {
+        uvec4 vis = texelFetch(visBufferTexture, pixel, 0);
+        uint instanceID = vis.x;
+
+        if (instanceID != 0xFFFFFFFFu && instanceID != 0xFFFFu) {
+            Mesh mesh = meshes[instanceID];
+            uint idx0 = indices[mesh.firstIndex + vis.y * 3u];
+            uint matID = attributes[mesh.vertexOffset + idx0].texId;
+
+
+            matID = min(matID, 255u);
+
+            atomicAdd(wgCounters[matID], 1);
+        }
+    }
+    barrier();
+
+    // 3. Single Global VRAM Atomic per material per workgroup
+    for(uint i = gl_LocalInvocationIndex; i < 256; i += 64) {
+        if (wgCounters[i] > 0) atomicAdd(meta.counters[i], wgCounters[i]);
+    }
+}

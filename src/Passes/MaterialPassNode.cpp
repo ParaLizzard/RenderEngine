@@ -18,7 +18,7 @@ namespace Engine
     {
         globalPool = LveDescriptorPool::Builder(device)
                      .setMaxSets(Renderer::MAX_FRAMES_IN_FLIGHT)
-                     .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, Renderer::MAX_FRAMES_IN_FLIGHT * 7)
+                     .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, Renderer::MAX_FRAMES_IN_FLIGHT * 9)
                      .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, Renderer::MAX_FRAMES_IN_FLIGHT * 2)
                      .build();
 
@@ -40,6 +40,8 @@ namespace Engine
                           // Vertex Attributes Buffer (UV, Normal, Tangent)
                           .addBinding(7, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
                           .addBinding(8, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
+                          .addBinding(9, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
+                          .addBinding(10, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
                           .build();
 
         VkSamplerCreateInfo samplerInfo{};
@@ -81,6 +83,14 @@ namespace Engine
         meshBuffers.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
         worldPositionBuffers.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
         compactMaterialBuffers.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
+        frameCaches.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
+
+        binningMetaBuffers.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
+        pixelCoordBuffers.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
+
+        uint32_t height = renderer.getSwapChain().height();
+        uint32_t width = renderer.getSwapChain().width();
+
 
         for (size_t i = 0; i < Renderer::MAX_FRAMES_IN_FLIGHT; i++)
         {
@@ -96,8 +106,21 @@ namespace Engine
             );
 
             compactMaterialBuffers[i] = std::make_unique<Buffer>(
-                device, sizeof(CompactMaterial), initialPixelCount, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                device, sizeof(CompactMaterial), initialPixelCount,
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                 VMA_MEMORY_USAGE_GPU_ONLY, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 0
+            );
+
+            binningMetaBuffers[i] = std::make_unique<Buffer>(
+                    device, sizeof(uint32_t) * 256 * 2 + 4, 1,
+                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                    VMA_MEMORY_USAGE_GPU_ONLY, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0
+                );
+
+            pixelCoordBuffers[i] = std::make_unique<Buffer>(
+                device, sizeof(uint32_t), initialPixelCount,
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                VMA_MEMORY_USAGE_GPU_ONLY, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0
             );
         }
 
@@ -123,6 +146,13 @@ namespace Engine
             vkDestroySampler(device.getDevice(), sampler, nullptr);
         if (pipeline != VK_NULL_HANDLE)
             vkDestroyPipeline(device.getDevice(), pipeline, nullptr);
+        if (classifyPipeline != VK_NULL_HANDLE)
+            vkDestroyPipeline(device.getDevice(), classifyPipeline, nullptr);
+        if (prefixSumPipeline != VK_NULL_HANDLE)
+            vkDestroyPipeline(device.getDevice(), prefixSumPipeline, nullptr);
+        if (binningPipeline != VK_NULL_HANDLE)
+            vkDestroyPipeline(device.getDevice(), binningPipeline, nullptr);
+
         if (pipelineLayout != VK_NULL_HANDLE)
             vkDestroyPipelineLayout(device.getDevice(), pipelineLayout, nullptr);
     }
@@ -138,9 +168,6 @@ namespace Engine
                               VK_ACCESS_2_SHADER_READ_BIT);
         renderGraph.readImage("DepthImage", VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
                               VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
-
-        renderGraph.writeBuffer("CompactMaterial", VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-                                VK_ACCESS_2_SHADER_WRITE_BIT);
         renderGraph.writeBuffer("WorldPosition", VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
     }
 
@@ -164,10 +191,17 @@ namespace Engine
                     , 0);
 
                 compactMaterialBuffers[i] = std::make_unique<Buffer>(
-                    device, sizeof(CompactMaterial), pixelCount, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                    device, sizeof(CompactMaterial), pixelCount,
+                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                     VMA_MEMORY_USAGE_GPU_ONLY,
                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
                     , 0);
+
+                pixelCoordBuffers[i] = std::make_unique<Buffer>(
+                    device, sizeof(uint32_t), pixelCount,
+                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                    VMA_MEMORY_USAGE_GPU_ONLY, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0
+                );
 
                 VkDescriptorImageInfo depthImageInfo{};
                 depthImageInfo.imageView = renderGraph.getImageView("DepthImage");
@@ -187,6 +221,9 @@ namespace Engine
                 VkDescriptorBufferInfo positionBufferInfo = worldPositionBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
                 VkDescriptorBufferInfo attributeBufferInfo = megaBuffer.getAttributeBuffer()->descriptorInfo(
                     VK_WHOLE_SIZE, 0);
+                VkDescriptorBufferInfo objectBufferInfo = renderGraph.getBufferInfo("CullObjectData", currentFrame);
+                VkDescriptorBufferInfo metaBufferInfo = binningMetaBuffers[currentFrame]->descriptorInfo(VK_WHOLE_SIZE, 0);
+                VkDescriptorBufferInfo coordsBufferInfo = pixelCoordBuffers[currentFrame]->descriptorInfo(VK_WHOLE_SIZE, 0);
 
                 LveDescriptorWriter(*globalSetLayout, *globalPool)
                     .writeBuffer(0, &vertexBufferInfo)
@@ -197,6 +234,9 @@ namespace Engine
                     .writeBuffer(5, &compactBufferInfo)
                     .writeBuffer(6, &positionBufferInfo)
                     .writeBuffer(7, &attributeBufferInfo)
+                    .writeBuffer(8, &objectBufferInfo)
+                    .writeBuffer(9, &metaBufferInfo)
+                    .writeBuffer(10, &coordsBufferInfo)
                     .overwrite(descriptorSets[i]);
             }
         }
@@ -221,7 +261,24 @@ namespace Engine
             meshBuffers[currentFrame]->flush(VK_WHOLE_SIZE, 0);
         }
 
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+        vkCmdFillBuffer(cmd, binningMetaBuffers[currentFrame]->getBuffer(), 0, 256 * sizeof(uint32_t), 0);
+
+        VkDeviceSize compactBufferSize = static_cast<VkDeviceSize>(extent.width) * extent.height * sizeof(CompactMaterial);
+        vkCmdFillBuffer(cmd, compactMaterialBuffers[currentFrame]->getBuffer(), 0, compactBufferSize, 0);
+
+        VkMemoryBarrier2 fillBarrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+        fillBarrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+        fillBarrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        fillBarrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        fillBarrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
+
+        VkDependencyInfo fillDep{};
+        fillDep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        fillDep.memoryBarrierCount = 1;
+        fillDep.pMemoryBarriers = &fillBarrier;
+        vkCmdPipelineBarrier2(cmd, &fillDep);
+
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, classifyPipeline);
 
         VkDescriptorSet bindlessSet = resourceHeap.getDescriptorSet();
         VkDescriptorSet sets[] = {bindlessSet, descriptorSets[currentFrame]};
@@ -236,15 +293,40 @@ namespace Engine
 
         MaterialPushConstants pc{};
         pc.viewProj = viewProjection;
-        pc.view = view;
         pc.cameraPos = glm::vec3(glm::inverse(view)[3]);
         pc.frameWidth = extent.width;
 
         vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(MaterialPushConstants), &pc);
 
-        uint32_t groupCountX = (extent.width + 15) / 16;
-        uint32_t groupCountY = (extent.height + 15) / 16;
+        uint32_t groupCountX = (extent.width + 7) / 8;
+        uint32_t groupCountY = (extent.height + 7) / 8;
         vkCmdDispatch(cmd, groupCountX, groupCountY, 1);
+
+        VkMemoryBarrier2 memBarrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+        memBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        memBarrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+        memBarrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        memBarrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
+
+        VkDependencyInfo copyDependency{};
+        copyDependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        copyDependency.memoryBarrierCount = 1;
+        copyDependency.pMemoryBarriers = &memBarrier;
+        vkCmdPipelineBarrier2(cmd, &copyDependency);
+
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, prefixSumPipeline);
+        vkCmdDispatch(cmd, 1, 1, 1);
+
+        vkCmdPipelineBarrier2(cmd, &copyDependency);
+
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, binningPipeline);
+        vkCmdDispatch(cmd, groupCountX, groupCountY, 1);
+
+        vkCmdPipelineBarrier2(cmd, &copyDependency);
+
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+        uint32_t shadingGroups = (extent.width * extent.height + 63) / 64;
+        vkCmdDispatch(cmd, shadingGroups, 1, 1);
     }
 
     void MaterialPassNode::resolve(RenderGraph& graph, const FrameInfo& frameInfo)
@@ -252,6 +334,18 @@ namespace Engine
         RenderPassNode::resolve(graph, frameInfo);
 
         uint32_t currentFrame = frameInfo.frameIndex;
+
+        VkImageView currentDepthView = graph.getImageView("DepthImage");
+        VkImageView currentVisView = graph.getImageView("VisBuffer");
+
+        if (frameCaches[currentFrame].depthView == currentDepthView &&
+            frameCaches[currentFrame].visView == currentVisView)
+        {
+            return;
+        }
+
+        frameCaches[currentFrame].depthView = currentDepthView;
+        frameCaches[currentFrame].visView = currentVisView;
 
         VkDescriptorImageInfo depthImageInfo{};
         depthImageInfo.imageView = graph.getImageView("DepthImage");
@@ -273,6 +367,9 @@ namespace Engine
         VkDescriptorBufferInfo attributeBufferInfo = megaBuffer.getAttributeBuffer()->descriptorInfo(VK_WHOLE_SIZE, 0);
         VkDescriptorBufferInfo objectBufferInfo = renderGraph.getBufferInfo("CullObjectData", currentFrame);
 
+        VkDescriptorBufferInfo metaBufferInfo = binningMetaBuffers[currentFrame]->descriptorInfo(VK_WHOLE_SIZE, 0);
+        VkDescriptorBufferInfo coordsBufferInfo = pixelCoordBuffers[currentFrame]->descriptorInfo(VK_WHOLE_SIZE, 0);
+
         LveDescriptorWriter(*globalSetLayout, *globalPool)
             .writeBuffer(0, &vertexBufferInfo)
             .writeBuffer(1, &indexBufferInfo)
@@ -283,6 +380,8 @@ namespace Engine
             .writeBuffer(6, &positionBufferInfo)
             .writeBuffer(7, &attributeBufferInfo)
             .writeBuffer(8, &objectBufferInfo)
+            .writeBuffer(9, &metaBufferInfo)
+            .writeBuffer(10, &coordsBufferInfo)
             .overwrite(descriptorSets[currentFrame]);
     }
 
@@ -314,6 +413,15 @@ namespace Engine
         auto compCode = ShaderUtils::readFile("shaders/material.comp.spv");
         VkShaderModule compModule = ShaderUtils::createShaderModule(device.getDevice(), compCode);
 
+        auto classifyCode = ShaderUtils::readFile("shaders/classify.comp.spv");
+        VkShaderModule classifyModule = ShaderUtils::createShaderModule(device.getDevice(), classifyCode);
+
+        auto binningCode = ShaderUtils::readFile("shaders/binning.comp.spv");
+        VkShaderModule binningModule = ShaderUtils::createShaderModule(device.getDevice(), binningCode);
+
+        auto prefixCode = ShaderUtils::readFile("shaders/prefix_sum.comp.spv");
+        VkShaderModule prefixModule = ShaderUtils::createShaderModule(device.getDevice(), prefixCode);
+
         VkPipelineShaderStageCreateInfo computeStageInfo{};
         computeStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         computeStageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
@@ -325,11 +433,36 @@ namespace Engine
         pipelineInfo.layout = pipelineLayout;
         pipelineInfo.stage = computeStageInfo;
 
-        if (vkCreateComputePipelines(device.getDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) !=
+        if (vkCreateComputePipelines(device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, nullptr, &pipeline) !=
             VK_SUCCESS)
         {
             throw std::runtime_error("MaterialPassNode: Failed to create material compute pipeline");
         }
+
+        computeStageInfo.module = binningModule;
+        if (vkCreateComputePipelines(device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, nullptr, &binningPipeline) !=
+            VK_SUCCESS)
+        {
+            throw std::runtime_error("MaterialPassNode: Failed to create material compute pipeline");
+        }
+
+        computeStageInfo.module = classifyModule;
+        if (vkCreateComputePipelines(device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, nullptr, &classifyPipeline) !=
+            VK_SUCCESS)
+        {
+            throw std::runtime_error("MaterialPassNode: Failed to create material compute pipeline");
+        }
+
+        computeStageInfo.module = prefixModule;
+        if (vkCreateComputePipelines(device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, nullptr, &prefixSumPipeline) !=
+            VK_SUCCESS)
+        {
+            throw std::runtime_error("MaterialPassNode: Failed to create material compute pipeline");
+        }
+
         vkDestroyShaderModule(device.getDevice(), compModule, nullptr);
+        vkDestroyShaderModule(device.getDevice(), classifyModule, nullptr);
+        vkDestroyShaderModule(device.getDevice(), prefixModule, nullptr);
+        vkDestroyShaderModule(device.getDevice(), binningModule, nullptr);
     }
 }

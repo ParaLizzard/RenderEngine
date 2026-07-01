@@ -350,7 +350,7 @@ namespace Engine
                                              {
                                                  parsedPrim.indices[idx] = idxValue;
                                              });
-                    
+
                     for (size_t i = 0; i < parsedPrim.indices.size(); i += 3)
                     {
                         std::swap(parsedPrim.indices[i + 1], parsedPrim.indices[i + 2]);
