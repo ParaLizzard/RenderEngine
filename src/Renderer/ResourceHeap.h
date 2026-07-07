@@ -1,27 +1,23 @@
 #pragma once
-#include <cstdint>
-#include <mutex>
 #include <cassert>
+#include <cstdint>
 #include <memory>
+#include <mutex>
 
-#include "Core/Device.h"
 #include <vector>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
+#include "Core/Device.h"
 
-#include "Renderer.h"
 #include "Core/Buffer.h"
+#include "Renderer.h"
 
 
-
-namespace Engine
-{
+namespace Engine {
     class Texture2D;
 
     class ResourceHeap
     {
-
-
         struct PendingWrite
         {
             uint32_t dstArrayElement;
@@ -36,7 +32,7 @@ namespace Engine
             uint32_t index;
             uint32_t generation;
 
-            bool operator==(const TextureHandle& other) const
+            bool operator==(const TextureHandle &other) const
             {
                 return index == other.index && generation == other.generation;
             }
@@ -61,37 +57,60 @@ namespace Engine
             uint32_t padding[2];
         };
 
-        ResourceHeap(Device& device, uint32_t maxTextures = 4096);
+        ResourceHeap(Device &device, uint32_t maxTextures = 4096);
         ~ResourceHeap();
 
-        ResourceHeap(ResourceHeap const&) = delete;
-        ResourceHeap& operator=(ResourceHeap const&) = delete;
+        ResourceHeap(ResourceHeap const &) = delete;
+        ResourceHeap &operator=(ResourceHeap const &) = delete;
 
         TextureHandle registerTexture(VkDescriptorImageInfo imageInfo);
-        void freeTexture(TextureHandle& handle);
+        void freeTexture(TextureHandle &handle);
 
-        const std::vector<MaterialData>& getMaterials() const { return materials; }
+        const std::vector<MaterialData> &getMaterials() const
+        {
+            return materials;
+        }
 
         void flushPendingUpdates();
-        bool isSlotAllocated(TextureHandle& handle) const;
-        uint32_t pushMaterial(const MaterialData& mat);
-        uint32_t getFallbackWhiteSlot()     const { return fallbackWhiteSlot;     }
-        uint32_t getFallbackFlatNormalSlot()const { return fallbackFlatNormalSlot; }
+        bool isSlotAllocated(TextureHandle &handle) const;
+        uint32_t pushMaterial(const MaterialData &mat);
+        uint32_t getFallbackWhiteSlot() const
+        {
+            return fallbackWhiteSlot;
+        }
+        uint32_t getFallbackFlatNormalSlot() const
+        {
+            return fallbackFlatNormalSlot;
+        }
 
         void uploadMaterialBuffer(uint32_t currentFrame);
 
         VkDescriptorBufferInfo getMaterialBufferInfo(uint32_t currentFrame) const;
         void writeMaterialDescriptor(uint32_t currentFrame);
         void writeMaterialDescriptorAllFrames(); // For init
-        
-        void markMaterialsDirty() { materialFramesToUpdate = Renderer::MAX_FRAMES_IN_FLIGHT; /* Renderer::MAX_FRAMES_IN_FLIGHT */ }
+
+        void markMaterialsDirty()
+        {
+            materialFramesToUpdate = Renderer::MAX_FRAMES_IN_FLIGHT; /* Renderer::MAX_FRAMES_IN_FLIGHT */
+        }
         void update(uint32_t currentFrame);
         void writeSceneUboDescriptor(VkDescriptorBufferInfo bufInfo, uint32_t frameIdx);
-        void writeIBLDescriptors(VkDescriptorImageInfo irradianceInfo, VkDescriptorImageInfo prefilterInfo, VkDescriptorImageInfo brdfLutInfo);
-        VkDeviceSize getMaterialBufferSize() const { return sizeof(MaterialData) * materials.size(); }
+        void writeIBLDescriptors(VkDescriptorImageInfo irradianceInfo,
+                                 VkDescriptorImageInfo prefilterInfo,
+                                 VkDescriptorImageInfo brdfLutInfo);
+        VkDeviceSize getMaterialBufferSize() const
+        {
+            return sizeof(MaterialData) * materials.size();
+        }
 
-        VkDescriptorSet getDescriptorSet(uint32_t frameIdx) { return globalDescriptorSets[frameIdx]; }
-        VkDescriptorSetLayout getDescriptorSetLayout() { return globalDescriptorSetLayout; }
+        VkDescriptorSet getDescriptorSet(uint32_t frameIdx)
+        {
+            return globalDescriptorSets[frameIdx];
+        }
+        VkDescriptorSetLayout getDescriptorSetLayout()
+        {
+            return globalDescriptorSetLayout;
+        }
 
     private:
         uint32_t fallbackWhiteSlot = 0;
@@ -103,7 +122,7 @@ namespace Engine
             uint32_t generation = 0;
         };
 
-        Device& device;
+        Device &device;
 
         uint32_t maxDescriptors;
         VkDescriptorPool globalDescriptorPool = VK_NULL_HANDLE;
@@ -125,4 +144,4 @@ namespace Engine
 
         mutable std::mutex heapMutex;
     };
-}
+} // namespace Engine

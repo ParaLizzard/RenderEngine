@@ -1,15 +1,12 @@
 #include "RenderGraph.h"
 
-namespace Engine
-{
-    RenderGraph::RenderGraph(Device& device) : device(device)
-    {
-    }
+namespace Engine {
+    RenderGraph::RenderGraph(Device &device): device(device)
+    {}
 
     RenderGraph::~RenderGraph()
     {
-        for (auto& pair : transientCache)
-        {
+        for (auto &pair: transientCache) {
             vkDestroyImageView(device.getDevice(), pair.second.view, nullptr);
             vmaDestroyImage(device.getAllocator(), pair.second.image, pair.second.allocation);
         }
@@ -22,24 +19,25 @@ namespace Engine
         clear();
     }
 
-    void RenderGraph::addPass(RenderPassNode* pass)
+    void RenderGraph::addPass(RenderPassNode *pass)
     {
-        PassExecutionInfo info{};
+        PassExecutionInfo info {};
         info.passNode = pass;
 
-        RenderGraphBuilder builder{info.imageUsages, info.transientImages, info.bufferUsages};
+        RenderGraphBuilder builder {info.imageUsages, info.transientImages, info.bufferUsages};
         pass->setup(builder);
 
         registeredPasses.push_back(std::move(info));
     }
 
-    void RenderGraph::registerPhysicalImage(
-        const std::string& name,
-        VkImage image, VkImageView view,
-        VkFormat format, VkExtent2D extent,
-        VkImageLayout initialLayout)
+    void RenderGraph::registerPhysicalImage(const std::string &name,
+                                            VkImage image,
+                                            VkImageView view,
+                                            VkFormat format,
+                                            VkExtent2D extent,
+                                            VkImageLayout initialLayout)
     {
-        GraphImage g{};
+        GraphImage g {};
         g.image = image;
         g.imageView = view;
         g.imageFormat = format;
@@ -51,14 +49,13 @@ namespace Engine
         imageRegistry[name] = g;
     }
 
-    void RenderGraph::registerPhysicalBuffer(
-        const std::string& name,
-        VkBuffer buffer,
-        VkDeviceSize size,
-        VkPipelineStageFlags2 initialStageMask,
-        VkAccessFlags2 initialAccessMask)
+    void RenderGraph::registerPhysicalBuffer(const std::string &name,
+                                             VkBuffer buffer,
+                                             VkDeviceSize size,
+                                             VkPipelineStageFlags2 initialStageMask,
+                                             VkAccessFlags2 initialAccessMask)
     {
-        GraphBuffer g{};
+        GraphBuffer g {};
         g.buffer = buffer;
         g.size = size;
         g.lastStageMask = initialStageMask;
@@ -69,25 +66,21 @@ namespace Engine
 
     void RenderGraph::compile()
     {
-        for (const PassExecutionInfo& pass : registeredPasses)
-        {
-            for (const TransientImageDeclaration& decl : pass.transientImages)
-            {
-                if (imageRegistry.find(decl.name) != imageRegistry.end()) continue;
+        for (const PassExecutionInfo &pass: registeredPasses) {
+            for (const TransientImageDeclaration &decl: pass.transientImages) {
+                if (imageRegistry.find(decl.name) != imageRegistry.end())
+                    continue;
 
-                if (transientCache.find(decl.name) != transientCache.end())
-                {
-                    TransientResource& cached = transientCache[decl.name];
+                if (transientCache.find(decl.name) != transientCache.end()) {
+                    TransientResource &cached = transientCache[decl.name];
 
-                    if (cached.extent.width != decl.extent.width || cached.extent.height != decl.extent.height)
-                    {
+                    if (cached.extent.width != decl.extent.width || cached.extent.height != decl.extent.height) {
                         vkDestroyImageView(device.getDevice(), cached.view, nullptr);
                         vmaDestroyImage(device.getAllocator(), cached.image, cached.allocation);
                         transientCache.erase(decl.name);
-                    }
-                    else
-                    {
-                        registerPhysicalImage(decl.name, cached.image, cached.view, decl.format, decl.extent, VK_IMAGE_LAYOUT_UNDEFINED);
+                    } else {
+                        registerPhysicalImage(
+                            decl.name, cached.image, cached.view, decl.format, decl.extent, VK_IMAGE_LAYOUT_UNDEFINED);
                         continue;
                     }
                 }
@@ -97,7 +90,7 @@ namespace Engine
 
                 bool isDepth = isDepthFormat(decl.format);
 
-                VkImageCreateInfo imageInfo{};
+                VkImageCreateInfo imageInfo {};
                 imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
                 imageInfo.imageType = VK_IMAGE_TYPE_2D;
                 imageInfo.format = decl.format;
@@ -112,21 +105,20 @@ namespace Engine
                 device.createImageWithInfo(imageInfo, transientImage, allocation);
 
                 VkImageView transientImageView;
-                VkImageViewCreateInfo imageViewInfo{};
+                VkImageViewCreateInfo imageViewInfo {};
                 imageViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
                 imageViewInfo.image = transientImage;
                 imageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
                 imageViewInfo.format = decl.format;
                 imageViewInfo.pNext = nullptr;
-                imageViewInfo.subresourceRange.aspectMask = isDepthFormat(decl.format) ?
-                                            VK_IMAGE_ASPECT_DEPTH_BIT :
-                                            VK_IMAGE_ASPECT_COLOR_BIT;
+                imageViewInfo.subresourceRange.aspectMask =
+                    isDepthFormat(decl.format) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
                 imageViewInfo.subresourceRange.levelCount = 1;
                 imageViewInfo.subresourceRange.layerCount = 1;
 
                 vkCreateImageView(device.getDevice(), &imageViewInfo, nullptr, &transientImageView);
 
-                TransientResource res{};
+                TransientResource res {};
                 res.name = decl.name;
                 res.image = transientImage;
                 res.view = transientImageView;
@@ -135,11 +127,11 @@ namespace Engine
 
                 transientCache[decl.name] = res;
 
-                registerPhysicalImage(decl.name, transientImage, transientImageView, decl.format, decl.extent, VK_IMAGE_LAYOUT_UNDEFINED);
+                registerPhysicalImage(
+                    decl.name, transientImage, transientImageView, decl.format, decl.extent, VK_IMAGE_LAYOUT_UNDEFINED);
             }
 
-            for (const ImageUsageDeclaration& image : pass.imageUsages)
-            {
+            for (const ImageUsageDeclaration &image: pass.imageUsages) {
                 if (imageRegistry.find(image.imageName) == imageRegistry.end())
                     throw std::runtime_error("RenderGraph: Image '" + image.imageName + "' not registered");
 
@@ -147,8 +139,7 @@ namespace Engine
                     throw std::runtime_error("RenderGraph: Image '" + image.imageName + "' is VK_NULL_HANDLE");
             }
 
-            for (const BufferUsageDeclaration& buf : pass.bufferUsages)
-            {
+            for (const BufferUsageDeclaration &buf: pass.bufferUsages) {
                 if (bufferRegistry.find(buf.bufferName) == bufferRegistry.end())
                     throw std::runtime_error("RenderGraph: Buffer '" + buf.bufferName + "' not registered");
 
@@ -158,32 +149,27 @@ namespace Engine
         }
     }
 
-    void RenderGraph::execute(VkCommandBuffer cmdBuffer, FrameInfo& frameInfo)
+    void RenderGraph::execute(VkCommandBuffer cmdBuffer, FrameInfo &frameInfo)
     {
-        for (PassExecutionInfo& pass : registeredPasses)
-        {
+        for (PassExecutionInfo &pass: registeredPasses) {
             pass.passNode->resolve(*this, frameInfo);
         }
 
-        for (PassExecutionInfo& pass : registeredPasses)
-        {
+        for (PassExecutionInfo &pass: registeredPasses) {
             std::vector<VkImageMemoryBarrier2> imageBarriers;
             std::vector<VkBufferMemoryBarrier2> bufferBarriers;
 
             imageBarriers.reserve(pass.imageUsages.size());
             bufferBarriers.reserve(pass.bufferUsages.size());
 
-            for (ImageUsageDeclaration& decl : pass.imageUsages)
-            {
-                GraphImage& g = imageRegistry[decl.imageName];
+            for (ImageUsageDeclaration &decl: pass.imageUsages) {
+                GraphImage &g = imageRegistry[decl.imageName];
 
                 const bool layoutChanged = g.layout != decl.imageLayout;
-                const bool accessChanged = g.lastAccessMask != decl.accessMask
-                    || g.lastStageMask != decl.stageMask;
+                const bool accessChanged = g.lastAccessMask != decl.accessMask || g.lastStageMask != decl.stageMask;
 
-                if (layoutChanged || accessChanged)
-                {
-                    VkImageMemoryBarrier2 barrier{};
+                if (layoutChanged || accessChanged) {
+                    VkImageMemoryBarrier2 barrier {};
                     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
                     barrier.image = g.image;
                     barrier.oldLayout = g.layout;
@@ -195,10 +181,9 @@ namespace Engine
                     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
                     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 
-                    VkImageSubresourceRange range{};
-                    range.aspectMask = isDepthFormat(g.imageFormat)
-                                           ? VK_IMAGE_ASPECT_DEPTH_BIT
-                                           : VK_IMAGE_ASPECT_COLOR_BIT;
+                    VkImageSubresourceRange range {};
+                    range.aspectMask =
+                        isDepthFormat(g.imageFormat) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
                     range.baseMipLevel = 0;
                     range.levelCount = g.mipLevels;
                     range.baseArrayLayer = 0;
@@ -213,16 +198,13 @@ namespace Engine
                 g.lastAccessMask = decl.accessMask;
             }
 
-            for (BufferUsageDeclaration& decl : pass.bufferUsages)
-            {
-                GraphBuffer& g = bufferRegistry[decl.bufferName];
+            for (BufferUsageDeclaration &decl: pass.bufferUsages) {
+                GraphBuffer &g = bufferRegistry[decl.bufferName];
 
-                const bool accessChanged = g.lastAccessMask != decl.accessMask
-                    || g.lastStageMask != decl.stageMask;
+                const bool accessChanged = g.lastAccessMask != decl.accessMask || g.lastStageMask != decl.stageMask;
 
-                if (accessChanged)
-                {
-                    VkBufferMemoryBarrier2 barrier{};
+                if (accessChanged) {
+                    VkBufferMemoryBarrier2 barrier {};
                     barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
                     barrier.buffer = g.buffer;
                     barrier.offset = 0;
@@ -241,9 +223,8 @@ namespace Engine
                 g.lastAccessMask = decl.accessMask;
             }
 
-            if (!imageBarriers.empty() || !bufferBarriers.empty())
-            {
-                VkDependencyInfo dep{};
+            if (!imageBarriers.empty() || !bufferBarriers.empty()) {
+                VkDependencyInfo dep {};
                 dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
                 dep.imageMemoryBarrierCount = static_cast<uint32_t>(imageBarriers.size());
                 dep.pImageMemoryBarriers = imageBarriers.data();
@@ -264,15 +245,17 @@ namespace Engine
         bufferRegistry.clear();
     }
 
-    void RenderGraph::transitionToPresent(VkCommandBuffer cmdBuffer, const std::string& imageName)
+    void RenderGraph::transitionToPresent(VkCommandBuffer cmdBuffer, const std::string &imageName)
     {
         auto it = imageRegistry.find(imageName);
-        if (it == imageRegistry.end()) return;
+        if (it == imageRegistry.end())
+            return;
 
-        GraphImage& g = it->second;
-        if (g.layout == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR) return;
+        GraphImage &g = it->second;
+        if (g.layout == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR)
+            return;
 
-        VkImageMemoryBarrier2 barrier{};
+        VkImageMemoryBarrier2 barrier {};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
         barrier.image = g.image;
         barrier.oldLayout = g.layout;
@@ -290,7 +273,7 @@ namespace Engine
         barrier.subresourceRange.baseArrayLayer = 0;
         barrier.subresourceRange.layerCount = g.arrayLayers;
 
-        VkDependencyInfo dep{};
+        VkDependencyInfo dep {};
         dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
         dep.imageMemoryBarrierCount = 1;
         dep.pImageMemoryBarriers = &barrier;
@@ -304,8 +287,7 @@ namespace Engine
 
     bool RenderGraph::isDepthFormat(VkFormat format)
     {
-        switch (format)
-        {
+        switch (format) {
         case VK_FORMAT_D16_UNORM:
         case VK_FORMAT_X8_D24_UNORM_PACK32:
         case VK_FORMAT_D32_SFLOAT:
@@ -319,82 +301,73 @@ namespace Engine
         }
     }
 
-    VkImageView RenderGraph::getImageView(const std::string& name) const
+    VkImageView RenderGraph::getImageView(const std::string &name) const
     {
         auto it = imageRegistry.find(name);
-        if (it != imageRegistry.end())
-        {
+        if (it != imageRegistry.end()) {
             return it->second.imageView;
         }
         throw std::runtime_error("RenderGraph: Attempted to fetch unregistered image: " + name);
     }
 
-    RenderGraphBuilder::RenderGraphBuilder(
-        std::vector<ImageUsageDeclaration>& imageUsagesList,
-        std::vector<TransientImageDeclaration>& transientImageUsagesList,
-        std::vector<BufferUsageDeclaration>& bufferUsagesList)
-        : imageUsages(imageUsagesList), bufferUsages(bufferUsagesList), transientImageUsages(transientImageUsagesList)
-    {
-    }
+    RenderGraphBuilder::RenderGraphBuilder(std::vector<ImageUsageDeclaration> &imageUsagesList,
+                                           std::vector<TransientImageDeclaration> &transientImageUsagesList,
+                                           std::vector<BufferUsageDeclaration> &bufferUsagesList):
+        imageUsages(imageUsagesList), bufferUsages(bufferUsagesList), transientImageUsages(transientImageUsagesList)
+    {}
 
-    void RenderGraphBuilder::readImage(
-        const std::string& name,
-        VkImageLayout imageLayout,
-        VkPipelineStageFlags2 stageMask,
-        VkAccessFlags2 accessMask)
+    void RenderGraphBuilder::readImage(const std::string &name,
+                                       VkImageLayout imageLayout,
+                                       VkPipelineStageFlags2 stageMask,
+                                       VkAccessFlags2 accessMask)
     {
         imageUsages.push_back({name, imageLayout, stageMask, accessMask, ResourceUsageType::Read});
     }
 
-    void RenderGraphBuilder::writeImage(
-        const std::string& name,
-        VkImageLayout imageLayout,
-        VkPipelineStageFlags2 stageMask,
-        VkAccessFlags2 accessMask)
+    void RenderGraphBuilder::writeImage(const std::string &name,
+                                        VkImageLayout imageLayout,
+                                        VkPipelineStageFlags2 stageMask,
+                                        VkAccessFlags2 accessMask)
     {
-        imageUsages.push_back({name, imageLayout, stageMask, accessMask,ResourceUsageType::Write});
+        imageUsages.push_back({name, imageLayout, stageMask, accessMask, ResourceUsageType::Write});
     }
 
-    void RenderGraphBuilder::readBuffer(
-        const std::string& name,
-        VkPipelineStageFlags2 stageMask,
-        VkAccessFlags2 accessMask)
+    void RenderGraphBuilder::readBuffer(const std::string &name,
+                                        VkPipelineStageFlags2 stageMask,
+                                        VkAccessFlags2 accessMask)
     {
         bufferUsages.push_back({name, stageMask, accessMask, ResourceUsageType::Read});
     }
 
-    void RenderGraphBuilder::writeBuffer(
-        const std::string& name,
-        VkPipelineStageFlags2 stageMask,
-        VkAccessFlags2 accessMask)
+    void RenderGraphBuilder::writeBuffer(const std::string &name,
+                                         VkPipelineStageFlags2 stageMask,
+                                         VkAccessFlags2 accessMask)
     {
         bufferUsages.push_back({name, stageMask, accessMask, ResourceUsageType::Write});
     }
 
-    void RenderGraphBuilder::readWriteBuffer(
-        const std::string& name,
-        VkPipelineStageFlags2 stageMask,
-        VkAccessFlags2 accessMask)
+    void RenderGraphBuilder::readWriteBuffer(const std::string &name,
+                                             VkPipelineStageFlags2 stageMask,
+                                             VkAccessFlags2 accessMask)
     {
         bufferUsages.push_back({name, stageMask, accessMask, ResourceUsageType::ReadWrite});
     }
 
     void RenderGraphBuilder::createTransientImage(
-        const std::string& name, VkFormat format, VkExtent2D extent, VkImageUsageFlags usage, VkClearValue clearValue)
+        const std::string &name, VkFormat format, VkExtent2D extent, VkImageUsageFlags usage, VkClearValue clearValue)
     {
         transientImageUsages.push_back({name, format, extent, usage, clearValue});
     }
 
-    void RenderGraph::updateImageHandle(const std::string& name, VkImage image, VkImageView view, VkExtent2D extent)
+    void RenderGraph::updateImageHandle(const std::string &name, VkImage image, VkImageView view, VkExtent2D extent)
     {
         auto it = imageRegistry.find(name);
-        if (it != imageRegistry.end())
-        {
-            if (it->second.image != image)
-            {
+        if (it != imageRegistry.end()) {
+            if (it->second.image != image) {
                 it->second.layout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-                it->second.lastStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+                it->second.lastStageMask =
+                    VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
                 it->second.lastAccessMask = VK_ACCESS_2_NONE;
             }
 
@@ -404,7 +377,7 @@ namespace Engine
         }
     }
 
-    void RenderGraph::updateBufferHandle(const std::string& name, VkBuffer buffer, VkDeviceSize size)
+    void RenderGraph::updateBufferHandle(const std::string &name, VkBuffer buffer, VkDeviceSize size)
     {
         auto it = bufferRegistry.find(name);
         if (it != bufferRegistry.end()) {
@@ -413,24 +386,22 @@ namespace Engine
         }
     }
 
-    VkImage RenderGraph::getImage(const std::string& name) const
+    VkImage RenderGraph::getImage(const std::string &name) const
     {
         auto it = imageRegistry.find(name);
-        if (it != imageRegistry.end())
-        {
+        if (it != imageRegistry.end()) {
             return it->second.image;
         }
         throw std::runtime_error("RenderGraph: Attempted to fetch unregistered image: " + name);
     }
 
-    VkDescriptorBufferInfo RenderGraph::getBufferInfo(const std::string& name, int32_t currentFrame)
+    VkDescriptorBufferInfo RenderGraph::getBufferInfo(const std::string &name, int32_t currentFrame)
     {
         auto it = bufferRegistry.find(name);
-        if (it != bufferRegistry.end())
-        {
-            return VkDescriptorBufferInfo{it->second.buffer, 0, VK_WHOLE_SIZE};
+        if (it != bufferRegistry.end()) {
+            return VkDescriptorBufferInfo {it->second.buffer, 0, VK_WHOLE_SIZE};
         }
 
         throw std::runtime_error("RenderGraph: Attempted to fetch unregistered buffer: " + name);
     }
-}
+} // namespace Engine

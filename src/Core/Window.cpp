@@ -1,9 +1,8 @@
 #include "Window.h"
 
 
-namespace Engine
-{
-    Window::Window(int width, int height, std::string title):width(width), height(height), title(title)
+namespace Engine {
+    Window::Window(int width, int height, std::string title): width(width), height(height), title(title)
     {
         initWindow();
     }
@@ -16,16 +15,14 @@ namespace Engine
 
     void Window::initWindow()
     {
-        if (!glfwInit())
-        {
+        if (!glfwInit()) {
             throw std::runtime_error("Window: glfwInit failed");
         }
 
         glfwSetErrorCallback(errorCallback);
         int vulkanSupported = glfwVulkanSupported();
 
-        if (!vulkanSupported)
-        {
+        if (!vulkanSupported) {
             glfwTerminate();
             throw std::runtime_error("Window: glfw doesnt support vulkan API");
         }
@@ -34,8 +31,7 @@ namespace Engine
         glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
         window = glfwCreateWindow(width, height, title.c_str(), nullptr, nullptr);
-        if (!window)
-        {
+        if (!window) {
             glfwTerminate();
             throw std::runtime_error("Window: Window creation failed");
         }
@@ -43,17 +39,16 @@ namespace Engine
         glfwSetWindowUserPointer(window, this);
     }
 
-    void Window::createWindowSurface(VkInstance Instance, VkSurfaceKHR* Surface)
+    void Window::createWindowSurface(VkInstance Instance, VkSurfaceKHR *Surface)
     {
-        if (glfwCreateWindowSurface(Instance, window, nullptr, Surface) != VK_SUCCESS)
-        {
+        if (glfwCreateWindowSurface(Instance, window, nullptr, Surface) != VK_SUCCESS) {
             throw std::runtime_error("Window: failed to create window surface");
         }
     }
 
 
-    void Window::errorCallback(int error, const char* description)
+    void Window::errorCallback(int error, const char *description)
     {
         fprintf(stderr, "Error: %s\n", description);
     }
-}
+} // namespace Engine

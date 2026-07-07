@@ -3,13 +3,9 @@
 #include "Renderer/Renderer.h"
 #include "Renderer/ShaderUtils.h"
 
-namespace Engine
-{
-    FxaaPassNode::FxaaPassNode(Device& device, Renderer& renderer, Model& megaBuffer, ResourceHeap& resourceHeap) :
-        device(device),
-        renderer(renderer),
-        megaBuffer(megaBuffer),
-        resourceHeap(resourceHeap)
+namespace Engine {
+    FxaaPassNode::FxaaPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap):
+        device(device), renderer(renderer), megaBuffer(megaBuffer), resourceHeap(resourceHeap)
     {
         createPipelineLayout();
         createPipeline();
@@ -30,12 +26,12 @@ namespace Engine
             vkDestroyPipelineLayout(device.getDevice(), pipelineLayout, nullptr);
     }
 
-    void FxaaPassNode::setup(RenderGraphBuilder& renderGraph)
+    void FxaaPassNode::setup(RenderGraphBuilder &renderGraph)
     {
         renderGraph.readImage("FinalRender",
-    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-    VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-    VK_ACCESS_2_SHADER_READ_BIT);
+                              VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                              VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                              VK_ACCESS_2_SHADER_READ_BIT);
 
         renderGraph.writeImage("SwapChainImage",
                                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
@@ -43,36 +39,35 @@ namespace Engine
                                VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
     }
 
-    void FxaaPassNode::resolve(RenderGraph& graph, const FrameInfo& frameInfo)
+    void FxaaPassNode::resolve(RenderGraph &graph, const FrameInfo &frameInfo)
     {
-        VkDescriptorImageInfo imageInfo{};
+        VkDescriptorImageInfo imageInfo {};
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         imageInfo.imageView = graph.getImageView("FinalRender");
         imageInfo.sampler = sampler;
 
-            VkWriteDescriptorSet descriptorWrite{};
-            descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWrite.dstSet = descriptorSets[frameInfo.frameIndex];
-            descriptorWrite.dstBinding = 0;
-            descriptorWrite.dstArrayElement = 0;
-            descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            descriptorWrite.descriptorCount = 1;
-            descriptorWrite.pImageInfo = &imageInfo;
+        VkWriteDescriptorSet descriptorWrite {};
+        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrite.dstSet = descriptorSets[frameInfo.frameIndex];
+        descriptorWrite.dstBinding = 0;
+        descriptorWrite.dstArrayElement = 0;
+        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrite.descriptorCount = 1;
+        descriptorWrite.pImageInfo = &imageInfo;
 
-            vkUpdateDescriptorSets(device.getDevice(), 1, &descriptorWrite, 0, nullptr);
-
+        vkUpdateDescriptorSets(device.getDevice(), 1, &descriptorWrite, 0, nullptr);
     }
 
-    void FxaaPassNode::execute(VkCommandBuffer& cmd, FrameInfo& frameInfo)
+    void FxaaPassNode::execute(VkCommandBuffer &cmd, FrameInfo &frameInfo)
     {
-        VkRenderingAttachmentInfo colorAttachment{};
+        VkRenderingAttachmentInfo colorAttachment {};
         colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
         colorAttachment.imageView = frameInfo.renderGraph->getImageView("SwapChainImage");
         colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 
-        VkRenderingInfo renderingInfo{};
+        VkRenderingInfo renderingInfo {};
         renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
         renderingInfo.renderArea.offset = {0, 0};
         renderingInfo.renderArea.extent = frameInfo.extent;
@@ -85,7 +80,7 @@ namespace Engine
 
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
 
-        VkViewport viewport{};
+        VkViewport viewport {};
         viewport.x = 0.0f;
         viewport.y = 0.0f;
         viewport.width = static_cast<float>(frameInfo.extent.width);
@@ -93,23 +88,24 @@ namespace Engine
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
 
-        VkRect2D scissor{};
+        VkRect2D scissor {};
         scissor.offset = {0, 0};
         scissor.extent = frameInfo.extent;
 
         vkCmdSetViewport(cmd, 0, 1, &viewport);
         vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-        vkCmdBindDescriptorSets(
-            cmd,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            pipelineLayout,
-            0, 1,
-            &descriptorSets[frameInfo.frameIndex],
-            0, nullptr
-        );
+        vkCmdBindDescriptorSets(cmd,
+                                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                pipelineLayout,
+                                0,
+                                1,
+                                &descriptorSets[frameInfo.frameIndex],
+                                0,
+                                nullptr);
 
-        glm::vec2 resolution = { static_cast<float>(frameInfo.extent.width), static_cast<float>(frameInfo.extent.height) };
+        glm::vec2 resolution = {static_cast<float>(frameInfo.extent.width),
+                                static_cast<float>(frameInfo.extent.height)};
         vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(glm::vec2), &resolution);
 
         vkCmdDraw(cmd, 3, 1, 0, 0);
@@ -119,7 +115,7 @@ namespace Engine
 
     void FxaaPassNode::createPipelineLayout()
     {
-        VkSamplerCreateInfo samplerInfo{};
+        VkSamplerCreateInfo samplerInfo {};
         samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
         samplerInfo.magFilter = VK_FILTER_LINEAR;
         samplerInfo.minFilter = VK_FILTER_LINEAR;
@@ -131,14 +127,14 @@ namespace Engine
         if (vkCreateSampler(device.getDevice(), &samplerInfo, nullptr, &sampler) != VK_SUCCESS)
             throw std::runtime_error("Fxaa: failed to create sampler!");
 
-        VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+        VkDescriptorSetLayoutBinding samplerLayoutBinding {};
         samplerLayoutBinding.binding = 0;
         samplerLayoutBinding.descriptorCount = 1;
         samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         samplerLayoutBinding.pImmutableSamplers = nullptr;
         samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-        VkDescriptorSetLayoutCreateInfo layoutInfo{};
+        VkDescriptorSetLayoutCreateInfo layoutInfo {};
         layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
         layoutInfo.bindingCount = 1;
         layoutInfo.pBindings = &samplerLayoutBinding;
@@ -146,21 +142,22 @@ namespace Engine
         if (vkCreateDescriptorSetLayout(device.getDevice(), &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS)
             throw std::runtime_error("Fxaa: failed to create descriptor set layout!");
 
-        VkDescriptorPoolSize poolSize{};
+        VkDescriptorPoolSize poolSize {};
         poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         poolSize.descriptorCount = static_cast<uint32_t>(Engine::Renderer::MAX_FRAMES_IN_FLIGHT);
 
-        VkDescriptorPoolCreateInfo poolInfo{};
+        VkDescriptorPoolCreateInfo poolInfo {};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         poolInfo.poolSizeCount = 1;
         poolInfo.pPoolSizes = &poolSize;
-        poolInfo.maxSets = static_cast<uint32_t>(Engine::Renderer::MAX_FRAMES_IN_FLIGHT);;
+        poolInfo.maxSets = static_cast<uint32_t>(Engine::Renderer::MAX_FRAMES_IN_FLIGHT);
+        ;
 
         if (vkCreateDescriptorPool(device.getDevice(), &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS)
             throw std::runtime_error("Fxaa: failed to create descriptor pool!");
 
         std::vector<VkDescriptorSetLayout> layouts(Engine::Renderer::MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
-        VkDescriptorSetAllocateInfo allocInfo{};
+        VkDescriptorSetAllocateInfo allocInfo {};
         allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         allocInfo.descriptorPool = descriptorPool;
         allocInfo.descriptorSetCount = static_cast<uint32_t>(Engine::Renderer::MAX_FRAMES_IN_FLIGHT);
@@ -170,12 +167,12 @@ namespace Engine
         if (vkAllocateDescriptorSets(device.getDevice(), &allocInfo, descriptorSets.data()) != VK_SUCCESS)
             throw std::runtime_error("Fxaa: failed to allocate descriptor sets!");
 
-        VkPushConstantRange pushConstantRange{};
+        VkPushConstantRange pushConstantRange {};
         pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
         pushConstantRange.offset = 0;
         pushConstantRange.size = sizeof(glm::vec2);
 
-        VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+        VkPipelineLayoutCreateInfo pipelineLayoutInfo {};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         pipelineLayoutInfo.setLayoutCount = 1;
         pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
@@ -194,7 +191,7 @@ namespace Engine
         VkShaderModule vertShaderModule = ShaderUtils::createShaderModule(device.getDevice(), vertCode);
         VkShaderModule fragShaderModule = ShaderUtils::createShaderModule(device.getDevice(), fragCode);
 
-        VkPipelineShaderStageCreateInfo shaderStages[2]{};
+        VkPipelineShaderStageCreateInfo shaderStages[2] {};
         shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         shaderStages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
         shaderStages[0].module = vertShaderModule;
@@ -205,26 +202,26 @@ namespace Engine
         shaderStages[1].module = fragShaderModule;
         shaderStages[1].pName = "main";
 
-        VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+        VkPipelineVertexInputStateCreateInfo vertexInputInfo {};
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
         vertexInputInfo.vertexBindingDescriptionCount = 0;
         vertexInputInfo.pVertexBindingDescriptions = nullptr;
         vertexInputInfo.vertexAttributeDescriptionCount = 0;
         vertexInputInfo.pVertexAttributeDescriptions = nullptr;
 
-        VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+        VkPipelineInputAssemblyStateCreateInfo inputAssembly {};
         inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
         inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
         inputAssembly.primitiveRestartEnable = VK_FALSE;
 
-        VkPipelineViewportStateCreateInfo viewportState{};
+        VkPipelineViewportStateCreateInfo viewportState {};
         viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
         viewportState.viewportCount = 1;
         viewportState.pViewports = nullptr;
         viewportState.scissorCount = 1;
         viewportState.pScissors = nullptr;
 
-        VkPipelineRasterizationStateCreateInfo rasterizer{};
+        VkPipelineRasterizationStateCreateInfo rasterizer {};
         rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
         rasterizer.depthClampEnable = VK_FALSE;
         rasterizer.rasterizerDiscardEnable = VK_FALSE;
@@ -234,12 +231,12 @@ namespace Engine
         rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         rasterizer.depthBiasEnable = VK_FALSE;
 
-        VkPipelineMultisampleStateCreateInfo multisampling{};
+        VkPipelineMultisampleStateCreateInfo multisampling {};
         multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
         multisampling.sampleShadingEnable = VK_FALSE;
         multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
-        VkPipelineDepthStencilStateCreateInfo depthStencil{};
+        VkPipelineDepthStencilStateCreateInfo depthStencil {};
         depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
         depthStencil.depthTestEnable = VK_FALSE;
         depthStencil.depthWriteEnable = VK_FALSE;
@@ -247,36 +244,33 @@ namespace Engine
         depthStencil.depthBoundsTestEnable = VK_FALSE;
         depthStencil.stencilTestEnable = VK_FALSE;
 
-        VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-        colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        VkPipelineColorBlendAttachmentState colorBlendAttachment {};
+        colorBlendAttachment.colorWriteMask =
+            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
         colorBlendAttachment.blendEnable = VK_FALSE;
 
-        VkPipelineColorBlendStateCreateInfo colorBlending{};
+        VkPipelineColorBlendStateCreateInfo colorBlending {};
         colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
         colorBlending.logicOpEnable = VK_FALSE;
         colorBlending.attachmentCount = 1;
         colorBlending.pAttachments = &colorBlendAttachment;
 
-        std::vector<VkDynamicState> dynamicStates = {
-            VK_DYNAMIC_STATE_VIEWPORT,
-            VK_DYNAMIC_STATE_SCISSOR
-        };
+        std::vector<VkDynamicState> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
 
-        VkPipelineDynamicStateCreateInfo dynamicState{};
+        VkPipelineDynamicStateCreateInfo dynamicState {};
         dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
         dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
         dynamicState.pDynamicStates = dynamicStates.data();
 
         VkFormat colorFormat = renderer.getSwapChain().getSwapChainImageFormat();
-        VkPipelineRenderingCreateInfo renderingCreateInfo{};
+        VkPipelineRenderingCreateInfo renderingCreateInfo {};
         renderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
         renderingCreateInfo.pNext = nullptr;
         renderingCreateInfo.colorAttachmentCount = 1;
         renderingCreateInfo.pColorAttachmentFormats = &colorFormat;
         renderingCreateInfo.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
 
-        VkGraphicsPipelineCreateInfo pipelineInfo{};
+        VkGraphicsPipelineCreateInfo pipelineInfo {};
         pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
         pipelineInfo.pNext = &renderingCreateInfo;
         pipelineInfo.stageCount = 2;
@@ -293,13 +287,13 @@ namespace Engine
         pipelineInfo.renderPass = VK_NULL_HANDLE;
         pipelineInfo.subpass = 0;
 
-        if (vkCreateGraphicsPipelines(device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, nullptr,
-                                      &graphicsPipeline) != VK_SUCCESS)
-        {
+        if (vkCreateGraphicsPipelines(
+                device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, nullptr, &graphicsPipeline) !=
+            VK_SUCCESS) {
             throw std::runtime_error("failed to create graphics pipeline");
         }
 
         vkDestroyShaderModule(device.getDevice(), vertShaderModule, nullptr);
         vkDestroyShaderModule(device.getDevice(), fragShaderModule, nullptr);
     }
-}
+} // namespace Engine

@@ -1,21 +1,22 @@
 #pragma once
 
-#include <vector>
-#include <queue>
-#include <memory>
-#include <thread>
-#include <mutex>
-#include <condition_variable>
-#include <future>
 #include <functional>
+#include <future>
+#include <iostream>
+#include <memory>
+#include <mutex>
+#include <queue>
 #include <stdexcept>
+#include <thread>
+#include <vector>
+#include <condition_variable>
 
-namespace Engine
-{
-    class JobSystemStoppedException : public std::runtime_error
+namespace Engine {
+    class JobSystemStoppedException: public std::runtime_error
     {
     public:
-        JobSystemStoppedException() : std::runtime_error("JobSystem has been stopped.") {}
+        JobSystemStoppedException(): std::runtime_error("JobSystem has been stopped.")
+        {}
     };
 
     class JobSystem
@@ -24,11 +25,11 @@ namespace Engine
         JobSystem(size_t numThreads);
         ~JobSystem();
 
-        JobSystem(const JobSystem&) = delete;
-        JobSystem& operator=(const JobSystem&) = delete;
+        JobSystem(const JobSystem &) = delete;
+        JobSystem &operator=(const JobSystem &) = delete;
 
         template<class F, class... Args>
-        auto enqueue(F&& f, Args&&... args) -> std::future<typename std::invoke_result_t<F, Args...>>;
+        auto enqueue(F &&f, Args &&...args) -> std::future<typename std::invoke_result_t<F, Args...>>;
 
     private:
         std::vector<std::thread> workers;
@@ -42,20 +43,16 @@ namespace Engine
 
     inline JobSystem::JobSystem(size_t numThreads)
     {
-        for (size_t i = 0; i < numThreads; ++i)
-        {
+        for (size_t i = 0; i < numThreads; ++i) {
             workers.emplace_back([this] {
-                while (true)
-                {
+                while (true) {
                     std::function<void()> task;
 
                     {
                         std::unique_lock<std::mutex> lock(this->queueMutex);
 
 
-                        this->condition.wait(lock, [this] {
-                            return this->stop || !this->tasks.empty();
-                        });
+                        this->condition.wait(lock, [this] { return this->stop || !this->tasks.empty(); });
 
                         if (this->stop && this->tasks.empty())
                             return;
@@ -71,27 +68,23 @@ namespace Engine
     }
 
     template<class F, class... Args>
-    auto JobSystem::enqueue(F&& f, Args&&... args) -> std::future<typename std::invoke_result_t<F, Args...>>
+    auto JobSystem::enqueue(F &&f, Args &&...args) -> std::future<typename std::invoke_result_t<F, Args...>>
     {
         using return_type = typename std::invoke_result_t<F, Args...>;
 
         auto bound_task = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
 
-        auto task = std::make_shared<std::packaged_task<return_type()>>(
-            [bound_task = std::move(bound_task)]() mutable {
-                try {
-                    return bound_task();
-                } catch (const std::exception& e) {
-                    std::cerr << "\n[JobSystem ERROR]: Exception thrown inside worker thread: "
-                              << e.what() << std::endl;
-                    throw;
-                } catch (...) {
-                    std::cerr << "\n[JobSystem ERROR]: Unknown exception thrown inside worker thread."
-                              << std::endl;
-                    throw;
-                }
+        auto task = std::make_shared<std::packaged_task<return_type()>>([bound_task = std::move(bound_task)]() mutable {
+            try {
+                return bound_task();
+            } catch (const std::exception &e) {
+                std::cerr << "\n[JobSystem ERROR]: Exception thrown inside worker thread: " << e.what() << std::endl;
+                throw;
+            } catch (...) {
+                std::cerr << "\n[JobSystem ERROR]: Unknown exception thrown inside worker thread." << std::endl;
+                throw;
             }
-        );
+        });
 
         std::future<return_type> res = task->get_future();
 
@@ -118,9 +111,8 @@ namespace Engine
 
         condition.notify_all();
 
-        for (std::thread& worker : workers)
-        {
+        for (std::thread &worker: workers) {
             worker.join();
         }
     }
-}
+} // namespace Engine

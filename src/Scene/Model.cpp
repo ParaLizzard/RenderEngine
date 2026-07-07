@@ -1,8 +1,8 @@
 #include "Model.h"
 
-namespace Engine
-{
-    Model::Model(Device& device) : device(device) {}
+namespace Engine {
+    Model::Model(Device &device): device(device)
+    {}
 
     Model::~Model()
     {
@@ -69,11 +69,11 @@ namespace Engine
         return attributeDescriptions;
     }
 
-    Model::SubMesh Model::registerMesh(const std::vector<VertexPosition>& positions,
-                                       const std::vector<VertexAttribute>& attributes,
-                                       const std::vector<uint32_t>& indices)
+    Model::SubMesh Model::registerMesh(const std::vector<VertexPosition> &positions,
+                                       const std::vector<VertexAttribute> &attributes,
+                                       const std::vector<uint32_t> &indices)
     {
-        SubMesh subMesh{};
+        SubMesh subMesh {};
         subMesh.indexCount = indices.size();
         subMesh.firstIndex = totalAllocatedIndices + cpuIndices.size();
         subMesh.vertexOffset = totalAllocatedVertices + cpuPositions.size();
@@ -87,7 +87,8 @@ namespace Engine
 
     void Model::uploadToGPU()
     {
-        if (cpuPositions.empty() || cpuIndices.empty()) return;
+        if (cpuPositions.empty() || cpuIndices.empty())
+            return;
 
         VkDeviceSize newPosSize = cpuPositions.size() * sizeof(VertexPosition);
         VkDeviceSize newAttrSize = cpuAttributes.size() * sizeof(VertexAttribute);
@@ -97,47 +98,67 @@ namespace Engine
         VkDeviceSize oldAttrSize = attributeBuffer ? attributeBuffer->getBufferSize() : 0;
         VkDeviceSize oldIdxSize = indexBuffer ? indexBuffer->getBufferSize() : 0;
 
-        Buffer stagingPositions(device, newPosSize, 1, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY, 0, 0);
-        Buffer stagingAttributes(device, newAttrSize, 1, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY, 0, 0);
+        Buffer stagingPositions(
+            device, newPosSize, 1, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY, 0, 0);
+        Buffer stagingAttributes(
+            device, newAttrSize, 1, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY, 0, 0);
         Buffer stagingIndices(device, newIdxSize, 1, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY, 0, 0);
 
         stagingPositions.writeToBuffer(cpuPositions.data(), newPosSize, 0);
         stagingAttributes.writeToBuffer(cpuAttributes.data(), newAttrSize, 0);
         stagingIndices.writeToBuffer(cpuIndices.data(), newIdxSize, 0);
 
-        auto expandedPosBuffer = std::make_shared<Buffer>(device, oldPosSize + newPosSize, 1,
-            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-            VMA_MEMORY_USAGE_GPU_ONLY, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
+        auto expandedPosBuffer =
+            std::make_shared<Buffer>(device,
+                                     oldPosSize + newPosSize,
+                                     1,
+                                     VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                         VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                     VMA_MEMORY_USAGE_GPU_ONLY,
+                                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                     0);
 
-        auto expandedAttrBuffer = std::make_shared<Buffer>(device, oldAttrSize + newAttrSize, 1,
-            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-            VMA_MEMORY_USAGE_GPU_ONLY, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
+        auto expandedAttrBuffer =
+            std::make_shared<Buffer>(device,
+                                     oldAttrSize + newAttrSize,
+                                     1,
+                                     VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                         VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                     VMA_MEMORY_USAGE_GPU_ONLY,
+                                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                     0);
 
-        auto expandedIdxBuffer = std::make_shared<Buffer>(device, oldIdxSize + newIdxSize, 1,
-            VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-            VMA_MEMORY_USAGE_GPU_ONLY, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
+        auto expandedIdxBuffer =
+            std::make_shared<Buffer>(device,
+                                     oldIdxSize + newIdxSize,
+                                     1,
+                                     VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                         VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                     VMA_MEMORY_USAGE_GPU_ONLY,
+                                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                     0);
 
         VkCommandBuffer copyCmd = device.beginSingleTimeCommands();
 
         if (oldPosSize > 0) {
-            VkBufferCopy cpyPos{0, 0, oldPosSize};
+            VkBufferCopy cpyPos {0, 0, oldPosSize};
             vkCmdCopyBuffer(copyCmd, positionBuffer->getBuffer(), expandedPosBuffer->getBuffer(), 1, &cpyPos);
 
-            VkBufferCopy cpyAttr{0, 0, oldAttrSize};
+            VkBufferCopy cpyAttr {0, 0, oldAttrSize};
             vkCmdCopyBuffer(copyCmd, attributeBuffer->getBuffer(), expandedAttrBuffer->getBuffer(), 1, &cpyAttr);
         }
         if (oldIdxSize > 0) {
-            VkBufferCopy cpyIdx{0, 0, oldIdxSize};
+            VkBufferCopy cpyIdx {0, 0, oldIdxSize};
             vkCmdCopyBuffer(copyCmd, indexBuffer->getBuffer(), expandedIdxBuffer->getBuffer(), 1, &cpyIdx);
         }
 
-        VkBufferCopy posCpy{0, oldPosSize, newPosSize};
+        VkBufferCopy posCpy {0, oldPosSize, newPosSize};
         vkCmdCopyBuffer(copyCmd, stagingPositions.getBuffer(), expandedPosBuffer->getBuffer(), 1, &posCpy);
 
-        VkBufferCopy attrCpy{0, oldAttrSize, newAttrSize};
+        VkBufferCopy attrCpy {0, oldAttrSize, newAttrSize};
         vkCmdCopyBuffer(copyCmd, stagingAttributes.getBuffer(), expandedAttrBuffer->getBuffer(), 1, &attrCpy);
 
-        VkBufferCopy idxCpy{0, oldIdxSize, newIdxSize};
+        VkBufferCopy idxCpy {0, oldIdxSize, newIdxSize};
         vkCmdCopyBuffer(copyCmd, stagingIndices.getBuffer(), expandedIdxBuffer->getBuffer(), 1, &idxCpy);
 
         device.endSingleTimeCommands(copyCmd);
@@ -149,14 +170,18 @@ namespace Engine
         totalAllocatedVertices += cpuPositions.size();
         totalAllocatedIndices += cpuIndices.size();
 
-        cpuPositions.clear(); cpuPositions.shrink_to_fit();
-        cpuAttributes.clear(); cpuAttributes.shrink_to_fit();
-        cpuIndices.clear(); cpuIndices.shrink_to_fit();
+        cpuPositions.clear();
+        cpuPositions.shrink_to_fit();
+        cpuAttributes.clear();
+        cpuAttributes.shrink_to_fit();
+        cpuIndices.clear();
+        cpuIndices.shrink_to_fit();
     }
 
     void Model::bind(VkCommandBuffer commandBuffer)
     {
-        if (!positionBuffer || !indexBuffer) return;
+        if (!positionBuffer || !indexBuffer)
+            return;
 
         VkBuffer vertexBuffers[] = {positionBuffer->getBuffer(), attributeBuffer->getBuffer()};
         VkDeviceSize offsets[] = {0, 0};
@@ -167,7 +192,8 @@ namespace Engine
 
     void Model::bindPositionOnly(VkCommandBuffer commandBuffer)
     {
-        if (!positionBuffer || !indexBuffer) return;
+        if (!positionBuffer || !indexBuffer)
+            return;
 
         VkBuffer vertexBuffers[] = {positionBuffer->getBuffer()};
         VkDeviceSize offsets[] = {0};
@@ -175,4 +201,4 @@ namespace Engine
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
         vkCmdBindIndexBuffer(commandBuffer, indexBuffer->getBuffer(), 0, VK_INDEX_TYPE_UINT32);
     }
-}
+} // namespace Engine

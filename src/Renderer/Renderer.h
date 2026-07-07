@@ -1,13 +1,12 @@
 #pragma once
 #include <cassert>
 #include <memory>
+#include <vulkan/vulkan.h>
 #include "Core/Device.h"
 #include "Core/Window.h"
 #include "Swapchain.h"
-#include <vulkan/vulkan.h>
 
-namespace Engine
-{
+namespace Engine {
     struct FrameData
     {
         VkCommandPool commandPool;
@@ -21,14 +20,20 @@ namespace Engine
     {
     public:
         static constexpr size_t MAX_FRAMES_IN_FLIGHT = 3;
-        Renderer(Window& window, Device& device);
+        Renderer(Window &window, Device &device);
         ~Renderer();
 
-        Renderer(const Renderer&) = delete;
-        Renderer& operator=(const Renderer&) = delete;
+        Renderer(const Renderer &) = delete;
+        Renderer &operator=(const Renderer &) = delete;
 
-        float getaspectRatio() const {return swapChain->extentAspectRatio();};
-        bool isFrameInProgess() const {return isFrameStarted;}
+        float getAspectRatio() const
+        {
+            return swapChain->extentAspectRatio();
+        };
+        bool isFrameInProgess() const
+        {
+            return isFrameStarted;
+        }
 
 
         size_t getFrameIndex()
@@ -40,12 +45,22 @@ namespace Engine
         VkCommandBuffer beginFrame();
         void endFrame();
         VkCommandBuffer getCurrentCommandBuffer();
-        SwapChain& getSwapChain();
-        uint32_t getCurrentImageIndex() const { return currentImageIndex; }
-        int getFrameIndex() const { return currentFrameIndex; }
+        SwapChain &getSwapChain();
+        uint32_t getCurrentImageIndex() const
+        {
+            return currentImageIndex;
+        }
+        int getFrameIndex() const
+        {
+            return currentFrameIndex;
+        }
 
-        bool wasSwapChainRecreated() const { return swapChainRecreatedThisFrame; }
+        bool wasSwapChainRecreated() const
+        {
+            return swapChainRecreatedThisFrame;
+        }
         std::unique_ptr<SwapChain> swapChain;
+
     private:
         std::vector<FrameData> frames;
         size_t currentFrameIndex = 0;
@@ -55,9 +70,7 @@ namespace Engine
         void createFrameData();
         void recreateSwapChain();
 
-        Window& window;
-        Device& device;
-
-
+        Window &window;
+        Device &device;
     };
-}
+} // namespace Engine

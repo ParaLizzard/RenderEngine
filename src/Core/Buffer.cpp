@@ -1,5 +1,5 @@
 /*
-* Encapsulates a vulkan buffer
+ * Encapsulates a vulkan buffer
  *
  * Initially based off VulkanBuffer by Sascha Willems -
  * https://github.com/SaschaWillems/Vulkan/blob/master/base/VulkanBuffer.h
@@ -7,22 +7,16 @@
 
 #include "Buffer.h"
 
-namespace Engine
-{
-    Buffer::Buffer(
-        Device& device,
-        VkDeviceSize instanceSize,
-        uint32_t instanceCount,
-        VkBufferUsageFlags usageFlags,
-        VmaMemoryUsage memoryUsage,
-        VkMemoryPropertyFlags memoryPropertyFlags,
-        VkDeviceSize minOffsetAlignment
-        ):
-    device(device),
-    instanceCount(instanceCount),
-    instanceSize(instanceSize),
-    usageFlags(usageFlags),
-    memoryPropertyFlags(memoryPropertyFlags)
+namespace Engine {
+    Buffer::Buffer(Device &device,
+                   VkDeviceSize instanceSize,
+                   uint32_t instanceCount,
+                   VkBufferUsageFlags usageFlags,
+                   VmaMemoryUsage memoryUsage,
+                   VkMemoryPropertyFlags memoryPropertyFlags,
+                   VkDeviceSize minOffsetAlignment):
+        device(device), instanceCount(instanceCount), instanceSize(instanceSize), usageFlags(usageFlags),
+        memoryPropertyFlags(memoryPropertyFlags)
     {
         alignmentSize = getAlignment(instanceSize, minOffsetAlignment);
         bufferSize = alignmentSize * instanceCount;
@@ -36,33 +30,30 @@ namespace Engine
         vmaDestroyBuffer(device.getAllocator(), buffer, allocation);
     }
 
-    void Buffer::createBuffer(
-   VkDeviceSize size,
-   VkBufferUsageFlags usage,
-   VmaMemoryUsage memUsage,
-   VkBuffer& buffer,
-   VmaAllocation& allocation,
-   VmaAllocationInfo* pResultInfo
-)
+    void Buffer::createBuffer(VkDeviceSize size,
+                              VkBufferUsageFlags usage,
+                              VmaMemoryUsage memUsage,
+                              VkBuffer &buffer,
+                              VmaAllocation &allocation,
+                              VmaAllocationInfo *pResultInfo)
     {
         if (size == 0) {
             throw std::runtime_error("Buffers: Attempted to create a buffer of size 0");
         }
 
-        VkBufferCreateInfo bufferInfo{};
+        VkBufferCreateInfo bufferInfo {};
         bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         bufferInfo.size = size;
         bufferInfo.usage = usage;
         bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-        VmaAllocationCreateInfo allocInfo{};
+        VmaAllocationCreateInfo allocInfo {};
         allocInfo.usage = memUsage;
 
 
         if (memUsage == VMA_MEMORY_USAGE_CPU_TO_GPU || memUsage == VMA_MEMORY_USAGE_CPU_ONLY) {
             allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-            allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-                              VMA_ALLOCATION_CREATE_MAPPED_BIT;
+            allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
         } else if (memUsage == VMA_MEMORY_USAGE_GPU_ONLY) {
             allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
             allocInfo.flags = 0;
@@ -71,15 +62,15 @@ namespace Engine
             allocInfo.flags = 0;
         }
 
-        VkResult result = vmaCreateBuffer(device.getAllocator(), &bufferInfo, &allocInfo, &buffer, &allocation, pResultInfo);
+        VkResult result =
+            vmaCreateBuffer(device.getAllocator(), &bufferInfo, &allocInfo, &buffer, &allocation, pResultInfo);
 
         if (result != VK_SUCCESS && (memUsage == VMA_MEMORY_USAGE_CPU_TO_GPU)) {
             allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
             result = vmaCreateBuffer(device.getAllocator(), &bufferInfo, &allocInfo, &buffer, &allocation, pResultInfo);
         }
 
-        if (result != VK_SUCCESS)
-        {
+        if (result != VK_SUCCESS) {
             throw std::runtime_error("Buffers: failed to create VMA buffer");
         }
     }
@@ -88,7 +79,7 @@ namespace Engine
     {
         VkCommandBuffer commandBuffer = device.beginSingleTimeCommands();
 
-        VkBufferCopy copyRegion{};
+        VkBufferCopy copyRegion {};
         copyRegion.srcOffset = 0;
         copyRegion.dstOffset = 0;
         copyRegion.size = size;
@@ -101,7 +92,7 @@ namespace Engine
     {
         VkCommandBuffer commandBuffer = device.beginSingleTimeCommands();
 
-        VkBufferImageCopy region{};
+        VkBufferImageCopy region {};
         region.bufferOffset = 0;
         region.bufferRowLength = 0;
         region.bufferImageHeight = 0;
@@ -114,13 +105,7 @@ namespace Engine
         region.imageOffset = {0, 0, 0};
         region.imageExtent = {width, height, 1};
 
-        vkCmdCopyBufferToImage(
-            commandBuffer,
-            buffer,
-            image,
-            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            1,
-            &region);
+        vkCmdCopyBufferToImage(commandBuffer, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
         device.endSingleTimeCommands(commandBuffer);
     }
 
@@ -145,34 +130,42 @@ namespace Engine
         }
     }
 
-    VkResult Buffer::flush(VkDeviceSize size, VkDeviceSize offset) {
+    VkResult Buffer::flush(VkDeviceSize size, VkDeviceSize offset)
+    {
         return vmaFlushAllocation(device.getAllocator(), allocation, offset, size);
     }
 
-    VkResult Buffer::invalidate(VkDeviceSize size, VkDeviceSize offset) {
+    VkResult Buffer::invalidate(VkDeviceSize size, VkDeviceSize offset)
+    {
         return vmaInvalidateAllocation(device.getAllocator(), allocation, offset, size);
     }
 
-    VkDescriptorBufferInfo Buffer::descriptorInfo(VkDeviceSize size, VkDeviceSize offset) {
-        return VkDescriptorBufferInfo{
+    VkDescriptorBufferInfo Buffer::descriptorInfo(VkDeviceSize size, VkDeviceSize offset)
+    {
+        return VkDescriptorBufferInfo {
             buffer,
             offset,
             size,
         };
     }
 
-    void Buffer::writeToIndex(void *data, int index) {
+    void Buffer::writeToIndex(void *data, int index)
+    {
         writeToBuffer(data, instanceSize, index * alignmentSize);
     }
 
-    VkResult Buffer::flushIndex(int index) { return flush(alignmentSize, index * alignmentSize); }
+    VkResult Buffer::flushIndex(int index)
+    {
+        return flush(alignmentSize, index * alignmentSize);
+    }
 
-    VkDescriptorBufferInfo Buffer::descriptorInfoForIndex(int index) {
+    VkDescriptorBufferInfo Buffer::descriptorInfoForIndex(int index)
+    {
         return descriptorInfo(alignmentSize, index * alignmentSize);
     }
 
-    VkResult Buffer::invalidateIndex(int index) {
+    VkResult Buffer::invalidateIndex(int index)
+    {
         return invalidate(alignmentSize, index * alignmentSize);
     }
-}
-
+} // namespace Engine

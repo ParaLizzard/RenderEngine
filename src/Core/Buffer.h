@@ -1,51 +1,77 @@
 #pragma once
-#include "Device.h"
 #include <cassert>
+#include "Device.h"
 
-namespace Engine
-{
+namespace Engine {
     class Buffer
     {
     public:
-        Buffer(
-            Device& device,
-            VkDeviceSize instanceSize,
-            uint32_t instanceCount,
-            VkBufferUsageFlags usageFlags,
-            VmaMemoryUsage memoryUsage,
-            VkMemoryPropertyFlags memoryPropertyFlags,
-            VkDeviceSize minOffsetAlignment);
+        Buffer(Device &device,
+               VkDeviceSize instanceSize,
+               uint32_t instanceCount,
+               VkBufferUsageFlags usageFlags,
+               VmaMemoryUsage memoryUsage,
+               VkMemoryPropertyFlags memoryPropertyFlags,
+               VkDeviceSize minOffsetAlignment);
         ~Buffer();
 
-        Buffer(Buffer const&) = delete;
-        Buffer& operator=(Buffer const&) = delete;
+        Buffer(Buffer const &) = delete;
+        Buffer &operator=(Buffer const &) = delete;
 
-        void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VmaMemoryUsage memUsage, VkBuffer& buffer,
-                         VmaAllocation& allocation, VmaAllocationInfo* pResultInfo);
+        void createBuffer(VkDeviceSize size,
+                          VkBufferUsageFlags usage,
+                          VmaMemoryUsage memUsage,
+                          VkBuffer &buffer,
+                          VmaAllocation &allocation,
+                          VmaAllocationInfo *pResultInfo);
         void copyBuffer(VkBuffer dstBuffer, VkDeviceSize size);
         void copyBufferToImage(VkImage image, uint32_t width, uint32_t height, uint32_t layerCount);
 
-        VkBuffer getBuffer() { return buffer; }
-        void* getMappedMemory() { return mapped; }
-        uint32_t getInstanceCount(){ return instanceCount; }
-        VkDeviceSize getInstanceSize() { return instanceSize; }
-        VkDeviceSize getAlignmentSize() { return alignmentSize; }
-        VkBufferUsageFlags getUsageFlags() { return usageFlags; }
-        VkMemoryPropertyFlags getMemoryPropertyFlags(){ return memoryPropertyFlags; }
-        VkDeviceSize getBufferSize(){ return bufferSize; }
+        VkBuffer getBuffer()
+        {
+            return buffer;
+        }
+        void *getMappedMemory()
+        {
+            return mapped;
+        }
+        uint32_t getInstanceCount()
+        {
+            return instanceCount;
+        }
+        VkDeviceSize getInstanceSize()
+        {
+            return instanceSize;
+        }
+        VkDeviceSize getAlignmentSize()
+        {
+            return alignmentSize;
+        }
+        VkBufferUsageFlags getUsageFlags()
+        {
+            return usageFlags;
+        }
+        VkMemoryPropertyFlags getMemoryPropertyFlags()
+        {
+            return memoryPropertyFlags;
+        }
+        VkDeviceSize getBufferSize()
+        {
+            return bufferSize;
+        }
 
         VkDeviceSize getAlignment(VkDeviceSize instanceSize, VkDeviceSize minOffsetAlignment);
-        void writeToBuffer(const void* data, VkDeviceSize size, VkDeviceSize offset);
+        void writeToBuffer(const void *data, VkDeviceSize size, VkDeviceSize offset);
         VkResult flush(VkDeviceSize size, VkDeviceSize offset);
         VkResult invalidate(VkDeviceSize size, VkDeviceSize offset);
         VkDescriptorBufferInfo descriptorInfo(VkDeviceSize size, VkDeviceSize offset);
-        void writeToIndex(void* data, int index);
+        void writeToIndex(void *data, int index);
         VkResult flushIndex(int index);
         VkDescriptorBufferInfo descriptorInfoForIndex(int index);
         VkResult invalidateIndex(int index);
 
     private:
-        Device& device;
+        Device &device;
         uint32_t instanceCount;
         VkDeviceSize instanceSize;
         VkDeviceSize alignmentSize;
@@ -54,8 +80,7 @@ namespace Engine
         VkMemoryPropertyFlags memoryPropertyFlags;
         VmaAllocation allocation;
 
-        void* mapped = nullptr;
+        void *mapped = nullptr;
         VkBuffer buffer = VK_NULL_HANDLE;
-        VkDeviceMemory memory = VK_NULL_HANDLE;
     };
-}
+} // namespace Engine

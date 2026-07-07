@@ -1,0 +1,159 @@
+---
+Language: Cpp
+BasedOnStyle: LLVM
+
+# Core formatting
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 120
+
+# Braces - same-line for brevity in hot code paths
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass: true
+  AfterControlStatement: false
+  AfterEnum: true
+  AfterFunction: true
+  AfterNamespace: false
+  AfterStruct: true
+  AfterUnion: true
+  AfterExternBlock: false
+  BeforeCatch: false
+  BeforeElse: false
+  BeforeLambdaBody: false
+  BeforeWhile: false
+  IndentBraces: false
+  SplitEmptyFunction: false
+  SplitEmptyRecord: false
+  SplitEmptyNamespace: false
+
+# Pointers and references - Type* ptr style
+PointerAlignment: Right
+ReferenceAlignment: Pointer
+DerivePointerAlignment: false
+
+# Constructor initialization - one per line for GPU struct chains
+BreakConstructorInitializers: AfterColon
+ConstructorInitializerAllOnOneLineOrOnePerLine: false
+ConstructorInitializerIndentWidth: 4
+
+# Template declarations
+AlwaysBreakTemplateDeclarations: Yes
+SpacesInAngles: false
+
+# Access modifiers
+AccessModifierOffset: -4
+
+# Spacing - minimal for dense GPU code
+SpaceAfterCStyleCast: false
+SpaceAfterLogicalNot: false
+SpaceAfterTemplateKeyword: false
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeCpp11BracedList: true
+SpaceBeforeCtorInitializerColon: false
+SpaceBeforeInheritanceColon: false
+SpaceBeforeParens: ControlStatements
+SpaceBeforeRangeBasedForLoopColon: false
+SpaceInEmptyBlock: false
+SpaceInEmptyParentheses: false
+SpacesBeforeTrailingComments: 1
+SpacesInCStyleCastParentheses: false
+SpacesInConditionalStatement: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+
+# Alignment - minimal for readability over visual alignment
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignConsecutiveMacros: false
+AlignEscapedNewlines: Left
+AlignOperands: false
+AlignTrailingComments: false
+
+# Line breaking
+AllowAllArgumentsOnNextLine: true
+AllowAllConstructorInitializersOnNextLine: true
+AllowAllParametersOfDeclarationOnNextLine: true
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortEnumsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLambdasOnASingleLine: Inline
+AllowShortLoopsOnASingleLine: false
+BinPackArguments: false
+BinPackParameters: false
+
+# Case/switch
+IndentCaseBlocks: true
+IndentCaseLabels: false
+
+# Function-like macros and Vulkan-specific patterns
+MacroBlockBegin: ''
+MacroBlockEnd: ''
+
+# Include sorting
+SortIncludes: true
+SortUsingDeclarations: true
+
+# Include organization: std → third-party → local
+IncludeCategories:
+  # C++ standard library
+  - Regex: '^<(algorithm|array|atomic|bitset|cassert|ccomplex|cctype|cerrno|cfenv|cfloat|chrono|cinttypes|ciso646|climits|clocale|cmath|cstdarg|cstddef|cstdint|cstdio|cstdlib|cstring|ctgmath|ctime|cwchar|cwctype|deque|exception|fstream|functional|future|iomanip|ios|iosfwd|iostream|istream|iterator|limits|list|locale|map|memory|mutex|new|numeric|ostream|queue|random|ratio|regex|scoped_allocator|set|sstream|stack|stdexcept|streambuf|string|strstream|system_error|thread|tuple|typeindex|typeinfo|unordered_map|unordered_set|utility|valarray|vector)>'
+    Priority: 1
+    SortPriority: 1
+  # Vulkan, graphics, and third-party libraries
+  - Regex: '^<(vulkan|vk_mem_alloc|glm|glfw|stb_|tinygltf|meshoptimizer|simdjson|spdlog|tracy|directx|opengl).*>'
+    Priority: 2
+    SortPriority: 2
+  # Other system/third-party
+  - Regex: '^<.*>'
+    Priority: 3
+    SortPriority: 3
+  # Local project headers
+  - Regex: '^"(engine|gpu|render|core|util|asset|scene|math|debug).*"'
+    Priority: 4
+    SortPriority: 4
+  # Remaining local
+  - Regex: '^".*"'
+    Priority: 5
+    SortPriority: 5
+
+IncludeIsMainRegex: '([-_](test|unittest))?$'
+
+# Whitespace
+InsertNewlineAtEOF: true
+MaxEmptyLinesToKeep: 2
+KeepEmptyLinesAtTheStartOfBlocks: false
+
+# Namespaces
+NamespaceIndentation: All
+CompactNamespaces: false
+
+# Penalties for line breaking - favor readability for GPU code
+PenaltyBreakAssignment: 2
+PenaltyBreakBeforeFirstCallParameter: 1
+PenaltyBreakComment: 300
+PenaltyBreakFirstLessLess: 120
+PenaltyBreakOpenParenthesis: 0
+PenaltyBreakString: 1000
+PenaltyBreakTemplateDeclaration: 10
+PenaltyIndentedWhitespace: 0
+PenaltyReturnTypeOnItsOwnLine: 200
+
+# C++ standard
+Standard: Latest
+Cpp11BracedListStyle: true
+
+# Line ending
+LineEnding: LF
+
+# Reflowing
+CommentPragmas: '^ IWYU pragma:'
+
+# File format
+UseCRLF: false
+
+...

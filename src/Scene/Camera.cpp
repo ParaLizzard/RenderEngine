@@ -4,15 +4,13 @@
 #include <cassert>
 #include <limits>
 
-namespace Engine
-{
-    void Camera::setOrthographicProjection(
-        float left, float right, float top, float bottom, float near, float far) {
-
+namespace Engine {
+    void Camera::setOrthographicProjection(float left, float right, float top, float bottom, float near, float far)
+    {
         farClip = far;
         nearClip = near;
 
-        projectionMatrix = glm::mat4{1.0f};
+        projectionMatrix = glm::mat4 {1.0f};
         projectionMatrix[0][0] = 2.f / (right - left);
         projectionMatrix[1][1] = 2.f / (bottom - top);
         projectionMatrix[2][2] = 1.f / (far - near);
@@ -21,14 +19,15 @@ namespace Engine
         projectionMatrix[3][2] = -near / (far - near);
     }
 
-    void Camera::setPerspectiveProjection(float fovy, float aspect, float near, float far) {
+    void Camera::setPerspectiveProjection(float fovy, float aspect, float near, float far)
+    {
         assert(glm::abs(aspect - std::numeric_limits<float>::epsilon()) > 0.0f);
 
         farClip = far;
         nearClip = near;
 
         const float tanHalfFovy = tan(fovy / 2.f);
-        projectionMatrix = glm::mat4{0.0f};
+        projectionMatrix = glm::mat4 {0.0f};
         projectionMatrix[0][0] = 1.f / (aspect * tanHalfFovy);
         projectionMatrix[1][1] = 1.f / (tanHalfFovy);
         projectionMatrix[2][2] = far / (far - near);
@@ -36,12 +35,13 @@ namespace Engine
         projectionMatrix[3][2] = -(far * near) / (far - near);
     }
 
-    void Camera::setViewDirection(glm::vec3 position, glm::vec3 direction, glm::vec3 up) {
-        const glm::vec3 w{glm::normalize(direction)};
-        const glm::vec3 u{glm::normalize(glm::cross(w, up))};
-        const glm::vec3 v{glm::cross(w, u)};
+    void Camera::setViewDirection(glm::vec3 position, glm::vec3 direction, glm::vec3 up)
+    {
+        const glm::vec3 w {glm::normalize(direction)};
+        const glm::vec3 u {glm::normalize(glm::cross(w, up))};
+        const glm::vec3 v {glm::cross(w, u)};
 
-        viewMatrix = glm::mat4{1.f};
+        viewMatrix = glm::mat4 {1.f};
         viewMatrix[0][0] = u.x;
         viewMatrix[1][0] = u.y;
         viewMatrix[2][0] = u.z;
@@ -55,7 +55,7 @@ namespace Engine
         viewMatrix[3][1] = -glm::dot(v, position);
         viewMatrix[3][2] = -glm::dot(w, position);
 
-        inverseViewMatrix = glm::mat4{1.f};
+        inverseViewMatrix = glm::mat4 {1.f};
         inverseViewMatrix[0][0] = u.x;
         inverseViewMatrix[0][1] = u.y;
         inverseViewMatrix[0][2] = u.z;
@@ -70,11 +70,13 @@ namespace Engine
         inverseViewMatrix[3][2] = position.z;
     }
 
-    void Camera::setViewTarget(glm::vec3 position, glm::vec3 target, glm::vec3 up) {
+    void Camera::setViewTarget(glm::vec3 position, glm::vec3 target, glm::vec3 up)
+    {
         setViewDirection(position, target - position, up);
     }
 
-    void Camera::setViewYXZ(glm::vec3 position, glm::quat rotation) {
+    void Camera::setViewYXZ(glm::vec3 position, glm::quat rotation)
+    {
         const glm::quat q = glm::normalize(rotation);
 
         const float qx = q.x, qy = q.y, qz = q.z, qw = q.w;
@@ -82,21 +84,9 @@ namespace Engine
         const float qxy = qx * qy, qxz = qx * qz, qxw = qx * qw;
         const float qyz = qy * qz, qyw = qy * qw, qzw = qz * qw;
 
-        const glm::vec3 right(
-            1.0f - 2.0f * (qy2 + qz2),
-            2.0f * (qxy + qzw),
-            2.0f * (qxz - qyw)
-        );
-        const glm::vec3 up(
-            2.0f * (qxy - qzw),
-            1.0f - 2.0f * (qx2 + qz2),
-            2.0f * (qyz + qxw)
-        );
-        const glm::vec3 forward(
-            2.0f * (qxz + qyw),
-            2.0f * (qyz - qxw),
-            1.0f - 2.0f * (qx2 + qy2)
-        );
+        const glm::vec3 right(1.0f - 2.0f * (qy2 + qz2), 2.0f * (qxy + qzw), 2.0f * (qxz - qyw));
+        const glm::vec3 up(2.0f * (qxy - qzw), 1.0f - 2.0f * (qx2 + qz2), 2.0f * (qyz + qxw));
+        const glm::vec3 forward(2.0f * (qxz + qyw), 2.0f * (qyz - qxw), 1.0f - 2.0f * (qx2 + qy2));
 
         viewMatrix = glm::mat4(1.0f);
         viewMatrix[0][0] = right.x;
@@ -126,4 +116,4 @@ namespace Engine
         inverseViewMatrix[3][1] = position.y;
         inverseViewMatrix[3][2] = position.z;
     }
-}
+} // namespace Engine

@@ -3,8 +3,7 @@
 #include <vulkan/vulkan.h>
 #include "Scene/FrameInfo.h"
 
-namespace Engine
-{
+namespace Engine {
     class RenderGraphBuilder;
     class RenderGraph;
 
@@ -12,8 +11,9 @@ namespace Engine
     {
     public:
         virtual ~RenderPassNode() = default;
-        virtual void setup(RenderGraphBuilder& renderGraph) = 0;
-        virtual void resolve(RenderGraph& graph, const FrameInfo& frameInfo) {}
-        virtual void execute(VkCommandBuffer& cmd, FrameInfo& frameInfo) = 0;
+        virtual void setup(RenderGraphBuilder &renderGraph) = 0;
+        virtual void resolve(RenderGraph &graph, const FrameInfo &frameInfo)
+        {}
+        virtual void execute(VkCommandBuffer &cmd, FrameInfo &frameInfo) = 0;
     };
-}
+} // namespace Engine

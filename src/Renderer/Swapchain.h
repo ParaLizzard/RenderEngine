@@ -1,34 +1,63 @@
 #pragma once
 
-#include <memory>
-#include <vulkan/vulkan.h>
-#include <vector>
-#include "Core/Device.h"
-#include <cmath>
 #include <algorithm>
+#include <cmath>
+#include <memory>
+#include <vector>
+#include <vulkan/vulkan.h>
+#include "Core/Device.h"
 
-namespace Engine
-{
+namespace Engine {
     class SwapChain
     {
-        public:
-        SwapChain(Device& deviceRef, VkExtent2D windowExtent);
-        SwapChain(Device& deviceRef, VkExtent2D windowExtent, std::shared_ptr<SwapChain> previous);
+    public:
+        SwapChain(Device &deviceRef, VkExtent2D windowExtent);
+        SwapChain(Device &deviceRef, VkExtent2D windowExtent, std::shared_ptr<SwapChain> previous);
         ~SwapChain();
 
-        SwapChain(const SwapChain&) = delete;
-        SwapChain& operator=(const SwapChain&) = delete;
+        SwapChain(const SwapChain &) = delete;
+        SwapChain &operator=(const SwapChain &) = delete;
 
-        VkImageView getImageView(int index) { return swapChainImageViews[index]; }
-        size_t imageCount() { return swapChainImages.size(); }
-        VkFormat getSwapChainImageFormat() { return swapChainImageFormat; }
-        VkExtent2D getSwapChainExtent() { return swapChainExtent; }
-        uint32_t width() { return swapChainExtent.width; }
-        uint32_t height() { return swapChainExtent.height; }
-        VkImage getImage(int index) { return swapChainImages[index]; }
-        VkImageView getDepthImageView() { return depthImageView; }
-        VkImage getDepthImage() { return depthImage; }
-        VkFormat getDepthFormat() { return VK_FORMAT_D32_SFLOAT; }
+        VkImageView getImageView(int index)
+        {
+            return swapChainImageViews[index];
+        }
+        size_t imageCount()
+        {
+            return swapChainImages.size();
+        }
+        VkFormat getSwapChainImageFormat()
+        {
+            return swapChainImageFormat;
+        }
+        VkExtent2D getSwapChainExtent()
+        {
+            return swapChainExtent;
+        }
+        uint32_t width()
+        {
+            return swapChainExtent.width;
+        }
+        uint32_t height()
+        {
+            return swapChainExtent.height;
+        }
+        VkImage getImage(int index)
+        {
+            return swapChainImages[index];
+        }
+        VkImageView getDepthImageView()
+        {
+            return depthImageView;
+        }
+        VkImage getDepthImage()
+        {
+            return depthImage;
+        }
+        VkFormat getDepthFormat()
+        {
+            return VK_FORMAT_D32_SFLOAT;
+        }
 
 
         float extentAspectRatio()
@@ -39,7 +68,7 @@ namespace Engine
         VkResult acquireNextImage(VkSemaphore imageAvailableSemaphore, uint32_t *imageIndex);
         VkResult presentImage(VkSemaphore renderFinishedSemaphore, uint32_t imageIndex);
 
-        bool compareSwapFormats(const SwapChain& swapChain) const
+        bool compareSwapFormats(const SwapChain &swapChain) const
         {
             return swapChain.swapChainImageFormat == swapChainImageFormat;
         }
@@ -50,11 +79,9 @@ namespace Engine
         void createImageViews();
         void createDepthResources();
 
-        VkSurfaceFormatKHR chooseSwapSurfaceFormat(
-           const std::vector<VkSurfaceFormatKHR>& availableFormats);
-        VkPresentModeKHR chooseSwapPresentMode(
-            const std::vector<VkPresentModeKHR>& availablePresentModes);
-        VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
+        VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &availableFormats);
+        VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes);
+        VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities);
 
         VkFormat swapChainImageFormat;
         VkExtent2D swapChainExtent;
@@ -66,11 +93,10 @@ namespace Engine
         VmaAllocation depthAllocation = VK_NULL_HANDLE;
         VkImageView depthImageView = VK_NULL_HANDLE;
 
-        Device& device;
+        Device &device;
         VkExtent2D windowExtent;
 
         VkSwapchainKHR swapChain;
         std::shared_ptr<SwapChain> oldSwapChain;
     };
-}
-
+} // namespace Engine

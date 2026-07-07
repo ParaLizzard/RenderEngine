@@ -4,9 +4,7 @@
 #include "Scene/GameObject.h"
 
 
-
-namespace Engine
-{
+namespace Engine {
     class JobSystem;
     class RenderGraph;
     class ResourceHeap;
@@ -18,15 +16,15 @@ namespace Engine
         float frameTime;
         VkExtent2D extent;
         VkCommandBuffer commandBuffer;
-        Camera* camera;
-        std::vector<GameObject>* gameObjects;
+        Camera *camera;
+        std::vector<GameObject> *gameObjects;
 
-        Device* device = nullptr;
-        RenderGraph* renderGraph = nullptr;
-        Renderer* renderer = nullptr;
-        Model* megaBuffer = nullptr;
-        ResourceHeap* resourceHeap = nullptr;
-        const JobSystem* jobSystem;
+        Device *device = nullptr;
+        RenderGraph *renderGraph = nullptr;
+        Renderer *renderer = nullptr;
+        Model *megaBuffer = nullptr;
+        ResourceHeap *resourceHeap = nullptr;
+        const JobSystem *jobSystem;
 
         bool enableSSAO = true;
     };
@@ -41,4 +39,4 @@ namespace Engine
     };
 
 
-}
+} // namespace Engine

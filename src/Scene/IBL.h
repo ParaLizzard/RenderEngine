@@ -1,16 +1,15 @@
 #pragma once
 
 #define GLM_ENABLE_EXPERIMENTAL
-#include <glm/fwd.hpp>
 #include <glm/ext/matrix_clip_space.hpp>
+#include <glm/fwd.hpp>
 #include <glm/gtx/transform.hpp>
 
-#include "LoaderGLTF.h"
 #include "GameObject.h"
+#include "LoaderGLTF.h"
 #include "Texture.h"
 
-namespace Engine
-{
+namespace Engine {
     struct TextureData
     {
         VkImage image;
@@ -22,20 +21,24 @@ namespace Engine
     class IBL
     {
     public:
-        IBL(Device& device, TextureCubeMap& skyboxTexture, ResourceHeap& resourceHeap,Model& megaBuffer, GameObject& cube);
+        IBL(Device &device,
+            TextureCubeMap &skyboxTexture,
+            ResourceHeap &resourceHeap,
+            Model &megaBuffer,
+            GameObject &cube);
         ~IBL();
 
-        IBL(const IBL&) = delete;
-        IBL& operator=(const IBL&) = delete;
+        IBL(const IBL &) = delete;
+        IBL &operator=(const IBL &) = delete;
 
         TextureData BRDFLUT;
         TextureData irradianceCube;
         TextureData prefilteredCube;
 
     private:
-        Device& device;
-        TextureCubeMap& skyboxTexture;
-        ResourceHeap& resourceHeap;
+        Device &device;
+        TextureCubeMap &skyboxTexture;
+        ResourceHeap &resourceHeap;
 
         void generateBRDFLUT();
 
@@ -53,9 +56,7 @@ namespace Engine
         VmaAllocation prefilterAllocation;
         const int32_t dimPrefilter = 512;
 
-        GameObject& cube;
-        Model& megaBuffer;
-
+        GameObject &cube;
+        Model &megaBuffer;
     };
-}
-
+} // namespace Engine

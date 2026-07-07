@@ -1,8 +1,7 @@
 #include "Renderer.h"
 
-namespace Engine
-{
-    Renderer::Renderer(Window& window, Device& device): window(window), device(device)
+namespace Engine {
+    Renderer::Renderer(Window &window, Device &device): window(window), device(device)
     {
         swapChain = std::make_unique<SwapChain>(device, window.getExtent());
 
@@ -13,8 +12,7 @@ namespace Engine
     {
         vkDeviceWaitIdle(device.getDevice());
 
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
-        {
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
             vkDestroyCommandPool(device.getDevice(), frames[i].commandPool, nullptr);
             vkDestroySemaphore(device.getDevice(), frames[i].imageAvailableSemaphore, nullptr);
             vkDestroySemaphore(device.getDevice(), frames[i].renderFinishedSemaphore, nullptr);
@@ -29,10 +27,10 @@ namespace Engine
 
         swapChainRecreatedThisFrame = false;
 
-        VkResult result = swapChain->acquireNextImage(frames[currentFrameIndex].imageAvailableSemaphore, &currentImageIndex);
+        VkResult result =
+            swapChain->acquireNextImage(frames[currentFrameIndex].imageAvailableSemaphore, &currentImageIndex);
 
-        if (result == VK_ERROR_OUT_OF_DATE_KHR)
-        {
+        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
             recreateSwapChain();
             return nullptr;
         }
@@ -43,13 +41,12 @@ namespace Engine
 
         vkResetCommandBuffer(frames[currentFrameIndex].commandBuffer, 0);
 
-        VkCommandBufferBeginInfo cmdInfo{};
+        VkCommandBufferBeginInfo cmdInfo {};
         cmdInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         cmdInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         cmdInfo.pNext = nullptr;
 
-        if (vkBeginCommandBuffer(frames[currentFrameIndex].commandBuffer, &cmdInfo) != VK_SUCCESS )
-        {
+        if (vkBeginCommandBuffer(frames[currentFrameIndex].commandBuffer, &cmdInfo) != VK_SUCCESS) {
             throw std::runtime_error("Renderer: failed to begin recording command buffers");
         }
 
@@ -58,24 +55,24 @@ namespace Engine
 
     void Renderer::endFrame()
     {
-        assert(isFrameStarted && "Renderer: Frame already started.");
+        assert(isFrameStarted && "Renderer: Frame not started.");
         vkEndCommandBuffer(frames[currentFrameIndex].commandBuffer);
 
-        VkSemaphoreSubmitInfo semInfo{};
+        VkSemaphoreSubmitInfo semInfo {};
         semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
         semInfo.semaphore = frames[currentFrameIndex].imageAvailableSemaphore;
         semInfo.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
 
-        VkCommandBufferSubmitInfo submitInfo{};
+        VkCommandBufferSubmitInfo submitInfo {};
         submitInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
         submitInfo.commandBuffer = frames[currentFrameIndex].commandBuffer;
 
-        VkSemaphoreSubmitInfo semInfo2{};
+        VkSemaphoreSubmitInfo semInfo2 {};
         semInfo2.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
         semInfo2.semaphore = frames[currentFrameIndex].renderFinishedSemaphore;
         semInfo2.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 
-        VkSubmitInfo2 submitInfo2{};
+        VkSubmitInfo2 submitInfo2 {};
         submitInfo2.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
         submitInfo2.waitSemaphoreInfoCount = 1;
         submitInfo2.pWaitSemaphoreInfos = &semInfo;
@@ -84,15 +81,13 @@ namespace Engine
         submitInfo2.signalSemaphoreInfoCount = 1;
         submitInfo2.pSignalSemaphoreInfos = &semInfo2;
 
-        if (vkQueueSubmit2(device.getGraphicsQueue(), 1, &submitInfo2, frames[currentFrameIndex].fence)!= VK_SUCCESS)
-        {
+        if (vkQueueSubmit2(device.getGraphicsQueue(), 1, &submitInfo2, frames[currentFrameIndex].fence) != VK_SUCCESS) {
             throw std::runtime_error("Renderer: failed to submit command buffer submission");
         }
 
         VkResult result = swapChain->presentImage(frames[currentFrameIndex].renderFinishedSemaphore, currentImageIndex);
 
-        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
-        {
+        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
             recreateSwapChain();
         }
 
@@ -106,7 +101,7 @@ namespace Engine
         return frames[currentFrameIndex].commandBuffer;
     }
 
-    SwapChain& Renderer::getSwapChain()
+    SwapChain &Renderer::getSwapChain()
     {
         return *swapChain;
     }
@@ -114,20 +109,18 @@ namespace Engine
     void Renderer::createFrameData()
     {
         frames.resize(MAX_FRAMES_IN_FLIGHT);
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
-        {
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
             VkCommandPoolCreateInfo poolInfo = {};
             poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
             poolInfo.queueFamilyIndex = device.getGraphicsFamilyIndex();
             poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
             poolInfo.pNext = nullptr;
 
-            if (vkCreateCommandPool(device.getDevice(), &poolInfo, nullptr, &(frames[i].commandPool))!= VK_SUCCESS)
-            {
+            if (vkCreateCommandPool(device.getDevice(), &poolInfo, nullptr, &(frames[i].commandPool)) != VK_SUCCESS) {
                 throw std::runtime_error("Renderer: failed to create command pool");
             }
 
-            VkCommandBufferAllocateInfo cmd{};
+            VkCommandBufferAllocateInfo cmd {};
             cmd.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
             cmd.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
             cmd.commandPool = frames[i].commandPool;
@@ -135,27 +128,26 @@ namespace Engine
 
             vkAllocateCommandBuffers(device.getDevice(), &cmd, &frames[i].commandBuffer);
 
-            VkSemaphoreCreateInfo semaphoreInfo{};
+            VkSemaphoreCreateInfo semaphoreInfo {};
             semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
             semaphoreInfo.flags = 0;
             semaphoreInfo.pNext = nullptr;
 
-            if (vkCreateSemaphore(device.getDevice(), &semaphoreInfo, nullptr, &(frames[i].imageAvailableSemaphore))!= VK_SUCCESS)
-            {
+            if (vkCreateSemaphore(device.getDevice(), &semaphoreInfo, nullptr, &(frames[i].imageAvailableSemaphore)) !=
+                VK_SUCCESS) {
                 throw std::runtime_error("Renderer: failed to create semaphore");
             }
-            if (vkCreateSemaphore(device.getDevice(), &semaphoreInfo, nullptr, &(frames[i].renderFinishedSemaphore))!= VK_SUCCESS)
-            {
+            if (vkCreateSemaphore(device.getDevice(), &semaphoreInfo, nullptr, &(frames[i].renderFinishedSemaphore)) !=
+                VK_SUCCESS) {
                 throw std::runtime_error("Renderer: failed to create semaphore");
             }
 
-            VkFenceCreateInfo fenceInfo{};
+            VkFenceCreateInfo fenceInfo {};
             fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
             fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
             fenceInfo.pNext = nullptr;
 
-            if (vkCreateFence(device.getDevice(), &fenceInfo, nullptr, &(frames[i].fence))!= VK_SUCCESS)
-            {
+            if (vkCreateFence(device.getDevice(), &fenceInfo, nullptr, &(frames[i].fence)) != VK_SUCCESS) {
                 throw std::runtime_error("Renderer: failed to create fence");
             }
         }
@@ -165,8 +157,7 @@ namespace Engine
     {
         VkExtent2D extent = window.getExtent();
 
-        while (extent.width == 0 || extent.height == 0)
-        {
+        while (extent.width == 0 || extent.height == 0) {
             glfwWaitEvents();
             extent = window.getExtent();
         }
@@ -178,4 +169,4 @@ namespace Engine
 
         swapChainRecreatedThisFrame = true;
     }
-}
+} // namespace Engine

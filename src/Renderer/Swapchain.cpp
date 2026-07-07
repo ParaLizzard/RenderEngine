@@ -1,51 +1,47 @@
 #include "Swapchain.h"
 
 
-namespace Engine
-{
-    SwapChain::SwapChain(Device& device, VkExtent2D windowExtent):device(device), windowExtent(windowExtent)
+namespace Engine {
+    SwapChain::SwapChain(Device &device, VkExtent2D windowExtent): device(device), windowExtent(windowExtent)
     {
         init();
     }
 
-    SwapChain::SwapChain(Device& device, VkExtent2D windowExtent, std::shared_ptr<SwapChain> previous):device(device), windowExtent(windowExtent)
+    SwapChain::SwapChain(Device &device, VkExtent2D windowExtent, std::shared_ptr<SwapChain> previous):
+        device(device), windowExtent(windowExtent)
     {
         oldSwapChain = std::move(previous);
         init();
-
     }
 
     SwapChain::~SwapChain()
     {
-        if (depthImageView != VK_NULL_HANDLE)
-        {
+        if (depthImageView != VK_NULL_HANDLE) {
             vkDestroyImageView(device.getDevice(), depthImageView, nullptr);
         }
-        if (depthImage != VK_NULL_HANDLE)
-        {
+        if (depthImage != VK_NULL_HANDLE) {
             vmaDestroyImage(device.getAllocator(), depthImage, depthAllocation);
         }
 
-        for (auto view : swapChainImageViews)
-        {
+        for (auto view: swapChainImageViews) {
             vkDestroyImageView(device.getDevice(), view, nullptr);
         }
 
-        if (swapChain != VK_NULL_HANDLE)
-        {
+        if (swapChain != VK_NULL_HANDLE) {
             vkDestroySwapchainKHR(device.getDevice(), swapChain, nullptr);
             swapChain = VK_NULL_HANDLE;
         }
     }
 
-    VkResult SwapChain::acquireNextImage(VkSemaphore imageAvailableSemaphore, uint32_t* imageIndex)
+    VkResult SwapChain::acquireNextImage(VkSemaphore imageAvailableSemaphore, uint32_t *imageIndex)
     {
-        return vkAcquireNextImageKHR(device.getDevice(), swapChain, UINT64_MAX, imageAvailableSemaphore, VK_NULL_HANDLE, imageIndex);
+        return vkAcquireNextImageKHR(
+            device.getDevice(), swapChain, UINT64_MAX, imageAvailableSemaphore, VK_NULL_HANDLE, imageIndex);
     }
 
     VkResult SwapChain::presentImage(VkSemaphore renderFinishedSemaphore, uint32_t imageIndex)
     {
-        VkPresentInfoKHR presentInfo{};
+        VkPresentInfoKHR presentInfo {};
         presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
         presentInfo.waitSemaphoreCount = 1;
         presentInfo.pWaitSemaphores = &renderFinishedSemaphore;
@@ -72,12 +68,11 @@ namespace Engine
         VkExtent2D extent = chooseSwapExtent(details.capabilities);
 
         uint32_t imageCount = details.capabilities.minImageCount + 1;
-        if (imageCount > details.capabilities.maxImageCount)
-        {
+        if (imageCount > details.capabilities.maxImageCount) {
             imageCount = details.capabilities.maxImageCount;
         }
 
-        VkSwapchainCreateInfoKHR swapChainInfo{};
+        VkSwapchainCreateInfoKHR swapChainInfo {};
         swapChainInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
         swapChainInfo.surface = device.getSurface();
         swapChainInfo.minImageCount = imageCount;
@@ -90,11 +85,9 @@ namespace Engine
         uint32_t graphicsFamilyIndex = device.getGraphicsFamilyIndex();
         uint32_t presentFamilyIndex = device.getPresentFamilyIndex();
 
-        if (graphicsFamilyIndex == presentFamilyIndex)
-        {
+        if (graphicsFamilyIndex == presentFamilyIndex) {
             swapChainInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        } else
-        {
+        } else {
             swapChainInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
             swapChainInfo.queueFamilyIndexCount = 2;
 
@@ -109,8 +102,7 @@ namespace Engine
 
         swapChainInfo.oldSwapchain = oldSwapChain ? oldSwapChain->swapChain : VK_NULL_HANDLE;
 
-        if (vkCreateSwapchainKHR(device.getDevice(), &swapChainInfo, nullptr, &swapChain) != VK_SUCCESS)
-        {
+        if (vkCreateSwapchainKHR(device.getDevice(), &swapChainInfo, nullptr, &swapChain) != VK_SUCCESS) {
             throw std::runtime_error("SwapChain: failed to create family swap chain");
         }
 
@@ -125,9 +117,8 @@ namespace Engine
     void SwapChain::createImageViews()
     {
         swapChainImageViews.resize(swapChainImages.size());
-        for (uint32_t i = 0; i < swapChainImages.size(); ++i)
-        {
-            VkImageViewCreateInfo viewInfo{};
+        for (uint32_t i = 0; i < swapChainImages.size(); ++i) {
+            VkImageViewCreateInfo viewInfo {};
             viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
             viewInfo.image = swapChainImages[i];
             viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
@@ -142,55 +133,35 @@ namespace Engine
             viewInfo.subresourceRange.layerCount = 1;
             viewInfo.subresourceRange.baseArrayLayer = 0;
 
-            if (vkCreateImageView(device.getDevice(), &viewInfo, nullptr, &swapChainImageViews[i])!= VK_SUCCESS)
-            {
+            if (vkCreateImageView(device.getDevice(), &viewInfo, nullptr, &swapChainImageViews[i]) != VK_SUCCESS) {
                 throw std::runtime_error("SwapChain: failed to create image views");
             }
         }
     }
 
-    VkSurfaceFormatKHR SwapChain::chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats)
+    VkSurfaceFormatKHR SwapChain::chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &availableFormats)
     {
-        // 1. Try standard 10-bit
-        /*for (const auto& format : availableFormats) {
-            if (format.format == VK_FORMAT_A2B10G10R10_UNORM_PACK32 && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-                printf("Loading VK_FORMAT_A2B10G10R10_UNORM_PACK32 format\n");
-                return format;
-            }
-        }*/
-        /*// 2. Try swapped 10-bit
-        for (const auto& format : availableFormats) {
-            if (format.format == VK_FORMAT_A2R10G10B10_UNORM_PACK32 && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-                printf("Loading VK_FORMAT_A2R10G10B10_UNORM_PACK32 format\n");
-                return format;
-            }
-        }*/
-        // 3. Fallback to 8-bit
-        for (auto& format : availableFormats) {
-            if ((format.format == VK_FORMAT_B8G8R8A8_SRGB || format.format == VK_FORMAT_R8G8B8A8_SRGB)
-                 && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+        for (auto &format: availableFormats) {
+            if ((format.format == VK_FORMAT_B8G8R8A8_SRGB || format.format == VK_FORMAT_R8G8B8A8_SRGB) &&
+                format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
                 printf("Loading VK_FORMAT_R8G8B8A8_SRGB format\n");
                 return format;
-                 }
+            }
         }
         return availableFormats[0];
     }
 
-    VkPresentModeKHR SwapChain::chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes)
+    VkPresentModeKHR SwapChain::chooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes)
     {
-        for (const auto& availablePresentMode : availablePresentModes)
-        {
-            if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR)
-            {
+        for (const auto &availablePresentMode: availablePresentModes) {
+            if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
                 std::cout << "Present mode: Mailbox (Uncapped FPS)\n";
                 return availablePresentMode;
             }
         }
 
-        for (const auto& availablePresentMode : availablePresentModes)
-        {
-            if (availablePresentMode == VK_PRESENT_MODE_IMMEDIATE_KHR)
-            {
+        for (const auto &availablePresentMode: availablePresentModes) {
+            if (availablePresentMode == VK_PRESENT_MODE_IMMEDIATE_KHR) {
                 std::cout << "Present mode: Immediate (Uncapped FPS)\n";
                 return availablePresentMode;
             }
@@ -200,24 +171,24 @@ namespace Engine
         return VK_PRESENT_MODE_FIFO_KHR;
     }
 
-    VkExtent2D SwapChain::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities)
+    VkExtent2D SwapChain::chooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities)
     {
-        if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max())
-        {
+        if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
             return capabilities.currentExtent;
         }
 
         VkExtent2D extent = windowExtent;
 
         extent.width = std::clamp(extent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
-        extent.height = std::clamp(extent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
+        extent.height =
+            std::clamp(extent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
 
         return extent;
     }
 
     void SwapChain::createDepthResources()
     {
-        VkImageCreateInfo imageInfo{};
+        VkImageCreateInfo imageInfo {};
         imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         imageInfo.imageType = VK_IMAGE_TYPE_2D;
         imageInfo.extent.width = swapChainExtent.width;
@@ -234,7 +205,7 @@ namespace Engine
 
         device.createImageWithInfo(imageInfo, depthImage, depthAllocation);
 
-        VkImageViewCreateInfo viewInfo{};
+        VkImageViewCreateInfo viewInfo {};
         viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
         viewInfo.image = depthImage;
         viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
@@ -245,9 +216,8 @@ namespace Engine
         viewInfo.subresourceRange.baseArrayLayer = 0;
         viewInfo.subresourceRange.layerCount = 1;
 
-        if (vkCreateImageView(device.getDevice(), &viewInfo, nullptr, &depthImageView) != VK_SUCCESS)
-        {
+        if (vkCreateImageView(device.getDevice(), &viewInfo, nullptr, &depthImageView) != VK_SUCCESS) {
             throw std::runtime_error("SwapChain: Failed to create depth image view");
         }
     }
-}
+} // namespace Engine

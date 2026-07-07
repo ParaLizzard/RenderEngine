@@ -1,12 +1,10 @@
 #include "GameObject.h"
 
-namespace Engine
-{
+namespace Engine {
     static GameObject::id_t currentId = 0;
 
-    GameObject::GameObject(id_t objId) : id(objId)
-    {
-    }
+    GameObject::GameObject(id_t objId): id(objId)
+    {}
 
     GameObject GameObject::createGameObject()
     {
@@ -22,30 +20,28 @@ namespace Engine
         const float qxy = qx * qy, qxz = qx * qz, qxw = qx * qw;
         const float qyz = qy * qz, qyw = qy * qw, qzw = qz * qw;
 
-        return glm::mat4{
-                {
-                    scale.x * (1.0f - 2.0f * (qy2 + qz2)),
-                    scale.x * (2.0f * (qxy + qzw)),
-                    scale.x * (2.0f * (qxz - qyw)),
-                    0.0f,
-                },
-                {
-                    scale.y * (2.0f * (qxy - qzw)),
-                    scale.y * (1.0f - 2.0f * (qx2 + qz2)),
-                    scale.y * (2.0f * (qyz + qxw)),
-                    0.0f,
-                },
-                {
-                    scale.z * (2.0f * (qxz + qyw)),
-                    scale.z * (2.0f * (qyz - qxw)),
-                    scale.z * (1.0f - 2.0f * (qx2 + qy2)),
-                    0.0f,
-                },
-                {translation.x, translation.y, translation.z, 1.0f}
-        };
+        return glm::mat4 {{
+                              scale.x * (1.0f - 2.0f * (qy2 + qz2)),
+                              scale.x * (2.0f * (qxy + qzw)),
+                              scale.x * (2.0f * (qxz - qyw)),
+                              0.0f,
+                          },
+                          {
+                              scale.y * (2.0f * (qxy - qzw)),
+                              scale.y * (1.0f - 2.0f * (qx2 + qz2)),
+                              scale.y * (2.0f * (qyz + qxw)),
+                              0.0f,
+                          },
+                          {
+                              scale.z * (2.0f * (qxz + qyw)),
+                              scale.z * (2.0f * (qyz - qxw)),
+                              scale.z * (1.0f - 2.0f * (qx2 + qy2)),
+                              0.0f,
+                          },
+                          {translation.x, translation.y, translation.z, 1.0f}};
     }
 
-    bool GameObject::addChild(GameObject& child)
+    bool GameObject::addChild(GameObject &child)
     {
         if (child.parentId != INVALID_ID)
             return false;
@@ -60,4 +56,4 @@ namespace Engine
         child.parentId = this->getId();
         return true;
     }
-}
+} // namespace Engine
