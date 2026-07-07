@@ -21,6 +21,8 @@ namespace Engine
         glm::mat4 invProjection;
         glm::mat4 view;
         glm::vec4 samples[SSAO_KERNEL_SIZE];
+        float nearPlane;
+        float farPlane;
     };
 
     class SsaoPassNode : public RenderPassNode

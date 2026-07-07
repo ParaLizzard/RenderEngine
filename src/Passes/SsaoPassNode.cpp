@@ -50,13 +50,10 @@ namespace Engine
         VkExtent2D currentExtent = renderer.getSwapChain().getSwapChainExtent();
         VkExtent2D halfExtent = {currentExtent.width / 2, currentExtent.height / 2};
         renderGraph.createTransientImage("SsaoImage", VK_FORMAT_R8_UNORM, halfExtent);
-        renderGraph.createTransientImage("SsaoBlurImage", VK_FORMAT_R8_UNORM, halfExtent);
 
         renderGraph.readImage("DepthImage", VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
                               VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
-        renderGraph.readBuffer("CompactMaterial",
-                       VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                       VK_ACCESS_2_SHADER_READ_BIT);
+        renderGraph.readBuffer("PackedNormals", VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
 
         renderGraph.writeImage("SsaoImage", VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
@@ -71,13 +68,13 @@ namespace Engine
         VkDescriptorImageInfo depthInfo{
             colorSampler, graph.getImageView("DepthImage"), VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL
         };
-        VkDescriptorBufferInfo compactMaterialInfo = graph.getBufferInfo("CompactMaterial", i);
+        VkDescriptorBufferInfo normalInfo = graph.getBufferInfo("PackedNormals", i);
         VkDescriptorImageInfo noiseInfo{noiseSampler, noiseView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
         VkDescriptorBufferInfo bufferInfo = uboBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
 
         LveDescriptorWriter(*ssaoSetLayout, *descriptorPool)
             .writeImage(0, &depthInfo)
-            .writeBuffer(1, &compactMaterialInfo)
+            .writeBuffer(1, &normalInfo)
             .writeImage(2, &noiseInfo)
             .writeBuffer(3, &bufferInfo)
             .overwrite(ssaoDescriptorSets[i]);
@@ -104,6 +101,8 @@ namespace Engine
         ubo.projection = frameInfo.camera->getProjection();
         ubo.invProjection = glm::inverse(frameInfo.camera->getProjection());
         ubo.view = frameInfo.camera->getView();
+        ubo.nearPlane = 0.1f;
+        ubo.farPlane = 100.0f;
 
         memcpy(ubo.samples, ssaoKernel.data(), sizeof(ubo.samples));
 

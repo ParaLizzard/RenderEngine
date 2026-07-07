@@ -9,8 +9,8 @@ struct CompactMaterial {
     uint padding;
 };
 
-layout(std430, binding = 1) readonly buffer MaterialBuffer {
-    CompactMaterial materials[];
+layout(std430, binding = 1) readonly buffer NormalBuffer {
+    uint packedNormals[];
 };
 
 layout (binding = 2) uniform sampler2D ssaoNoise;
@@ -25,6 +25,8 @@ layout (binding = 3) uniform UBO
     mat4 invProjection;
     mat4 view;
     vec4 samples[64];
+    float nearPlane;
+    float farPlane;
 } ubo;
 
 layout (location = 0) in vec2 inUV;
@@ -51,10 +53,10 @@ void main()
     ivec2 pixelCoords = ivec2(inUV * vec2(texDim));
     uint pixelIndex = pixelCoords.y * texDim.x + pixelCoords.x;
 
-    uint packedNorm = materials[pixelIndex].packedNormal;
+    uint packedNormal = packedNormals[pixelIndex];
 
     // Decode normal (Assuming standard RGBA8 packing. Change this if you use Octahedron decoding!)
-    vec4 unpacked = unpackUnorm4x8(packedNorm);
+    vec4 unpacked = unpackUnorm4x8(packedNormal);
     vec3 worldNormal = normalize(unpacked.xyz * 2.0 - 1.0);
 
     // Transform World Space normal to View Space to match fragPos
@@ -82,24 +84,23 @@ void main()
         vec3 samplePos = TBN * ubo.samples[i].xyz;
         samplePos = fragPos + samplePos * SSAO_RADIUS;
 
-        // Project sample position to screen space to get UV coordinates
-        vec4 offset = vec4(samplePos, 1.0f);
-        offset = ubo.projection * offset;
+        vec4 offset;
+        offset.x = samplePos.x * ubo.projection[0][0];
+        offset.y = samplePos.y * ubo.projection[1][1];
+        offset.z = samplePos.z * ubo.projection[2][2] + ubo.projection[3][2];
+        offset.w = samplePos.z * ubo.projection[2][3];
+
         offset.xyz /= offset.w;
         offset.xy = offset.xy * 0.5f + 0.5f;
 
-        // Fetch depth at the projected sample position and reconstruct its view-space Z
         float rawSampleDepth = texture(samplerDepth, offset.xy).r;
-        vec3 viewSamplePos = reconstructViewPos(offset.xy, rawSampleDepth);
-        float sampleDepthZ = viewSamplePos.z;
 
-        // Range check to prevent haloing around foreground objects
+        float sampleDepthZ = ubo.projection[3][2] / (rawSampleDepth - ubo.projection[2][2]);
+
         float rangeCheck = smoothstep(0.0f, 1.0f, SSAO_RADIUS / abs(fragPos.z - sampleDepthZ));
 
-        // In Vulkan's right-handed view space, Z is negative, so greater Z means closer to camera
         occlusion += (sampleDepthZ >= samplePos.z + bias ? 1.0f : 0.0f) * rangeCheck;
     }
 
-    // Output final inverted occlusion factor
     outFragColor = 1.0f - (occlusion / float(SSAO_KERNEL_SIZE));
 }

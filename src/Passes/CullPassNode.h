@@ -6,7 +6,8 @@ namespace Engine
 {
     struct ComputePushConstants
     {
-        glm::mat4 viewProjection;
+        glm::mat4 viewProj;
+        glm::vec4 frustumPlanes[6];
         uint32_t objectCount;
     };
 

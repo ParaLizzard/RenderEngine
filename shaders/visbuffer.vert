@@ -1,9 +1,6 @@
 #version 460
 
 layout(location = 0) in vec3 inPosition;
-layout(location = 1) in vec3 inNormal;
-layout(location = 2) in vec4 inTangent;
-layout(location = 3) in vec2 inTexCoord;
 
 layout(location = 0) flat out uint outInstanceID;
 
@@ -28,7 +25,6 @@ void main() {
     // 2. Pass it down to the VisBuffer
     outInstanceID = objectID;
 
-    // 3. Transform using the actual model matrix!
     mat4 model = objects[objectID].modelMatrix;
     gl_Position = pc.viewProj * model * vec4(inPosition, 1.0);
 }

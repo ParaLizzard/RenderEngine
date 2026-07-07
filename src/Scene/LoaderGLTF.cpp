@@ -258,9 +258,9 @@ namespace Engine
                            [&](const fastgltf::TRS& trs)
                            {
                                parsedNode.transform.translation = glm::vec3(
-                                   trs.translation[0], trs.translation[1], trs.translation[2]);
+                                   trs.translation[0], -trs.translation[1], trs.translation[2]);
                                parsedNode.transform.rotation = glm::quat(
-                                   trs.rotation[3], trs.rotation[0], trs.rotation[1], trs.rotation[2]);
+                                   trs.rotation[3], -trs.rotation[0], trs.rotation[1], -trs.rotation[2]);
                                parsedNode.transform.scale = glm::vec3(trs.scale[0], trs.scale[1], trs.scale[2]);
                            }
                        }, gltfNode.transform);
@@ -350,7 +350,7 @@ namespace Engine
                                              {
                                                  parsedPrim.indices[idx] = idxValue;
                                              });
-                    
+
                     for (size_t i = 0; i < parsedPrim.indices.size(); i += 3)
                     {
                         std::swap(parsedPrim.indices[i + 1], parsedPrim.indices[i + 2]);
@@ -390,7 +390,8 @@ namespace Engine
                 tex.fromKTXPtr(
                     parsedImg.ktxTexPtr,
                     &device,
-                    resourceHeap);
+                    resourceHeap,
+                    parsedImg.isSRGB);
             }
             else
             {

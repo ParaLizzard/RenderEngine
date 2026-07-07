@@ -3,6 +3,7 @@
 #include <array>
 
 #include "Scene/Texture.h"
+#include "Renderer.h"
 
 namespace Engine
 {
@@ -22,16 +23,16 @@ namespace Engine
 
         std::array<VkDescriptorPoolSize, 3> poolSizes{};
         poolSizes[0].type            = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        poolSizes[0].descriptorCount = 1;
+        poolSizes[0].descriptorCount = 1 * Renderer::MAX_FRAMES_IN_FLIGHT;
         poolSizes[1].type            = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        poolSizes[1].descriptorCount = 1;
+        poolSizes[1].descriptorCount = 1 * Renderer::MAX_FRAMES_IN_FLIGHT;
         poolSizes[2].type            = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        poolSizes[2].descriptorCount = maxDescriptors + 3;
+        poolSizes[2].descriptorCount = (maxDescriptors + 3) * Renderer::MAX_FRAMES_IN_FLIGHT;
 
         VkDescriptorPoolCreateInfo poolInfo{};
         poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         poolInfo.flags         = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
-        poolInfo.maxSets       = 1;
+        poolInfo.maxSets       = Renderer::MAX_FRAMES_IN_FLIGHT;
         poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
         poolInfo.pPoolSizes    = poolSizes.data();
 
@@ -107,22 +108,24 @@ namespace Engine
             throw std::runtime_error("ResourceHeap: Failed to create bindless set layout");
         }
 
-        uint32_t variableCounts[] = { maxDescriptors };
+        std::vector<uint32_t> variableCounts(Renderer::MAX_FRAMES_IN_FLIGHT, maxDescriptors);
         VkDescriptorSetVariableDescriptorCountAllocateInfo variableCountInfo{};
         variableCountInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO;
-        variableCountInfo.descriptorSetCount = 1;
-        variableCountInfo.pDescriptorCounts = variableCounts;
+        variableCountInfo.descriptorSetCount = Renderer::MAX_FRAMES_IN_FLIGHT;
+        variableCountInfo.pDescriptorCounts = variableCounts.data();
 
-        VkDescriptorSetAllocateInfo setAllocInfo{};
-        setAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        setAllocInfo.pNext = &variableCountInfo;
-        setAllocInfo.descriptorPool = globalDescriptorPool;
-        setAllocInfo.descriptorSetCount = 1;
-        setAllocInfo.pSetLayouts = &globalDescriptorSetLayout;
+        VkDescriptorSetAllocateInfo allocInfo{};
+        allocInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.pNext              = &variableCountInfo;
+        allocInfo.descriptorPool     = globalDescriptorPool;
+        allocInfo.descriptorSetCount = Renderer::MAX_FRAMES_IN_FLIGHT;
+        std::vector<VkDescriptorSetLayout> layouts(Renderer::MAX_FRAMES_IN_FLIGHT, globalDescriptorSetLayout);
+        allocInfo.pSetLayouts        = layouts.data();
 
-        if (vkAllocateDescriptorSets(device.getDevice(), &setAllocInfo, &globalDescriptorSet) != VK_SUCCESS)
+        globalDescriptorSets.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
+        if (vkAllocateDescriptorSets(device.getDevice(), &allocInfo, globalDescriptorSets.data()) != VK_SUCCESS)
         {
-            throw std::runtime_error("ResourceHeap: Failed to allocate bindless descriptor set");
+            throw std::runtime_error("ResourceHeap: failed to allocate descriptor sets!");
         }
 
         fallbackWhiteTex     = std::make_unique<Texture2D>();
@@ -140,11 +143,11 @@ namespace Engine
         flushPendingUpdates();
     }
 
-    void ResourceHeap::writeSceneUboDescriptor(VkDescriptorBufferInfo bufInfo)
+    void ResourceHeap::writeSceneUboDescriptor(VkDescriptorBufferInfo bufInfo, uint32_t frameIdx)
     {
         VkWriteDescriptorSet write{};
         write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet          = globalDescriptorSet;
+        write.dstSet          = globalDescriptorSets[frameIdx];
         write.dstBinding      = 1;
         write.dstArrayElement = 0;
         write.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -187,15 +190,6 @@ namespace Engine
         handle.generation = slots[allocatedIndex].generation;
         slots[allocatedIndex].allocated = true;
 
-        VkWriteDescriptorSet write{};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = globalDescriptorSet;
-        write.dstBinding = 5;
-        write.dstArrayElement = allocatedIndex;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        write.descriptorCount = 1;
-        write.pImageInfo = &imageInfo;
-
         PendingWrite pending{};
         pending.dstArrayElement = allocatedIndex;
         pending.imageInfo = imageInfo;
@@ -223,17 +217,23 @@ namespace Engine
 
         if (!hasPendingWrites) return;
 
-        std::vector<VkWriteDescriptorSet> writes(pendingWrites.size());
+        std::vector<VkWriteDescriptorSet> writes;
+        writes.reserve(pendingWrites.size() * Renderer::MAX_FRAMES_IN_FLIGHT);
 
-        for (uint32_t i = 0; i < writes.size(); ++i)
+        for (uint32_t f = 0; f < Renderer::MAX_FRAMES_IN_FLIGHT; ++f)
         {
-            writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[i].dstSet = globalDescriptorSet;
-            writes[i].dstBinding = 5;
-            writes[i].dstArrayElement = pendingWrites[i].dstArrayElement;
-            writes[i].descriptorCount = 1;
-            writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            writes[i].pImageInfo = &pendingWrites[i].imageInfo;
+            for (const auto& pending : pendingWrites)
+            {
+                VkWriteDescriptorSet write{};
+                write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                write.dstSet = globalDescriptorSets[f];
+                write.dstBinding = 5;
+                write.dstArrayElement = pending.dstArrayElement;
+                write.descriptorCount = 1;
+                write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                write.pImageInfo = &pending.imageInfo;
+                writes.push_back(write);
+            }
         }
 
         vkUpdateDescriptorSets(device.getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
@@ -261,15 +261,19 @@ namespace Engine
         return id;
     }
 
-    void ResourceHeap::uploadMaterialBuffer()
+    void ResourceHeap::uploadMaterialBuffer(uint32_t currentFrame)
     {
         if (materials.empty()) return;
 
         VkDeviceSize bufferSize = sizeof(MaterialData) * materials.size();
 
-        if (!materialBuffer || materialBuffer->getBufferSize() < bufferSize)
+        if (materialBuffers.size() < Renderer::MAX_FRAMES_IN_FLIGHT) {
+            materialBuffers.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
+        }
+
+        if (!materialBuffers[currentFrame] || materialBuffers[currentFrame]->getBufferSize() < bufferSize)
         {
-            materialBuffer = std::make_unique<Buffer>(
+            materialBuffers[currentFrame] = std::make_unique<Buffer>(
                 device,
                 sizeof(MaterialData),
                 static_cast<uint32_t>(materials.size()),
@@ -280,62 +284,105 @@ namespace Engine
             );
         }
 
-        materialBuffer->writeToBuffer(materials.data(), bufferSize, 0);
-        materialBuffer->flush(bufferSize, 0);
+        materialBuffers[currentFrame]->writeToBuffer(materials.data(), bufferSize, 0);
+        materialBuffers[currentFrame]->flush(bufferSize, 0);
     }
 
-    VkDescriptorBufferInfo ResourceHeap::getMaterialBufferInfo() const
+    VkDescriptorBufferInfo ResourceHeap::getMaterialBufferInfo(uint32_t currentFrame) const
     {
-        assert(materialBuffer && "Material buffer not uploaded yet");
-        return materialBuffer->descriptorInfo(
+        assert(materialBuffers.size() > currentFrame && materialBuffers[currentFrame] && "Material buffer not uploaded yet");
+        return materialBuffers[currentFrame]->descriptorInfo(
             sizeof(MaterialData) * materials.size(), 0);
     }
 
-    void ResourceHeap::writeMaterialDescriptor()
+    void ResourceHeap::update(uint32_t currentFrame)
     {
-        assert(materialBuffer && "Call uploadMaterialBuffer first");
+        if (materialFramesToUpdate > 0)
+        {
+            uploadMaterialBuffer(currentFrame);
+            writeMaterialDescriptor(currentFrame);
+            materialFramesToUpdate--;
+        }
+    }
 
-        VkDescriptorBufferInfo bufInfo = getMaterialBufferInfo();
+    void ResourceHeap::writeMaterialDescriptorAllFrames()
+    {
+        std::vector<VkDescriptorBufferInfo> matBufInfos(Renderer::MAX_FRAMES_IN_FLIGHT);
+        std::vector<VkWriteDescriptorSet> writes;
+        
+        for (size_t i = 0; i < Renderer::MAX_FRAMES_IN_FLIGHT; i++) {
+            if (materialBuffers.size() <= i || !materialBuffers[i]) continue;
+            
+            matBufInfos[i] = materialBuffers[i]->descriptorInfo(sizeof(MaterialData) * materials.size(), 0);
+            
+            VkWriteDescriptorSet write{};
+            write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            write.dstSet          = globalDescriptorSets[i];
+            write.dstBinding      = 0;
+            write.dstArrayElement = 0;
+            write.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            write.descriptorCount = 1;
+            write.pBufferInfo     = &matBufInfos[i];
+            writes.push_back(write);
+        }
+
+        if (!writes.empty()) {
+            vkUpdateDescriptorSets(device.getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        }
+    }
+
+    void ResourceHeap::writeMaterialDescriptor(uint32_t currentFrame)
+    {
+        if (materialBuffers.size() <= currentFrame || !materialBuffers[currentFrame]) return;
+
+        VkDescriptorBufferInfo matBufInfo = materialBuffers[currentFrame]->descriptorInfo(sizeof(MaterialData) * materials.size(), 0);
 
         VkWriteDescriptorSet write{};
         write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet          = globalDescriptorSet;
+        write.dstSet          = globalDescriptorSets[currentFrame];
         write.dstBinding      = 0;
         write.dstArrayElement = 0;
         write.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         write.descriptorCount = 1;
-        write.pBufferInfo     = &bufInfo;
+        write.pBufferInfo     = &matBufInfo;
 
         vkUpdateDescriptorSets(device.getDevice(), 1, &write, 0, nullptr);
     }
 
     void ResourceHeap::writeIBLDescriptors(VkDescriptorImageInfo irradianceInfo, VkDescriptorImageInfo prefilterInfo, VkDescriptorImageInfo brdfLutInfo)
     {
-        std::array<VkWriteDescriptorSet, 3> writes{};
+        std::vector<VkWriteDescriptorSet> writes;
+        for (size_t i = 0; i < Renderer::MAX_FRAMES_IN_FLIGHT; i++) {
+            VkWriteDescriptorSet w0{};
+            w0.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            w0.dstSet          = globalDescriptorSets[i];
+            w0.dstBinding      = 2;
+            w0.dstArrayElement = 0;
+            w0.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            w0.descriptorCount = 1;
+            w0.pImageInfo      = &irradianceInfo;
+            writes.push_back(w0);
 
-        writes[0].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].dstSet          = globalDescriptorSet;
-        writes[0].dstBinding      = 2;
-        writes[0].dstArrayElement = 0;
-        writes[0].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[0].descriptorCount = 1;
-        writes[0].pImageInfo      = &irradianceInfo;
+            VkWriteDescriptorSet w1{};
+            w1.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            w1.dstSet          = globalDescriptorSets[i];
+            w1.dstBinding      = 3;
+            w1.dstArrayElement = 0;
+            w1.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            w1.descriptorCount = 1;
+            w1.pImageInfo      = &prefilterInfo;
+            writes.push_back(w1);
 
-        writes[1].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[1].dstSet          = globalDescriptorSet;
-        writes[1].dstBinding      = 3;
-        writes[1].dstArrayElement = 0;
-        writes[1].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[1].descriptorCount = 1;
-        writes[1].pImageInfo      = &prefilterInfo;
-
-        writes[2].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[2].dstSet          = globalDescriptorSet;
-        writes[2].dstBinding      = 4;
-        writes[2].dstArrayElement = 0;
-        writes[2].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[2].descriptorCount = 1;
-        writes[2].pImageInfo      = &brdfLutInfo;
+            VkWriteDescriptorSet w2{};
+            w2.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            w2.dstSet          = globalDescriptorSets[i];
+            w2.dstBinding      = 4;
+            w2.dstArrayElement = 0;
+            w2.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            w2.descriptorCount = 1;
+            w2.pImageInfo      = &brdfLutInfo;
+            writes.push_back(w2);
+        }
 
         vkUpdateDescriptorSets(device.getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
     }

@@ -15,12 +15,12 @@ namespace Engine
         glm::uint frameWidth;
     };
 
-    struct CompactMaterial {
+    /*struct CompactMaterial {
         uint32_t packedNormal;
         uint32_t packedRadiance;
         uint32_t packedAO;
         uint32_t padding;
-    };
+    };*/
 
     struct WorldData {
         glm::vec3 worldPos;
@@ -45,11 +45,18 @@ namespace Engine
         void execute(VkCommandBuffer& cmd, FrameInfo& frameInfo) override;
         void resolve(RenderGraph& graph, const FrameInfo& frameInfo) override;
 
-        VkBuffer getCompactMaterialBuffer(size_t frameIndex) {
+        /*VkBuffer getCompactMaterialBuffer(size_t frameIndex) {
             return compactMaterialBuffers[frameIndex]->getBuffer();
+        }*/
+
+        [[nodiscard]] VkBuffer getPackedNormalBuffer(size_t frameIndex) const {
+            return packedNormalBuffers[frameIndex]->getBuffer();
+        }
+        [[nodiscard]] VkBuffer getPackedRadianceBuffer(size_t frameIndex) const {
+            return packedRadianceBuffers[frameIndex]->getBuffer();
         }
 
-        VkBuffer getWorldPositionBuffer(uint32_t frameIndex) const {
+        [[nodiscard]] VkBuffer getWorldPositionBuffer(uint32_t frameIndex) const {
             return worldPositionBuffers[frameIndex]->getBuffer();
         }
     private:
@@ -73,10 +80,18 @@ namespace Engine
         VkSampler nearestSampler = VK_NULL_HANDLE;
 
         std::vector<std::unique_ptr<Buffer>> meshBuffers;
-        std::vector<std::unique_ptr<Buffer>> compactMaterialBuffers;
+        //std::vector<std::unique_ptr<Buffer>> compactMaterialBuffers;
+        std::vector<std::unique_ptr<Buffer>> packedNormalBuffers;
+        std::vector<std::unique_ptr<Buffer>> packedRadianceBuffers;
         std::vector<std::unique_ptr<Buffer>> worldPositionBuffers;
 
         uint32_t lastWidth = 0;
         uint32_t lastHeight = 0;
+
+        std::vector<GPUMeshInfo> cachedMeshInfos;
+        bool meshInfoDirty = true;
+        int framesToUpdate = 0;
+    public:
+        void markSceneDirty() { meshInfoDirty = true; }
     };
 }

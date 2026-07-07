@@ -393,6 +393,9 @@ namespace Engine
             if (it->second.image != image)
             {
                 it->second.layout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+                it->second.lastStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+                it->second.lastAccessMask = VK_ACCESS_2_NONE;
             }
 
             it->second.image = image;

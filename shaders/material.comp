@@ -1,9 +1,6 @@
 #version 460
 #extension GL_EXT_nonuniform_qualifier : require
 
-// =========================================================================
-// PBR CONSTANTS & FUNCTIONS
-// =========================================================================
 const float PI = 3.141592;
 const vec3 Fdielectric = vec3(0.04);
 const float Epsilon = 0.00001;
@@ -29,9 +26,6 @@ vec3 fresnelSchlick(vec3 F0, float cosTheta) {
     return F0 + (vec3(1.0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
-// =========================================================================
-// SET 0: Global Bindless Heap (ResourceHeap)
-// =========================================================================
 struct MaterialData {
     vec4 albedoFactor;
     vec4 emissiveFactor;
@@ -59,11 +53,6 @@ layout(set = 0, binding = 4) uniform sampler2D brdfLUT;
 
 layout(set = 0, binding = 5) uniform sampler2D bindlessTextures[];
 
-// =========================================================================
-// SET 1: Material Pass Specific Resources
-// =========================================================================
-
-// 12-byte aligned position (Fixes shattered geometry)
 struct PositionData {
     float x, y, z;
 };
@@ -75,7 +64,6 @@ layout(set = 1, binding = 1) readonly buffer IndexBuffer {
     uint indices[];
 } indexBuffer;
 
-// 8-byte aligned Mesh info (Matches your C++ GPUMeshInfo)
 struct Mesh {
     uint firstIndex;
     int vertexOffset;
@@ -93,15 +81,15 @@ struct CompactMaterial {
     uint packedAO;
     uint padding;
 };
-layout(set = 1, binding = 5) writeonly buffer MaterialBuffer {
-    CompactMaterial materials[];
-} materialOut;
+
+layout(set = 1, binding = 5) writeonly buffer NormalBuffer {
+    uint packedNormals[];
+} normalOut;
 
 layout(set = 1, binding = 6) writeonly buffer WorldBuffer {
     vec4 worldPositions[];
 } worldOut;
 
-// Fully unwrapped attributes (Fixes 16-byte vec3 padding / pink freckles)
 struct VertexAttribute {
     float colorR, colorG, colorB;
     float normalX, normalY, normalZ;
@@ -114,16 +102,23 @@ layout(set = 1, binding = 7) readonly buffer AttributeBuffer {
     VertexAttribute attributes[];
 } attributeBuffer;
 
+layout(set = 1, binding = 9) uniform writeonly image2D finalRenderOut;
+layout(set = 1, binding = 10) uniform sampler2D ssaoBlurTex;
+
+layout(set = 1, binding = 11) writeonly buffer RadianceBuffer {
+    uint packedRadiances[];
+} radianceOut;
+
 struct ObjectData {
     mat4 modelMatrix;
     mat4 normalMatrix;
     vec4 boundingSphere;
 };
+
 layout(set = 1, binding = 8) readonly buffer ObjectBuffer {
     ObjectData objects[];
 } objectBuffer;
 
-// Updated to use viewProj for screen-space barycentrics
 layout(push_constant) uniform PushConstants {
     mat4 viewProj;
     mat4 view;
@@ -131,9 +126,6 @@ layout(push_constant) uniform PushConstants {
     uint frameWidth;
 } pc;
 
-// =========================================================================
-// HELPER FUNCTIONS FOR ENCODING
-// =========================================================================
 uint encodeOctNormal(vec3 n) {
     n /= (abs(n.x) + abs(n.y) + abs(n.z));
     vec2 res = n.z >= 0.0 ? n.xy : (1.0 - abs(n.yx)) * sign(n.xy);
@@ -142,7 +134,6 @@ uint encodeOctNormal(vec3 n) {
 }
 
 uint encodeRadiance(vec3 color) {
-    // 10 bits per channel (matches 0x3FF un-packing in resolve.comp)
     uvec3 quantized = uvec3(clamp(color, 0.0, 1.0) * 1023.0);
     return quantized.x | (quantized.y << 10u) | (quantized.z << 20u);
 }
@@ -151,40 +142,40 @@ vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness) {
     return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
-// =========================================================================
-// MAIN EXECUTION
-// =========================================================================
 layout(local_size_x = 16, local_size_y = 16) in;
 
 void main() {
     ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
-    if (pixel.x >= pc.frameWidth) return;
-    uint pixelIdx = pixel.y * pc.frameWidth + pixel.x;
+    ivec2 texSize = textureSize(visBufferTexture, 0);
 
-    // Read VisBuffer
+    if (pixel.x >= texSize.x || pixel.y >= texSize.y) return;
+
+    uint pixelIdx = pixel.y * texSize.x + pixel.x;
+
     uvec4 visPacked = texelFetch(visBufferTexture, pixel, 0);
 
     uint instanceID = visPacked.x;
     uint primitiveID = visPacked.y;
 
-    // Special case: sky/background
-    if (instanceID == 0xFFFFFFFFu || instanceID == 0xFFFFu) {
-        materialOut.materials[pixelIdx] = CompactMaterial(0u, 0u, 0u, 0u);
+    if (instanceID == 0u) {
+        normalOut.packedNormals[pixelIdx] = 0u;
+        radianceOut.packedRadiances[pixelIdx] = 0u;
         worldOut.worldPositions[pixelIdx] = vec4(0.0, 0.0, 0.0, 0.0);
+        imageStore(finalRenderOut, pixel, vec4(0.1, 0.1, 0.12, 1.0));
         return;
     }
 
-    // Fetch geometry parameters
+    instanceID -= 1u;
+
     Mesh mesh = meshBuffer.meshes[instanceID];
     mat4 modelMatrix = objectBuffer.objects[instanceID].modelMatrix;
+    mat4 MVP = pc.viewProj * modelMatrix;
 
-    // Fetch triangle indices
     uint globalIndexOffset = mesh.firstIndex + primitiveID * 3u;
     uint idx0 = indexBuffer.indices[globalIndexOffset];
     uint idx1 = indexBuffer.indices[globalIndexOffset + 1u];
     uint idx2 = indexBuffer.indices[globalIndexOffset + 2u];
 
-    // Fetch and transform positions to World Space
     uint vOffset = uint(mesh.vertexOffset);
     PositionData pd0 = vertexBuffer.positions[vOffset + idx0];
     PositionData pd1 = vertexBuffer.positions[vOffset + idx1];
@@ -194,58 +185,58 @@ void main() {
     vec3 p1 = (modelMatrix * vec4(pd1.x, pd1.y, pd1.z, 1.0)).xyz;
     vec3 p2 = (modelMatrix * vec4(pd2.x, pd2.y, pd2.z, 1.0)).xyz;
 
-    // =========================================================
-    // PERSPECTIVE-CORRECT SCREEN-SPACE BARYCENTRICS
-    // =========================================================
-    vec4 clip0 = pc.viewProj * vec4(p0, 1.0);
-    vec4 clip1 = pc.viewProj * vec4(p1, 1.0);
-    vec4 clip2 = pc.viewProj * vec4(p2, 1.0);
+    vec4 clip0 = MVP * vec4(pd0.x, pd0.y, pd0.z, 1.0);
+    vec4 clip1 = MVP * vec4(pd1.x, pd1.y, pd1.z, 1.0);
+    vec4 clip2 = MVP * vec4(pd2.x, pd2.y, pd2.z, 1.0);
 
-    vec2 ndc0 = clip0.xy / clip0.w;
-    vec2 ndc1 = clip1.xy / clip1.w;
-    vec2 ndc2 = clip2.xy / clip2.w;
+    vec2 pixelNDC = (vec2(pixel) + 0.5) / vec2(texSize) * 2.0 - 1.0;
 
-    vec2 pixelNDC = (vec2(pixel) + 0.5) / vec2(textureSize(visBufferTexture, 0)) * 2.0 - 1.0;
+    vec4 d0 = clip0 - clip2;
+    vec4 d1 = clip1 - clip2;
 
-    vec2 e0 = ndc1 - ndc0;
-    vec2 e1 = ndc2 - ndc0;
-    vec2 e2 = pixelNDC - ndc0;
+    float Ax = pixelNDC.x * d0.w - d0.x;
+    float Bx = pixelNDC.x * d1.w - d1.x;
+    float Rx = clip2.x - pixelNDC.x * clip2.w;
 
-    float denom = e0.x * e1.y - e0.y * e1.x;
-    denom = abs(denom) < 1e-7 ? sign(denom) * 1e-7 : denom;
+    float Ay = pixelNDC.y * d0.w - d0.y;
+    float By = pixelNDC.y * d1.w - d1.y;
+    float Ry = clip2.y - pixelNDC.y * clip2.w;
 
-    float v_s = (e2.x * e1.y - e2.y * e1.x) / denom;
-    float w_s = (e0.x * e2.y - e0.y * e2.x) / denom;
-    float u_s = 1.0 - v_s - w_s;
+    float M = Ax * By - Ay * Bx;
+    M = abs(M) < 1e-7 ? (M >= 0.0 ? 1e-7 : -1e-7) : M;
 
-    float invW = (u_s / clip0.w) + (v_s / clip1.w) + (w_s / clip2.w);
-    vec3 bary = vec3(u_s / clip0.w, v_s / clip1.w, w_s / clip2.w) / invW;
+    float u = (Rx * By - Ry * Bx) / M;
+    float v = (Ax * Ry - Ay * Rx) / M;
+    vec3 bary = vec3(u, v, 1.0 - u - v);
 
-    // --- NEW: Analytical Delats for Compute Shader Mipmapping ---
-    vec2 invRes = 2.0 / vec2(textureSize(visBufferTexture, 0));
+    vec2 invRes = 2.0 / vec2(texSize);
 
-    // Shift e2 by 1 pixel in X
-    vec2 e2_dx = e2 + vec2(invRes.x, 0.0);
-    float v_s_dx = (e2_dx.x * e1.y - e2_dx.y * e1.x) / denom;
-    float w_s_dx = (e0.x * e2_dx.y - e0.y * e2_dx.x) / denom;
-    float u_s_dx = 1.0 - v_s_dx - w_s_dx;
-    float invW_dx = (u_s_dx / clip0.w) + (v_s_dx / clip1.w) + (w_s_dx / clip2.w);
-    vec3 bary_dx = vec3(u_s_dx / clip0.w, v_s_dx / clip1.w, w_s_dx / clip2.w) / invW_dx;
+    vec2 ndc_dx = pixelNDC + vec2(invRes.x, 0.0);
+    float Ax_dx = ndc_dx.x * d0.w - d0.x;
+    float Bx_dx = ndc_dx.x * d1.w - d1.x;
+    float Rx_dx = clip2.x - ndc_dx.x * clip2.w;
 
-    // Shift e2 by 1 pixel in Y
-    vec2 e2_dy = e2 + vec2(0.0, invRes.y);
-    float v_s_dy = (e2_dy.x * e1.y - e2_dy.y * e1.x) / denom;
-    float w_s_dy = (e0.x * e2_dy.y - e0.y * e2_dy.x) / denom;
-    float u_s_dy = 1.0 - v_s_dy - w_s_dy;
-    float invW_dy = (u_s_dy / clip0.w) + (v_s_dy / clip1.w) + (w_s_dy / clip2.w);
-    vec3 bary_dy = vec3(u_s_dy / clip0.w, v_s_dy / clip1.w, w_s_dy / clip2.w) / invW_dy;
-    // ------------------------------------------------------------
+    float M_dx = Ax_dx * By - Ay * Bx_dx;
+    M_dx = abs(M_dx) < 1e-7 ? (M_dx >= 0.0 ? 1e-7 : -1e-7) : M_dx;
+
+    float u_dx = (Rx_dx * By - Ry * Bx_dx) / M_dx;
+    float v_dx = (Ax_dx * Ry - Ay * Rx_dx) / M_dx;
+    vec3 bary_dx = vec3(u_dx, v_dx, 1.0 - u_dx - v_dx);
+
+    vec2 ndc_dy = pixelNDC + vec2(0.0, invRes.y);
+    float Ay_dy = ndc_dy.y * d0.w - d0.y;
+    float By_dy = ndc_dy.y * d1.w - d1.y;
+    float Ry_dy = clip2.y - ndc_dy.y * clip2.w;
+
+    float M_dy = Ax * By_dy - Ay_dy * Bx;
+    M_dy = abs(M_dy) < 1e-7 ? (M_dy >= 0.0 ? 1e-7 : -1e-7) : M_dy;
+
+    float u_dy = (Rx * By_dy - Ry_dy * Bx) / M_dy;
+    float v_dy = (Ax * Ry_dy - Ay_dy * Rx) / M_dy;
+    vec3 bary_dy = vec3(u_dy, v_dy, 1.0 - u_dy - v_dy);
 
     vec3 worldPos = bary.x * p0 + bary.y * p1 + bary.z * p2;
 
-    // =========================================================
-    // ATTRIBUTE FETCHING & RECONSTRUCTION
-    // =========================================================
     VertexAttribute a0 = attributeBuffer.attributes[vOffset + idx0];
     VertexAttribute a1 = attributeBuffer.attributes[vOffset + idx1];
     VertexAttribute a2 = attributeBuffer.attributes[vOffset + idx2];
@@ -266,17 +257,14 @@ void main() {
     vec4 tangent = bary.x * t0 + bary.y * t1 + bary.z * t2;
     vec2 texCoord = bary.x * uv0 + bary.y * uv1 + bary.z * uv2;
 
-    // --- NEW: Calculate the UV gradients for textureGrad ---
     vec2 texCoord_dx = bary_dx.x * uv0 + bary_dx.y * uv1 + bary_dx.z * uv2;
     vec2 texCoord_dy = bary_dy.x * uv0 + bary_dy.y * uv1 + bary_dy.z * uv2;
     vec2 ddx_uv = texCoord_dx - texCoord;
     vec2 ddy_uv = texCoord_dy - texCoord;
-    // -------------------------------------------------------
 
     uint materialId = a0.texId;
     MaterialData mat = materialHeap.materials[materialId];
 
-    // Texture Sampling
     vec3 albedo = textureGrad(bindlessTextures[nonuniformEXT(mat.albedoIndex)], texCoord, ddx_uv, ddy_uv).rgb * mat.albedoFactor.rgb;
     vec3 normalMapSample = textureGrad(bindlessTextures[nonuniformEXT(mat.normalIndex)], texCoord, ddx_uv, ddy_uv).rgb;
     vec4 mrSample = textureGrad(bindlessTextures[nonuniformEXT(mat.roughnessMetallicIndex)], texCoord, ddx_uv, ddy_uv);
@@ -284,15 +272,10 @@ void main() {
     float roughness = mrSample.g * mat.roughnessFactor;
     float metalness = mrSample.b * mat.metallicFactor;
 
-    // Reconstruct TBN Normal
     vec3 mappedNormal = normalMapSample * 2.0 - 1.0;
     vec3 bitangent = cross(normal, tangent.xyz) * tangent.w;
     mat3 tbn = mat3(normalize(tangent.xyz), normalize(bitangent), normal);
     vec3 worldNormal = normalize(tbn * mappedNormal);
-
-    // =========================================================================
-    // PBR DIRECT LIGHTING
-    // =========================================================================
 
     vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
     vec3 viewDir  = normalize(pc.cameraPos - worldPos);
@@ -317,35 +300,31 @@ void main() {
 
     vec3 directLight = (kD * albedo / PI * NdotL_diffuse + specular * NdotL) * vec3(2.0);
 
-
     vec3 F_ambient  = fresnelSchlickRoughness(NdotV, F0, roughness);
     vec3 kD_ambient = (vec3(1.0) - F_ambient) * (1.0 - metalness);
 
-    // Irradiance (Diffuse Ambient)
     vec3 irradiance = texture(irradianceMap, worldNormal).rgb;
     vec3 diffuse_ambient = irradiance * albedo;
 
-    // Prefilter (Specular Ambient)
-    const float MAX_REFLECTION_LOD = 4.0; // Adjust based on your mipmap count
+    const float MAX_REFLECTION_LOD = 4.0;
     vec3 R = reflect(-viewDir, worldNormal);
 
-    // Note: your old shader flipped the Y/Z axes for sampling, keep it if your cubemap needs it!
     vec3 prefilteredColor = textureLod(prefilterMap, R, roughness * MAX_REFLECTION_LOD).rgb;
     vec2 envBRDF = texture(brdfLUT, vec2(NdotV, roughness)).rg;
     vec3 specular_ambient = prefilteredColor * (F_ambient * envBRDF.x + envBRDF.y);
 
-    vec3 ambientLight = (kD_ambient * diffuse_ambient + specular_ambient);
+    vec2 uv = vec2(pixel) / vec2(pc.frameWidth, texSize.y);
+    float ssao = texture(ssaoBlurTex, uv).r;
+    vec3 ambientLight = (kD_ambient * diffuse_ambient + specular_ambient) * ssao;
 
-    // Final combined lighting
     vec3 finalRadiance = directLight + ambientLight;
-
-    // =========================================================================
-    // PACK AND WRITE OUTPUTS
-    // =========================================================================
 
     uint packedNormal = encodeOctNormal(worldNormal);
     uint packedRadiance = encodeRadiance(finalRadiance);
 
-    materialOut.materials[pixelIdx] = CompactMaterial(packedNormal, packedRadiance, 0u, 0u);
+    normalOut.packedNormals[pixelIdx] = packedNormal;
+    radianceOut.packedRadiances[pixelIdx] = packedRadiance;
     worldOut.worldPositions[pixelIdx] = vec4(worldPos, 1.0);
+
+    imageStore(finalRenderOut, pixel, vec4(finalRadiance, 1.0));
 }

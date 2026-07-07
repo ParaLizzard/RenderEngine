@@ -187,7 +187,7 @@ namespace Engine
 
     void CullPassNode::setup(RenderGraphBuilder& renderGraph)
     {
-        renderGraph.writeBuffer("CullObjectData", VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
+        renderGraph.readBuffer("CullObjectData", VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
         renderGraph.writeBuffer("CullCompactedIndirectCommands", VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
         renderGraph.writeBuffer("CullDrawCount", VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
     }
@@ -197,7 +197,7 @@ namespace Engine
         glm::mat4 projection = frameInfo.camera->getProjection();
         glm::mat4 view = frameInfo.camera->getView();
         glm::mat4 clipMatrix = glm::mat4(1.0f);
-        clipMatrix[1][1] = -1.0f;
+        //clipMatrix[1][1] = -1.0f;
         glm::mat4 viewProjection = clipMatrix * projection * view;
 
         uint32_t currentFrame = renderer.getFrameIndex();
@@ -260,7 +260,7 @@ namespace Engine
                 copyBarriers[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
                 copyBarriers[0].srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
                 copyBarriers[0].srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-                copyBarriers[0].dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+                copyBarriers[0].dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
                 copyBarriers[0].dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
                 copyBarriers[0].buffer = gpuObjectSSBOs[currentFrame]->getBuffer();
                 copyBarriers[0].offset = 0;
@@ -303,7 +303,21 @@ namespace Engine
                                     &objectDescriptorSets[currentFrame], 0, nullptr);
 
             ComputePushConstants compPc{};
-            compPc.viewProjection = viewProjection;
+            compPc.viewProj = viewProjection;
+            
+            glm::mat4 tvp = glm::transpose(viewProjection);
+            compPc.frustumPlanes[0] = tvp[3] + tvp[0]; // Left
+            compPc.frustumPlanes[1] = tvp[3] - tvp[0]; // Right
+            compPc.frustumPlanes[2] = tvp[3] + tvp[1]; // Bottom
+            compPc.frustumPlanes[3] = tvp[3] - tvp[1]; // Top
+            compPc.frustumPlanes[4] = tvp[2];          // Near
+            compPc.frustumPlanes[5] = tvp[3] - tvp[2]; // Far
+
+            for (int i = 0; i < 6; i++) {
+                float len = glm::length(glm::vec3(compPc.frustumPlanes[i]));
+                compPc.frustumPlanes[i] /= len;
+            }
+            
             compPc.objectCount = objectDataArray.size();
             vkCmdPushConstants(cmd, computePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ComputePushConstants), &compPc);
 

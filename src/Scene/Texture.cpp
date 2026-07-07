@@ -478,7 +478,7 @@ namespace Engine
         this->heapHandle = resourceHeap.registerTexture(this->descriptor);
     }
 
-    void Texture2D::fromKTXPtr(void* ktxTexPtr, Device* device, ResourceHeap& resourceHeap, VkFilter filter, VkImageUsageFlags imageUsageFlags, VkImageLayout imageLayout)
+    void Texture2D::fromKTXPtr(void* ktxTexPtr, Device* device, ResourceHeap& resourceHeap,bool isSRGB, VkFilter filter, VkImageUsageFlags imageUsageFlags, VkImageLayout imageLayout)
     {
         if (!ktxTexPtr) throw std::runtime_error("Texture: KTX Pointer is null");
 
@@ -491,6 +491,14 @@ namespace Engine
         mipLevels = ktxTexture->numLevels;
 
         VkFormat format = ktxTexture_GetVkFormat(ktxTexture);
+
+        if (isSRGB)
+        {
+            if (format == VK_FORMAT_BC7_UNORM_BLOCK) format = VK_FORMAT_BC7_SRGB_BLOCK;
+            else if (format == VK_FORMAT_R8G8B8A8_UNORM) format = VK_FORMAT_R8G8B8A8_SRGB;
+            else if (format == VK_FORMAT_BC3_UNORM_BLOCK) format = VK_FORMAT_BC3_SRGB_BLOCK;
+            else if (format == VK_FORMAT_ASTC_4x4_UNORM_BLOCK) format = VK_FORMAT_ASTC_4x4_SRGB_BLOCK;
+        }
 
         ktx_uint8_t* ktxTextureData = ktxTexture_GetData(ktxTexture);
         ktx_size_t ktxTextureSize = ktxTexture_GetDataSize(ktxTexture);

@@ -8,5 +8,5 @@ void main() {
     uint instanceID = inInstanceID;
     uint primitiveID = uint(gl_PrimitiveID);
 
-    outVisBuffer = uvec2(instanceID, primitiveID);
+    outVisBuffer = uvec2(instanceID+1, primitiveID);
 }

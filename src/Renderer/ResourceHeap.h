@@ -8,6 +8,8 @@
 #include <vector>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
+
+#include "Renderer.h"
 #include "Core/Buffer.h"
 
 
@@ -76,15 +78,19 @@ namespace Engine
         uint32_t getFallbackWhiteSlot()     const { return fallbackWhiteSlot;     }
         uint32_t getFallbackFlatNormalSlot()const { return fallbackFlatNormalSlot; }
 
-        void uploadMaterialBuffer();
+        void uploadMaterialBuffer(uint32_t currentFrame);
 
-        VkDescriptorBufferInfo getMaterialBufferInfo() const;
-        void writeMaterialDescriptor();
-        void writeSceneUboDescriptor(VkDescriptorBufferInfo bufInfo);
+        VkDescriptorBufferInfo getMaterialBufferInfo(uint32_t currentFrame) const;
+        void writeMaterialDescriptor(uint32_t currentFrame);
+        void writeMaterialDescriptorAllFrames(); // For init
+        
+        void markMaterialsDirty() { materialFramesToUpdate = Renderer::MAX_FRAMES_IN_FLIGHT; /* Renderer::MAX_FRAMES_IN_FLIGHT */ }
+        void update(uint32_t currentFrame);
+        void writeSceneUboDescriptor(VkDescriptorBufferInfo bufInfo, uint32_t frameIdx);
         void writeIBLDescriptors(VkDescriptorImageInfo irradianceInfo, VkDescriptorImageInfo prefilterInfo, VkDescriptorImageInfo brdfLutInfo);
         VkDeviceSize getMaterialBufferSize() const { return sizeof(MaterialData) * materials.size(); }
 
-        VkDescriptorSet getDescriptorSet() { return globalDescriptorSet; }
+        VkDescriptorSet getDescriptorSet(uint32_t frameIdx) { return globalDescriptorSets[frameIdx]; }
         VkDescriptorSetLayout getDescriptorSetLayout() { return globalDescriptorSetLayout; }
 
     private:
@@ -102,12 +108,12 @@ namespace Engine
         uint32_t maxDescriptors;
         VkDescriptorPool globalDescriptorPool = VK_NULL_HANDLE;
         VkDescriptorSetLayout globalDescriptorSetLayout = VK_NULL_HANDLE;
-        VkDescriptorSet globalDescriptorSet = VK_NULL_HANDLE;
+        std::vector<VkDescriptorSet> globalDescriptorSets;
 
         std::unique_ptr<Texture2D> fallbackWhiteTex;
         std::unique_ptr<Texture2D> fallbackFlatNormalTex;
 
-        std::unique_ptr<Buffer> materialBuffer;
+        std::vector<std::unique_ptr<Buffer>> materialBuffers;
 
         std::vector<SlotMetadata> slots;
         std::vector<PendingWrite> pendingWrites;
@@ -115,6 +121,7 @@ namespace Engine
         std::vector<MaterialData> materials;
 
         bool hasPendingWrites = false;
+        uint32_t materialFramesToUpdate = 0;
 
         mutable std::mutex heapMutex;
     };

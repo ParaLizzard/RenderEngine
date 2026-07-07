@@ -17,7 +17,7 @@ struct VkDrawIndexedIndirectCommand {
 };
 
 // Binding 0: The objects
-layout(std430, set = 0, binding = 0) readonly buffer ObjectBuffer {
+layout(std430, set = 0, binding = 0) buffer ObjectBuffer {
     ObjectData objects[];
 };
 
@@ -34,7 +34,8 @@ layout(std430, set = 0, binding = 3) buffer CompactedIndirectBuffer {
 };
 
 layout(push_constant) uniform PushConsts {
-    mat4 viewProjection;
+    mat4 viewProj;
+    vec4 frustumPlanes[6];
     uint objectCount;
 } push;
 
@@ -47,26 +48,16 @@ void main() {
 
     vec3 worldCenter = (model * vec4(sphere.xyz, 1.0)).xyz;
 
-    float scaleX = length(vec3(model[0]));
-    float scaleY = length(vec3(model[1]));
-    float scaleZ = length(vec3(model[2]));
-    float maxScale = max(max(scaleX, scaleY), scaleZ);
-    float worldRadius = sphere.w * maxScale;
+    float sqX = dot(model[0].xyz, model[0].xyz);
+    float sqY = dot(model[1].xyz, model[1].xyz);
+    float sqZ = dot(model[2].xyz, model[2].xyz);
 
-    mat4 tvp = transpose(push.viewProjection);
-    vec4 planes[6];
-    planes[0] = tvp[3] + tvp[0]; // Left
-    planes[1] = tvp[3] - tvp[0]; // Right
-    planes[2] = tvp[3] + tvp[1]; // Bottom
-    planes[3] = tvp[3] - tvp[1]; // Top
-    planes[4] = tvp[2];          // Near
-    planes[5] = tvp[3] - tvp[2]; // Far
+    float maxScale = sqrt(max(max(sqX, sqY), sqZ));
+    float worldRadius = sphere.w * maxScale;
 
     bool visible = true;
     for (int i = 0; i < 6; i++) {
-        float len = length(planes[i].xyz);
-        planes[i] /= len;
-        if (dot(planes[i].xyz, worldCenter) + planes[i].w < -worldRadius) {
+        if (dot(push.frustumPlanes[i].xyz, worldCenter) + push.frustumPlanes[i].w < -worldRadius) {
             visible = false;
             break;
         }
