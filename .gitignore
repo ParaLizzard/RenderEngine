@@ -1,6 +1,8 @@
 .idea
 models/*
 assets/*
+docs/*
 
 !models/.gitkeep
 !assets/.gitkeep
+!docs/.gitkeep
