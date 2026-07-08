@@ -56,8 +56,8 @@ namespace Engine {
             DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
         }
 
-        if (surface_ != VK_NULL_HANDLE && instance != VK_NULL_HANDLE) {
-            vkDestroySurfaceKHR(instance, surface_, nullptr);
+        if (surface != VK_NULL_HANDLE && instance != VK_NULL_HANDLE) {
+            vkDestroySurfaceKHR(instance, surface, nullptr);
         }
 
         if (instance != VK_NULL_HANDLE) {
@@ -171,7 +171,7 @@ namespace Engine {
 
     void Device::createSurface()
     {
-        window.createWindowSurface(instance, &surface_);
+        window.createWindowSurface(instance, &surface);
     }
 
     void Device::pickPhysicalDevice()
@@ -234,7 +234,7 @@ namespace Engine {
 
             if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
                 VkBool32 presentSupport = VK_FALSE;
-                vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, i, surface_, &presentSupport);
+                vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, i, surface, &presentSupport);
 
                 if (presentSupport) {
                     indices.graphicsFamily = i;
@@ -259,7 +259,7 @@ namespace Engine {
 
             if (!indices.presentFamilyHasValue) {
                 VkBool32 presentSupport = VK_FALSE;
-                vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, i, surface_, &presentSupport);
+                vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, i, surface, &presentSupport);
                 if (presentSupport) {
                     indices.presentFamily = i;
                     indices.presentFamilyHasValue = true;
@@ -295,23 +295,23 @@ namespace Engine {
     {
         SwapChainSupportDetails details;
 
-        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface_, &details.capabilities);
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &details.capabilities);
 
         uint32_t formatCount;
-        vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface_, &formatCount, nullptr);
+        vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, nullptr);
 
         if (formatCount != 0) {
             details.formats.resize(formatCount);
-            vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface_, &formatCount, details.formats.data());
+            vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, details.formats.data());
         }
 
         uint32_t presentModeCount;
-        vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface_, &presentModeCount, nullptr);
+        vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModeCount, nullptr);
 
         if (presentModeCount != 0) {
             details.presentModes.resize(presentModeCount);
             vkGetPhysicalDeviceSurfacePresentModesKHR(
-                physicalDevice, surface_, &presentModeCount, details.presentModes.data());
+                physicalDevice, surface, &presentModeCount, details.presentModes.data());
         }
 
         return details;
@@ -379,8 +379,8 @@ namespace Engine {
             throw std::runtime_error("Device: failed to create device");
         }
 
-        vkGetDeviceQueue(device, indices.graphicsFamily, 0, &graphicsQueue_);
-        vkGetDeviceQueue(device, indices.presentFamily, 0, &presentQueue_);
+        vkGetDeviceQueue(device, indices.graphicsFamily, 0, &graphicsQueue);
+        vkGetDeviceQueue(device, indices.presentFamily, 0, &presentQueue);
     }
 
     void Device::createCommandPool()
@@ -467,7 +467,7 @@ namespace Engine {
         VkFenceCreateInfo fenceInfo {.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
         vkCreateFence(device, &fenceInfo, nullptr, &fence);
 
-        vkQueueSubmit(graphicsQueue_, 1, &submitInfo, fence);
+        vkQueueSubmit(graphicsQueue, 1, &submitInfo, fence);
 
         vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
         vkDestroyFence(device, fence, nullptr);

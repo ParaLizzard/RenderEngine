@@ -13,10 +13,10 @@ namespace Engine {
         device(device), renderer(renderer), megaBuffer(megaBuffer), resourceHeap(resourceHeap), renderGraph(renderGraph)
     {
         globalPool = DescriptorPool::Builder(device)
-                         .setMaxSets(Renderer::MAX_FRAMES_IN_FLIGHT)
-                         .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, Renderer::MAX_FRAMES_IN_FLIGHT * 8)
-                         .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, Renderer::MAX_FRAMES_IN_FLIGHT * 3)
-                         .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, Renderer::MAX_FRAMES_IN_FLIGHT)
+                         .setMaxSets(Config::MAX_FRAMES_IN_FLIGHT)
+                         .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, Config::MAX_FRAMES_IN_FLIGHT * 8)
+                         .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, Config::MAX_FRAMES_IN_FLIGHT * 3)
+                         .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, Config::MAX_FRAMES_IN_FLIGHT)
                          .build();
 
         globalSetLayout = DescriptorSetLayout::Builder(device)
@@ -72,22 +72,21 @@ namespace Engine {
             throw std::runtime_error("MaterialPassNode: Failed to create nearest texture sampler");
         }
 
-        const uint32_t MAX_SCENE_OBJECTS = 100000;
         VkExtent2D extent = renderer.getSwapChain().getSwapChainExtent();
         lastWidth = extent.width;
         lastHeight = extent.height;
         uint32_t initialPixelCount = lastWidth * lastHeight;
 
-        meshBuffers.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
-        worldPositionBuffers.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
-        packedNormalBuffers.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
-        packedRadianceBuffers.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
+        meshBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        worldPositionBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        packedNormalBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        packedRadianceBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
 
-        for (size_t i = 0; i < Renderer::MAX_FRAMES_IN_FLIGHT; i++) {
+        for (size_t i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
             meshBuffers[i] =
                 std::make_unique<Buffer>(device,
                                          sizeof(GPUMeshInfo),
-                                         MAX_SCENE_OBJECTS,
+                                         Config::MAX_SCENE_OBJECTS,
                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                          VMA_MEMORY_USAGE_CPU_TO_GPU,
                                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -118,9 +117,9 @@ namespace Engine {
                                                                 0);
         }
 
-        descriptorSets.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
+        descriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
 
-        for (size_t i = 0; i < Renderer::MAX_FRAMES_IN_FLIGHT; i++) {
+        for (size_t i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
             if (!globalPool->allocateDescriptor(globalSetLayout->getDescriptorSetLayout(), descriptorSets[i])) {
                 throw std::runtime_error("MaterialPassNode: Failed to allocate descriptor sets!");
             }
@@ -187,7 +186,7 @@ namespace Engine {
             lastHeight = extent.height;
             uint32_t pixelCount = lastWidth * lastHeight;
 
-            for (size_t i = 0; i < Renderer::MAX_FRAMES_IN_FLIGHT; i++) {
+            for (size_t i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
                 worldPositionBuffers[i] = std::make_unique<Buffer>(device,
                                                                    sizeof(WorldData),
                                                                    pixelCount,
@@ -232,7 +231,7 @@ namespace Engine {
                 cachedMeshInfos.push_back(info);
             }
             meshInfoDirty = false;
-            framesToUpdate = Renderer::MAX_FRAMES_IN_FLIGHT;
+            framesToUpdate = Config::MAX_FRAMES_IN_FLIGHT;
         }
 
         if (framesToUpdate > 0 && !cachedMeshInfos.empty()) {
@@ -276,7 +275,7 @@ namespace Engine {
             lastHeight = extent.height;
             uint32_t pixelCount = lastWidth * lastHeight;
 
-            for (size_t i = 0; i < Renderer::MAX_FRAMES_IN_FLIGHT; i++) {
+            for (size_t i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
                 worldPositionBuffers[i] = std::make_unique<Buffer>(device,
                                                                    sizeof(WorldData),
                                                                    pixelCount,

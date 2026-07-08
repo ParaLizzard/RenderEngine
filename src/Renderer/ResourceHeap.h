@@ -10,6 +10,7 @@
 #include "Core/Device.h"
 
 #include "Core/Buffer.h"
+#include "Core/EngineConfig.h"
 #include "Renderer.h"
 
 
@@ -91,7 +92,7 @@ namespace Engine {
 
         void markMaterialsDirty()
         {
-            materialFramesToUpdate = Renderer::MAX_FRAMES_IN_FLIGHT; /* Renderer::MAX_FRAMES_IN_FLIGHT */
+            materialFramesToUpdate = Config::MAX_FRAMES_IN_FLIGHT;
         }
         void update(uint32_t currentFrame);
         void writeSceneUboDescriptor(VkDescriptorBufferInfo bufInfo, uint32_t frameIdx);

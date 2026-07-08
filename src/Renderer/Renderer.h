@@ -19,7 +19,7 @@ namespace Engine {
     class Renderer
     {
     public:
-        static constexpr size_t MAX_FRAMES_IN_FLIGHT = 3;
+        //static constexpr size_t MAX_FRAMES_IN_FLIGHT = 3;
         Renderer(Window &window, Device &device);
         ~Renderer();
 

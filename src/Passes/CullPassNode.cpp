@@ -1,5 +1,7 @@
 #include "CullPassNode.h"
 #include <array>
+
+#include "Core/EngineConfig.h"
 #include "Renderer/RenderGraph.h"
 #include "Renderer/Renderer.h"
 #include "Renderer/ShaderUtils.h"
@@ -8,7 +10,7 @@ namespace Engine {
     CullPassNode::CullPassNode(Device &device, Renderer &renderer, Model &megaBuffer):
         device(device), megaBuffer(megaBuffer), renderer(renderer)
     {
-        objectDescriptorSets.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
+        objectDescriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
 
         std::array<VkDescriptorSetLayoutBinding, 4> ssboBindings {};
         ssboBindings[0].binding = 0;
@@ -39,35 +41,33 @@ namespace Engine {
 
         std::array<VkDescriptorPoolSize, 1> poolSizes {};
         poolSizes[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        poolSizes[0].descriptorCount = Renderer::MAX_FRAMES_IN_FLIGHT * 4;
+        poolSizes[0].descriptorCount = Config::MAX_FRAMES_IN_FLIGHT * 4;
 
         VkDescriptorPoolCreateInfo poolInfo {};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
         poolInfo.pPoolSizes = poolSizes.data();
-        poolInfo.maxSets = Renderer::MAX_FRAMES_IN_FLIGHT;
+        poolInfo.maxSets = Config::MAX_FRAMES_IN_FLIGHT;
         vkCreateDescriptorPool(device.getDevice(), &poolInfo, nullptr, &objectDescriptorPool);
 
-        const uint32_t MAX_SCENE_OBJECTS = 100000;
+        cpuObjectSSBOs.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        cpuIndirectCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        gpuObjectSSBOs.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        gpuIndirectCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        gpuCompactedIndirectCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        gpuDrawCountBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
 
-        cpuObjectSSBOs.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
-        cpuIndirectCommandBuffers.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
-        gpuObjectSSBOs.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
-        gpuIndirectCommandBuffers.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
-        gpuCompactedIndirectCommandBuffers.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
-        gpuDrawCountBuffers.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
-
-        for (uint32_t i = 0; i < Renderer::MAX_FRAMES_IN_FLIGHT; i++) {
+        for (uint32_t i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
             cpuObjectSSBOs[i] = std::make_unique<Buffer>(device,
                                                          sizeof(ObjectData),
-                                                         MAX_SCENE_OBJECTS,
+                                                         Config::MAX_SCENE_OBJECTS,
                                                          VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                                                          VMA_MEMORY_USAGE_CPU_TO_GPU,
                                                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
                                                          0);
             cpuIndirectCommandBuffers[i] = std::make_unique<Buffer>(device,
                                                                     sizeof(VkDrawIndexedIndirectCommand),
-                                                                    MAX_SCENE_OBJECTS,
+                                                                    Config::MAX_SCENE_OBJECTS,
                                                                     VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                                                                     VMA_MEMORY_USAGE_CPU_TO_GPU,
                                                                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
@@ -75,7 +75,7 @@ namespace Engine {
             gpuObjectSSBOs[i] =
                 std::make_unique<Buffer>(device,
                                          sizeof(ObjectData),
-                                         MAX_SCENE_OBJECTS,
+                                         Config::MAX_SCENE_OBJECTS,
                                          VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                          VMA_MEMORY_USAGE_GPU_ONLY,
                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -83,7 +83,7 @@ namespace Engine {
             gpuIndirectCommandBuffers[i] =
                 std::make_unique<Buffer>(device,
                                          sizeof(VkDrawIndexedIndirectCommand),
-                                         MAX_SCENE_OBJECTS,
+                                         Config::MAX_SCENE_OBJECTS,
                                          VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                          VMA_MEMORY_USAGE_GPU_ONLY,
                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -92,7 +92,7 @@ namespace Engine {
             gpuCompactedIndirectCommandBuffers[i] =
                 std::make_unique<Buffer>(device,
                                          sizeof(VkDrawIndexedIndirectCommand),
-                                         MAX_SCENE_OBJECTS,
+                                         Config::MAX_SCENE_OBJECTS,
                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
                                          VMA_MEMORY_USAGE_GPU_ONLY,
                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -218,9 +218,7 @@ namespace Engine {
     {
         glm::mat4 projection = frameInfo.camera->getProjection();
         glm::mat4 view = frameInfo.camera->getView();
-        glm::mat4 clipMatrix = glm::mat4(1.0f);
-        // clipMatrix[1][1] = -1.0f;
-        glm::mat4 viewProjection = clipMatrix * projection * view;
+        glm::mat4 viewProjection = projection * view;
 
         uint32_t currentFrame = renderer.getFrameIndex();
         if (sceneDirty) {
@@ -254,7 +252,7 @@ namespace Engine {
                 indirectCommandsArray.push_back(cmdCommand);
             }
 
-            framesToUpdate = Renderer::MAX_FRAMES_IN_FLIGHT;
+            framesToUpdate = Config::MAX_FRAMES_IN_FLIGHT;
             sceneDirty = false;
         }
 

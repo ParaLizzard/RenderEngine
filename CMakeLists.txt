@@ -145,6 +145,8 @@ set(CORE_SOURCES
         src/Core/JobSystem.h
         src/Core/Descriptor.cpp
         src/Core/Descriptor.h
+        src/Core/EngineConfig.h
+        src/Core/VkUtils.h
 )
 
 set(RENDERER_SOURCES

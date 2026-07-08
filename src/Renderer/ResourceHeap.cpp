@@ -21,16 +21,16 @@ namespace Engine {
 
         std::array<VkDescriptorPoolSize, 3> poolSizes {};
         poolSizes[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        poolSizes[0].descriptorCount = 1 * Renderer::MAX_FRAMES_IN_FLIGHT;
+        poolSizes[0].descriptorCount = 1 * Config::MAX_FRAMES_IN_FLIGHT;
         poolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        poolSizes[1].descriptorCount = 1 * Renderer::MAX_FRAMES_IN_FLIGHT;
+        poolSizes[1].descriptorCount = 1 * Config::MAX_FRAMES_IN_FLIGHT;
         poolSizes[2].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        poolSizes[2].descriptorCount = (maxDescriptors + 3) * Renderer::MAX_FRAMES_IN_FLIGHT;
+        poolSizes[2].descriptorCount = (maxDescriptors + 3) * Config::MAX_FRAMES_IN_FLIGHT;
 
         VkDescriptorPoolCreateInfo poolInfo {};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
-        poolInfo.maxSets = Renderer::MAX_FRAMES_IN_FLIGHT;
+        poolInfo.maxSets = Config::MAX_FRAMES_IN_FLIGHT;
         poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
         poolInfo.pPoolSizes = poolSizes.data();
 
@@ -103,21 +103,21 @@ namespace Engine {
             throw std::runtime_error("ResourceHeap: Failed to create bindless set layout");
         }
 
-        std::vector<uint32_t> variableCounts(Renderer::MAX_FRAMES_IN_FLIGHT, maxDescriptors);
+        std::vector<uint32_t> variableCounts(Config::MAX_FRAMES_IN_FLIGHT, maxDescriptors);
         VkDescriptorSetVariableDescriptorCountAllocateInfo variableCountInfo {};
         variableCountInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO;
-        variableCountInfo.descriptorSetCount = Renderer::MAX_FRAMES_IN_FLIGHT;
+        variableCountInfo.descriptorSetCount = Config::MAX_FRAMES_IN_FLIGHT;
         variableCountInfo.pDescriptorCounts = variableCounts.data();
 
         VkDescriptorSetAllocateInfo allocInfo {};
         allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         allocInfo.pNext = &variableCountInfo;
         allocInfo.descriptorPool = globalDescriptorPool;
-        allocInfo.descriptorSetCount = Renderer::MAX_FRAMES_IN_FLIGHT;
-        std::vector<VkDescriptorSetLayout> layouts(Renderer::MAX_FRAMES_IN_FLIGHT, globalDescriptorSetLayout);
+        allocInfo.descriptorSetCount = Config::MAX_FRAMES_IN_FLIGHT;
+        std::vector<VkDescriptorSetLayout> layouts(Config::MAX_FRAMES_IN_FLIGHT, globalDescriptorSetLayout);
         allocInfo.pSetLayouts = layouts.data();
 
-        globalDescriptorSets.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
+        globalDescriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
         if (vkAllocateDescriptorSets(device.getDevice(), &allocInfo, globalDescriptorSets.data()) != VK_SUCCESS) {
             throw std::runtime_error("ResourceHeap: failed to allocate descriptor sets!");
         }
@@ -215,9 +215,9 @@ namespace Engine {
             return;
 
         std::vector<VkWriteDescriptorSet> writes;
-        writes.reserve(pendingWrites.size() * Renderer::MAX_FRAMES_IN_FLIGHT);
+        writes.reserve(pendingWrites.size() * Config::MAX_FRAMES_IN_FLIGHT);
 
-        for (uint32_t f = 0; f < Renderer::MAX_FRAMES_IN_FLIGHT; ++f) {
+        for (uint32_t f = 0; f < Config::MAX_FRAMES_IN_FLIGHT; ++f) {
             for (const auto &pending: pendingWrites) {
                 VkWriteDescriptorSet write {};
                 write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -262,8 +262,8 @@ namespace Engine {
 
         VkDeviceSize bufferSize = sizeof(MaterialData) * materials.size();
 
-        if (materialBuffers.size() < Renderer::MAX_FRAMES_IN_FLIGHT) {
-            materialBuffers.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
+        if (materialBuffers.size() < Config::MAX_FRAMES_IN_FLIGHT) {
+            materialBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
         }
 
         if (!materialBuffers[currentFrame] || materialBuffers[currentFrame]->getBufferSize() < bufferSize) {
@@ -299,10 +299,10 @@ namespace Engine {
 
     void ResourceHeap::writeMaterialDescriptorAllFrames()
     {
-        std::vector<VkDescriptorBufferInfo> matBufInfos(Renderer::MAX_FRAMES_IN_FLIGHT);
+        std::vector<VkDescriptorBufferInfo> matBufInfos(Config::MAX_FRAMES_IN_FLIGHT);
         std::vector<VkWriteDescriptorSet> writes;
 
-        for (size_t i = 0; i < Renderer::MAX_FRAMES_IN_FLIGHT; i++) {
+        for (size_t i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
             if (materialBuffers.size() <= i || !materialBuffers[i])
                 continue;
 
@@ -349,7 +349,7 @@ namespace Engine {
                                            VkDescriptorImageInfo brdfLutInfo)
     {
         std::vector<VkWriteDescriptorSet> writes;
-        for (size_t i = 0; i < Renderer::MAX_FRAMES_IN_FLIGHT; i++) {
+        for (size_t i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
             VkWriteDescriptorSet w0 {};
             w0.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             w0.dstSet = globalDescriptorSets[i];

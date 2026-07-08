@@ -1,5 +1,7 @@
 #include "Renderer.h"
 
+#include "Core/EngineConfig.h"
+
 namespace Engine {
     Renderer::Renderer(Window &window, Device &device): window(window), device(device)
     {
@@ -12,7 +14,7 @@ namespace Engine {
     {
         vkDeviceWaitIdle(device.getDevice());
 
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        for (size_t i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
             vkDestroyCommandPool(device.getDevice(), frames[i].commandPool, nullptr);
             vkDestroySemaphore(device.getDevice(), frames[i].imageAvailableSemaphore, nullptr);
             vkDestroySemaphore(device.getDevice(), frames[i].renderFinishedSemaphore, nullptr);
@@ -93,7 +95,7 @@ namespace Engine {
 
         isFrameStarted = false;
 
-        currentFrameIndex = (currentFrameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
+        currentFrameIndex = (currentFrameIndex + 1) % Config::MAX_FRAMES_IN_FLIGHT;
     }
 
     VkCommandBuffer Renderer::getCurrentCommandBuffer()
@@ -108,8 +110,8 @@ namespace Engine {
 
     void Renderer::createFrameData()
     {
-        frames.resize(MAX_FRAMES_IN_FLIGHT);
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        frames.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        for (size_t i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
             VkCommandPoolCreateInfo poolInfo = {};
             poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
             poolInfo.queueFamilyIndex = device.getGraphicsFamilyIndex();

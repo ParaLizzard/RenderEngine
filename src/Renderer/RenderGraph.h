@@ -111,7 +111,7 @@ namespace Engine {
         void updateImageHandle(const std::string &name, VkImage image, VkImageView view, VkExtent2D extent);
         void updateBufferHandle(const std::string &name, VkBuffer buffer, VkDeviceSize size);
 
-        bool isDepthFormat(VkFormat format);
+
         VkImageView getImageView(const std::string &name) const;
         VkImage getImage(const std::string &name) const;
         VkDescriptorBufferInfo getBufferInfo(const std::string &name, int32_t currentFrame);

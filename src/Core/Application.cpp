@@ -9,6 +9,7 @@
 #include "Passes/MaterialPassNode.h"
 #include "Passes/SsaoPassNode.h"
 #include "Passes/VisibilityPassNode.h"
+#include "Core/EngineConfig.h"
 
 
 namespace Engine {
@@ -184,13 +185,13 @@ namespace Engine {
 
         resourceHeap.writeIBLDescriptors(irradianceInfo, prefilterInfo, brdfLutInfo);
 
-        for (int i = 0; i < Renderer::MAX_FRAMES_IN_FLIGHT; i++) {
+        for (int i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
             resourceHeap.uploadMaterialBuffer(i);
         }
         resourceHeap.writeMaterialDescriptorAllFrames();
 
-        std::vector<std::unique_ptr<Buffer>> sceneUboBuffers(Renderer::MAX_FRAMES_IN_FLIGHT);
-        for (int i = 0; i < Renderer::MAX_FRAMES_IN_FLIGHT; i++) {
+        std::vector<std::unique_ptr<Buffer>> sceneUboBuffers(Config::MAX_FRAMES_IN_FLIGHT);
+        for (int i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
             sceneUboBuffers[i] = std::make_unique<Buffer>(device,
                                                           sizeof(SceneUbo),
                                                           1,
@@ -318,7 +319,7 @@ namespace Engine {
 
                 renderGraph.registerPhysicalBuffer("CullCompactedIndirectCommands",
                                                    cullPass.getCompactedIndirectBuffer(currentFrame),
-                                                   100000 * sizeof(VkDrawIndexedIndirectCommand),
+                                                   Config::MAX_SCENE_OBJECTS * sizeof(VkDrawIndexedIndirectCommand),
                                                    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                                                    VK_ACCESS_2_SHADER_WRITE_BIT);
 
@@ -329,7 +330,7 @@ namespace Engine {
                                                    VK_ACCESS_2_SHADER_WRITE_BIT);
                 renderGraph.registerPhysicalBuffer("CullObjectData",
                                                    cullPass.getGpuObjectBuffer(currentFrame),
-                                                   100000 * sizeof(ObjectData),
+                                                   Config::MAX_SCENE_OBJECTS * sizeof(ObjectData),
                                                    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                                                    VK_ACCESS_2_SHADER_WRITE_BIT);
 
@@ -385,9 +386,9 @@ namespace Engine {
                                            resourceHeap.getMaterialBufferSize());
             renderGraph.updateBufferHandle("CullCompactedIndirectCommands",
                                            cullPass.getCompactedIndirectBuffer(currentFrame),
-                                           100000 * sizeof(VkDrawIndexedIndirectCommand));
+                                           Config::MAX_SCENE_OBJECTS * sizeof(VkDrawIndexedIndirectCommand));
             renderGraph.updateBufferHandle(
-                "CullObjectData", cullPass.getGpuObjectBuffer(currentFrame), 100000 * sizeof(ObjectData));
+                "CullObjectData", cullPass.getGpuObjectBuffer(currentFrame), Config::MAX_SCENE_OBJECTS * sizeof(ObjectData));
 
             renderGraph.updateBufferHandle(
                 "CullDrawCount", cullPass.getDrawCountBuffer(currentFrame), sizeof(uint32_t));

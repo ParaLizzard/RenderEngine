@@ -86,15 +86,15 @@ namespace Engine {
         }
         VkQueue getGraphicsQueue()
         {
-            return graphicsQueue_;
+            return graphicsQueue;
         }
         VkQueue getPresentQueue()
         {
-            return presentQueue_;
+            return presentQueue;
         }
         VkSurfaceKHR getSurface()
         {
-            return surface_;
+            return surface;
         }
         void transitionImageLayout(VkCommandBuffer commandBuffer,
                                    VkImage image,
@@ -114,9 +114,9 @@ namespace Engine {
         VkDebugUtilsMessengerEXT debugMessenger;
 
         QueueFamilyIndices indices;
-        VkSurfaceKHR surface_;
-        VkQueue graphicsQueue_;
-        VkQueue presentQueue_;
+        VkSurfaceKHR surface;
+        VkQueue graphicsQueue;
+        VkQueue presentQueue;
 
         VkPipelineCache pipelineCache = VK_NULL_HANDLE;
 
@@ -137,7 +137,6 @@ namespace Engine {
         void savePipelineCache();
 
         const std::vector<const char *> validationLayers = {"VK_LAYER_KHRONOS_validation"};
-        const std::vector<const char *> deviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-                                                            "VK_EXT_shader_demote_to_helper_invocation"};
+        const std::vector<const char *> deviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
     };
 } // namespace Engine

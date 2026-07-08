@@ -144,26 +144,26 @@ namespace Engine {
 
         VkDescriptorPoolSize poolSize {};
         poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        poolSize.descriptorCount = static_cast<uint32_t>(Engine::Renderer::MAX_FRAMES_IN_FLIGHT);
+        poolSize.descriptorCount = static_cast<uint32_t>(Config::MAX_FRAMES_IN_FLIGHT);
 
         VkDescriptorPoolCreateInfo poolInfo {};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         poolInfo.poolSizeCount = 1;
         poolInfo.pPoolSizes = &poolSize;
-        poolInfo.maxSets = static_cast<uint32_t>(Engine::Renderer::MAX_FRAMES_IN_FLIGHT);
+        poolInfo.maxSets = static_cast<uint32_t>(Config::MAX_FRAMES_IN_FLIGHT);
         ;
 
         if (vkCreateDescriptorPool(device.getDevice(), &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS)
             throw std::runtime_error("Fxaa: failed to create descriptor pool!");
 
-        std::vector<VkDescriptorSetLayout> layouts(Engine::Renderer::MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
+        std::vector<VkDescriptorSetLayout> layouts(Config::MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
         VkDescriptorSetAllocateInfo allocInfo {};
         allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         allocInfo.descriptorPool = descriptorPool;
-        allocInfo.descriptorSetCount = static_cast<uint32_t>(Engine::Renderer::MAX_FRAMES_IN_FLIGHT);
+        allocInfo.descriptorSetCount = static_cast<uint32_t>(Config::MAX_FRAMES_IN_FLIGHT);
         allocInfo.pSetLayouts = layouts.data();
 
-        descriptorSets.resize(Engine::Renderer::MAX_FRAMES_IN_FLIGHT);
+        descriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
         if (vkAllocateDescriptorSets(device.getDevice(), &allocInfo, descriptorSets.data()) != VK_SUCCESS)
             throw std::runtime_error("Fxaa: failed to allocate descriptor sets!");
 

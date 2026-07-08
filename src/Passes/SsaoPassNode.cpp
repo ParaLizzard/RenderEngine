@@ -13,9 +13,9 @@ namespace Engine {
         createNoiseTexture();
         createPipelines();
 
-        ssaoDescriptorSets.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
-        blurDescriptorSets.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
-        for (int i = 0; i < Renderer::MAX_FRAMES_IN_FLIGHT; i++) {
+        ssaoDescriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        blurDescriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        for (int i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
             if (!descriptorPool->allocateDescriptor(ssaoSetLayout->getDescriptorSetLayout(), ssaoDescriptorSets[i]))
                 throw std::runtime_error("SsaoPassNode: failed to allocate SSAO descriptor sets");
             if (!descriptorPool->allocateDescriptor(blurSetLayout->getDescriptorSetLayout(), blurDescriptorSets[i]))
@@ -341,10 +341,10 @@ namespace Engine {
         vkCreateSampler(device.getDevice(), &samplerInfo, nullptr, &colorSampler);
 
         descriptorPool = DescriptorPool::Builder(device)
-                             .setMaxSets(Renderer::MAX_FRAMES_IN_FLIGHT * 2)
-                             .addPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, Renderer::MAX_FRAMES_IN_FLIGHT)
-                             .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, Renderer::MAX_FRAMES_IN_FLIGHT * 4)
-                             .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, Renderer::MAX_FRAMES_IN_FLIGHT)
+                             .setMaxSets(Config::MAX_FRAMES_IN_FLIGHT * 2)
+                             .addPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, Config::MAX_FRAMES_IN_FLIGHT)
+                             .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, Config::MAX_FRAMES_IN_FLIGHT * 4)
+                             .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, Config::MAX_FRAMES_IN_FLIGHT)
                              .build();
 
         std::default_random_engine rndEngine((unsigned)time(nullptr));
@@ -359,7 +359,7 @@ namespace Engine {
             ssaoKernel[i] = glm::vec4(sample * scale, 0.0f);
         }
 
-        uboBuffers.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
+        uboBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
         for (int i = 0; i < uboBuffers.size(); i++) {
             uboBuffers[i] =
                 std::make_unique<Buffer>(device,
@@ -386,8 +386,8 @@ namespace Engine {
                                         VK_SHADER_STAGE_FRAGMENT_BIT) // SSAO Image
                             .build();
 
-        ssaoDescriptorSets.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
-        blurDescriptorSets.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
+        ssaoDescriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        blurDescriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
 
         VkPipelineLayoutCreateInfo pipelineLayoutInfo {};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
