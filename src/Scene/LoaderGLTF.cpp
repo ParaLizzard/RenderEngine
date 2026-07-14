@@ -1,4 +1,6 @@
-#include "LoaderGLTF.h"
+#include "Scene/LoaderGLTF.h"
+#include "Core/Device.h"
+#include "Core/JobSystem.h"
 #include <iostream>
 #include <stb_image.h>
 

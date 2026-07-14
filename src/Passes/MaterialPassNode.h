@@ -1,17 +1,24 @@
 #pragma once
-#include "Core/Descriptor.h"
 #include "Renderer/RenderPassNode.h"
-#include "Renderer/Renderer.h"
-#include "Renderer/ResourceHeap.h"
-
+#include "Core/Buffer.h"
+#include <memory>
+#include <vector>
 
 namespace Engine {
+    class Device;
+    class Renderer;
+    class Model;
+    class ResourceHeap;
+    class DescriptorPool;
+    class DescriptorSetLayout;
+    class Buffer;
+    struct FrameInfo;
     struct MaterialPushConstants
     {
         glm::mat4 viewProj;
         glm::mat4 view;
         glm::vec3 cameraPos;
-        glm::uint frameWidth;
+        glm::uint enableSSAO;
     };
 
     struct WorldData
@@ -57,6 +64,11 @@ namespace Engine {
             return worldPositionBuffers[frameIndex]->getBuffer();
         }
 
+        void markSceneDirty() override
+        {
+            meshInfoDirty = true;
+        }
+
     private:
         void createPipelineLayout();
         void createPipeline();
@@ -78,7 +90,6 @@ namespace Engine {
         VkSampler nearestSampler = VK_NULL_HANDLE;
 
         std::vector<std::unique_ptr<Buffer>> meshBuffers;
-        // std::vector<std::unique_ptr<Buffer>> compactMaterialBuffers;
         std::vector<std::unique_ptr<Buffer>> packedNormalBuffers;
         std::vector<std::unique_ptr<Buffer>> packedRadianceBuffers;
         std::vector<std::unique_ptr<Buffer>> worldPositionBuffers;
@@ -89,11 +100,5 @@ namespace Engine {
         std::vector<GPUMeshInfo> cachedMeshInfos;
         bool meshInfoDirty = true;
         int framesToUpdate = 0;
-
-    public:
-        void markSceneDirty()
-        {
-            meshInfoDirty = true;
-        }
     };
 } // namespace Engine

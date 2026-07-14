@@ -1,4 +1,6 @@
-#include "Model.h"
+#include "Scene/Model.h"
+#include "Core/Buffer.h"
+#include "Core/Device.h"
 
 namespace Engine {
     Model::Model(Device &device): device(device)

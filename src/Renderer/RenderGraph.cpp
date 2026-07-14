@@ -1,4 +1,6 @@
-#include "RenderGraph.h"
+#include "Renderer/RenderGraph.h"
+#include "Core/Device.h"
+#include "Core/VkUtils.h"
 
 namespace Engine {
     RenderGraph::RenderGraph(Device &device): device(device)
@@ -88,7 +90,7 @@ namespace Engine {
                 VkImage transientImage;
                 VmaAllocation allocation;
 
-                bool isDepth = isDepthFormat(decl.format);
+                bool isDepth = VkUtils::isDepthFormat(decl.format);
 
                 VkImageCreateInfo imageInfo {};
                 imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -112,7 +114,7 @@ namespace Engine {
                 imageViewInfo.format = decl.format;
                 imageViewInfo.pNext = nullptr;
                 imageViewInfo.subresourceRange.aspectMask =
-                    isDepthFormat(decl.format) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+                    VkUtils::isDepthFormat(decl.format) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
                 imageViewInfo.subresourceRange.levelCount = 1;
                 imageViewInfo.subresourceRange.layerCount = 1;
 
@@ -169,26 +171,18 @@ namespace Engine {
                 const bool accessChanged = g.lastAccessMask != decl.accessMask || g.lastStageMask != decl.stageMask;
 
                 if (layoutChanged || accessChanged) {
-                    VkImageMemoryBarrier2 barrier {};
-                    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-                    barrier.image = g.image;
-                    barrier.oldLayout = g.layout;
-                    barrier.newLayout = decl.imageLayout;
-                    barrier.srcStageMask = g.lastStageMask;
-                    barrier.srcAccessMask = g.lastAccessMask;
-                    barrier.dstStageMask = decl.stageMask;
-                    barrier.dstAccessMask = decl.accessMask;
-                    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-
                     VkImageSubresourceRange range {};
                     range.aspectMask =
-                        isDepthFormat(g.imageFormat) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+                        VkUtils::isDepthFormat(g.imageFormat) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
                     range.baseMipLevel = 0;
                     range.levelCount = g.mipLevels;
                     range.baseArrayLayer = 0;
                     range.layerCount = g.arrayLayers;
-                    barrier.subresourceRange = range;
+
+                    VkImageMemoryBarrier2 barrier = VkUtils::imageBarrier(
+                        g.image, g.layout, decl.imageLayout,
+                        g.lastStageMask, g.lastAccessMask,
+                        decl.stageMask, decl.accessMask, range);
 
                     imageBarriers.push_back(barrier);
                 }
@@ -204,17 +198,10 @@ namespace Engine {
                 const bool accessChanged = g.lastAccessMask != decl.accessMask || g.lastStageMask != decl.stageMask;
 
                 if (accessChanged) {
-                    VkBufferMemoryBarrier2 barrier {};
-                    barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
-                    barrier.buffer = g.buffer;
-                    barrier.offset = 0;
-                    barrier.size = VK_WHOLE_SIZE;
-                    barrier.srcStageMask = g.lastStageMask;
-                    barrier.srcAccessMask = g.lastAccessMask;
-                    barrier.dstStageMask = decl.stageMask;
-                    barrier.dstAccessMask = decl.accessMask;
-                    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    VkBufferMemoryBarrier2 barrier = VkUtils::bufferBarrier(
+                        g.buffer, 0, VK_WHOLE_SIZE,
+                        g.lastStageMask, g.lastAccessMask,
+                        decl.stageMask, decl.accessMask);
 
                     bufferBarriers.push_back(barrier);
                 }
@@ -245,6 +232,13 @@ namespace Engine {
         bufferRegistry.clear();
     }
 
+    void RenderGraph::markSceneDirty()
+    {
+        for (auto pass:registeredPasses) {
+            pass.passNode->markSceneDirty();
+        }
+    }
+
     void RenderGraph::transitionToPresent(VkCommandBuffer cmdBuffer, const std::string &imageName)
     {
         auto it = imageRegistry.find(imageName);
@@ -255,23 +249,17 @@ namespace Engine {
         if (g.layout == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR)
             return;
 
-        VkImageMemoryBarrier2 barrier {};
-        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-        barrier.image = g.image;
-        barrier.oldLayout = g.layout;
-        barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-        barrier.srcStageMask = g.lastStageMask;
-        barrier.srcAccessMask = g.lastAccessMask;
-        barrier.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_2_NONE;
-        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        VkImageSubresourceRange range {};
+        range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        range.baseMipLevel = 0;
+        range.levelCount = g.mipLevels;
+        range.baseArrayLayer = 0;
+        range.layerCount = g.arrayLayers;
 
-        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        barrier.subresourceRange.baseMipLevel = 0;
-        barrier.subresourceRange.levelCount = g.mipLevels;
-        barrier.subresourceRange.baseArrayLayer = 0;
-        barrier.subresourceRange.layerCount = g.arrayLayers;
+        VkImageMemoryBarrier2 barrier = VkUtils::imageBarrier(
+            g.image, g.layout, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            g.lastStageMask, g.lastAccessMask,
+            VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, VK_ACCESS_2_NONE, range);
 
         VkDependencyInfo dep {};
         dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -285,10 +273,7 @@ namespace Engine {
         g.lastAccessMask = VK_ACCESS_2_NONE;
     }
 
-    bool RenderGraph::isDepthFormat(VkFormat format)
-    {
 
-    }
 
     VkImageView RenderGraph::getImageView(const std::string &name) const
     {

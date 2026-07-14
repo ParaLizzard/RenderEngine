@@ -43,6 +43,15 @@ vec3 reconstructViewPos(vec2 uv, float depth)
     return viewPos.xyz / viewPos.w;
 }
 
+vec3 decodeOctNormal(uint packedNormal) {
+    vec2 f = vec2(packedNormal & 0xFFu, (packedNormal >> 8u) & 0xFFu) / 255.0 * 2.0 - 1.0;
+    vec3 n = vec3(f.x, f.y, 1.0 - abs(f.x) - abs(f.y));
+    float t = max(-n.z, 0.0);
+    n.x += n.x >= 0.0 ? -t : t;
+    n.y += n.y >= 0.0 ? -t : t;
+    return normalize(n);
+}
+
 void main()
 {
     // 1. Reconstruct the View-Space position
@@ -55,9 +64,8 @@ void main()
 
     uint packedNormal = packedNormals[pixelIndex];
 
-    // Decode normal (Assuming standard RGBA8 packing. Change this if you use Octahedron decoding!)
-    vec4 unpacked = unpackUnorm4x8(packedNormal);
-    vec3 worldNormal = normalize(unpacked.xyz * 2.0 - 1.0);
+    // Decode normal
+    vec3 worldNormal = decodeOctNormal(packedNormal);
 
     // Transform World Space normal to View Space to match fragPos
     vec3 normal = mat3(ubo.view) * worldNormal;
@@ -66,7 +74,8 @@ void main()
     // 3. Get the random vector
     //ivec2 texDim = textureSize(samplerDepth, 0);
     ivec2 noiseDim = textureSize(ssaoNoise, 0);
-    vec2 noiseScale = vec2(float(texDim.x)/float(noiseDim.x), float(texDim.y)/float(noiseDim.y));
+    vec2 targetDim = vec2(texDim.x / 2.0, texDim.y / 2.0);
+    vec2 noiseScale = targetDim / vec2(noiseDim);
     vec3 randomVec = texture(ssaoNoise, inUV * noiseScale).xyz;
 
     // 4. Build TBN Matrix (Now safely entirely in View Space!)

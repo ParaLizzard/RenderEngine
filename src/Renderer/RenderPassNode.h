@@ -15,5 +15,7 @@ namespace Engine {
         virtual void resolve(RenderGraph &graph, const FrameInfo &frameInfo)
         {}
         virtual void execute(VkCommandBuffer &cmd, FrameInfo &frameInfo) = 0;
+
+        virtual void markSceneDirty(){}
     };
 } // namespace Engine

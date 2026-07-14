@@ -4,6 +4,9 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/glm.hpp>
 #include "glm/gtc/quaternion.hpp"
+#include <vector>
+#include <string>
+#include <limits>
 
 namespace Engine {
     struct TransformComponent

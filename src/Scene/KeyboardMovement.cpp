@@ -1,5 +1,7 @@
 
 #include "KeyboardMovement.h"
+#include "Core/Device.h"
+#include <memory>
 
 namespace Engine {
     void KeyboardMovementController::moveInPlaneXZ(GLFWwindow *window, float dt, std::shared_ptr<GameObject> gameObject)

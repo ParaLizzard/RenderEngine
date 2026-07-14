@@ -123,7 +123,7 @@ layout(push_constant) uniform PushConstants {
     mat4 viewProj;
     mat4 view;
     vec3 cameraPos;
-    uint frameWidth;
+    uint enableSSAO;
 } pc;
 
 uint encodeOctNormal(vec3 n) {
@@ -313,8 +313,11 @@ void main() {
     vec2 envBRDF = texture(brdfLUT, vec2(NdotV, roughness)).rg;
     vec3 specular_ambient = prefilteredColor * (F_ambient * envBRDF.x + envBRDF.y);
 
-    vec2 uv = vec2(pixel) / vec2(pc.frameWidth, texSize.y);
-    float ssao = texture(ssaoBlurTex, uv).r;
+    vec2 uv = (vec2(pixel) + 0.5) / vec2(texSize);
+    float ssao = 1.0;
+    if (pc.enableSSAO == 1u) {
+        ssao = texture(ssaoBlurTex, uv).r;
+    }
     vec3 ambientLight = (kD_ambient * diffuse_ambient + specular_ambient) * ssao;
 
     vec3 finalRadiance = directLight + ambientLight;

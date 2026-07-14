@@ -1,4 +1,5 @@
-#include "GameObject.h"
+#include "Scene/GameObject.h"
+#include <algorithm>
 
 namespace Engine {
     static GameObject::id_t currentId = 0;

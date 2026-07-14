@@ -5,11 +5,15 @@
 #include <glm/fwd.hpp>
 #include <glm/gtx/transform.hpp>
 
-#include "GameObject.h"
-#include "LoaderGLTF.h"
-#include "Texture.h"
+#include <vulkan/vulkan.h>
+#include "vma/vk_mem_alloc.h"
 
 namespace Engine {
+    class GameObject;
+    class TextureCubeMap;
+    class ResourceHeap;
+    class Model;
+    class Device;
     struct TextureData
     {
         VkImage image;
@@ -28,7 +32,7 @@ namespace Engine {
             GameObject &cube);
         ~IBL();
 
-        IBL(const IBL &) = delete;
+        IBL(const IBL &) = default;
         IBL &operator=(const IBL &) = delete;
 
         TextureData BRDFLUT;

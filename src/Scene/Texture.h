@@ -7,11 +7,12 @@
 #include <vulkan/vulkan.h>
 #include <filesystem>
 #include <ktxvulkan.h>
-#include "Core/Buffer.h"
-#include "Core/Device.h"
+#include "vma/vk_mem_alloc.h"
 #include "Renderer/ResourceHeap.h"
+#include <string>
 
 namespace Engine {
+    class Device;
     class Texture
     {
     public:

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Device.h"
+#include <vulkan/vulkan.h>
 
 // std
 #include <memory>
@@ -8,6 +8,7 @@
 #include <vector>
 
 namespace Engine {
+    class Device;
 
     class DescriptorSetLayout
     {

@@ -1,10 +1,13 @@
 #include "SsaoPassNode.h"
+#include "Core/EngineConfig.h"
+#include "Core/Buffer.h"
 
 #include <array>
 #include <random>
 
 #include "Renderer/Renderer.h"
 #include "Renderer/ShaderUtils.h"
+#include "Core/VkUtils.h"
 
 namespace Engine {
     SsaoPassNode::SsaoPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap):
@@ -151,20 +154,12 @@ namespace Engine {
         vkCmdDraw(cmd, 3, 1, 0, 0);
         vkCmdEndRendering(cmd);
 
-        VkImageMemoryBarrier2 barrier {};
-        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-        barrier.image = frameInfo.renderGraph->getImage("SsaoImage");
-        barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        barrier.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-        barrier.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-        barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-        barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        barrier.subresourceRange.baseMipLevel = 0;
-        barrier.subresourceRange.levelCount = 1;
-        barrier.subresourceRange.baseArrayLayer = 0;
-        barrier.subresourceRange.layerCount = 1;
+        VkImageMemoryBarrier2 barrier = VkUtils::imageBarrier(
+            frameInfo.renderGraph->getImage("SsaoImage"),
+            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT,
+            {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1});
 
         VkDependencyInfo depInfo {};
         depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -203,16 +198,12 @@ namespace Engine {
 
         vkCmdEndRendering(cmd);
 
-        VkImageMemoryBarrier2 restoreBarrier {};
-        restoreBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-        restoreBarrier.srcStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-        restoreBarrier.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-        restoreBarrier.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-        restoreBarrier.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-        restoreBarrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        restoreBarrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        restoreBarrier.image = frameInfo.renderGraph->getImage("SsaoImage");
-        restoreBarrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        VkImageMemoryBarrier2 restoreBarrier = VkUtils::imageBarrier(
+            frameInfo.renderGraph->getImage("SsaoImage"),
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+            {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1});
 
         VkDependencyInfo restoreDepInfo {};
         restoreDepInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;

@@ -1,6 +1,6 @@
 
 
-#include "VisibilityPassNode.h"
+#include "Passes/VisibilityPassNode.h"
 #include "Renderer/RenderGraph.h"
 #include "Renderer/ShaderUtils.h"
 

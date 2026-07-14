@@ -1,14 +1,17 @@
 #pragma once
 
+#include <vulkan/vulkan.h>
+#include <vector>
 #include "Scene/Camera.h"
 #include "Scene/GameObject.h"
-
 
 namespace Engine {
     class JobSystem;
     class RenderGraph;
     class ResourceHeap;
     class Renderer;
+    class Device;
+    class Model;
 
     struct FrameInfo
     {

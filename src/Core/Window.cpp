@@ -1,5 +1,6 @@
-#include "Window.h"
-
+#include "Core/Window.h"
+#include "WindowInterface.h"
+#include "WindowWin32.h"
 
 namespace Engine {
     Window::Window(int width, int height, std::string title): width(width), height(height), title(title)
@@ -29,6 +30,8 @@ namespace Engine {
 
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
         glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+
+        //window = WindowWin32::createWindow(110,100,"gfdg");
 
         window = glfwCreateWindow(width, height, title.c_str(), nullptr, nullptr);
         if (!window) {

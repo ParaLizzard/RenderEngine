@@ -2,49 +2,58 @@
 
 #include <array>
 
+#include "Core/Buffer.h"
 #include "Core/Descriptor.h"
+#include "Core/Device.h"
 #include "Renderer/RenderGraph.h"
+#include "Renderer/Renderer.h"
 #include "Renderer/ResourceHeap.h"
 #include "Renderer/ShaderUtils.h"
+#include "Scene/Model.h"
 
 namespace Engine {
     MaterialPassNode::MaterialPassNode(
-        Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap, RenderGraph &renderGraph):
+        Device &device,
+        Renderer &renderer,
+        Model &megaBuffer,
+        ResourceHeap &resourceHeap,
+        RenderGraph &renderGraph):
         device(device), renderer(renderer), megaBuffer(megaBuffer), resourceHeap(resourceHeap), renderGraph(renderGraph)
     {
         globalPool = DescriptorPool::Builder(device)
-                         .setMaxSets(Config::MAX_FRAMES_IN_FLIGHT)
-                         .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, Config::MAX_FRAMES_IN_FLIGHT * 8)
-                         .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, Config::MAX_FRAMES_IN_FLIGHT * 3)
-                         .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, Config::MAX_FRAMES_IN_FLIGHT)
-                         .build();
+                     .setMaxSets(Config::MAX_FRAMES_IN_FLIGHT)
+                     .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, Config::MAX_FRAMES_IN_FLIGHT * 8)
+                     .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, Config::MAX_FRAMES_IN_FLIGHT * 3)
+                     .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, Config::MAX_FRAMES_IN_FLIGHT)
+                     .build();
 
         globalSetLayout = DescriptorSetLayout::Builder(device)
-                              // Vertex Position Buffer
-                              .addBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
-                              // Index Buffer
-                              .addBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
-                              // Object Metadata Lookup Buffer
-                              .addBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
-                              // VisBuffer Texture Input
-                              .addBinding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
-                              // Depth Texture Input
-                              .addBinding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
-                              // Compact Material Output Buffer
-                              .addBinding(5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
-                              // World Position Output Buffer
-                              .addBinding(6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
-                              // Vertex Attributes Buffer (UV, Normal, Tangent)
-                              .addBinding(7, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
-                              .addBinding(8, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
-                              // FinalRender Output Image
-                              .addBinding(9, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT)
-                              // SsaoBlurImage Input Texture (Previous frame)
-                              .addBinding(10, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
-                              .addBinding(11, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
-                              .build();
+                          // Vertex Position Buffer
+                          .addBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
+                          // Index Buffer
+                          .addBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
+                          // Object Metadata Lookup Buffer
+                          .addBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
+                          // VisBuffer Texture Input
+                          .addBinding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
+                          // Depth Texture Input
+                          .addBinding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
+                          // Packer Normals Buffer
+                          .addBinding(5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
+                          // World Position Output Buffer
+                          .addBinding(6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
+                          // Vertex Attributes Buffer (UV, Normal, Tangent)
+                          .addBinding(7, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
+                          .addBinding(8, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
+                          // FinalRender Output Image
+                          .addBinding(9, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT)
+                          // SsaoBlurImage Input Texture (Previous frame)
+                          .addBinding(10, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
+                          // Packed Radiances buffer
+                          .addBinding(11, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
+                          .build();
 
-        VkSamplerCreateInfo samplerInfo {};
+        VkSamplerCreateInfo samplerInfo{};
         samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
         samplerInfo.magFilter = VK_FILTER_LINEAR;
         samplerInfo.minFilter = VK_FILTER_LINEAR;
@@ -58,7 +67,7 @@ namespace Engine {
             throw std::runtime_error("MaterialPassNode: Failed to create texture sampler");
         }
 
-        VkSamplerCreateInfo nearestSamplerInfo {};
+        VkSamplerCreateInfo nearestSamplerInfo{};
         nearestSamplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
         nearestSamplerInfo.magFilter = VK_FILTER_NEAREST;
         nearestSamplerInfo.minFilter = VK_FILTER_NEAREST;
@@ -163,7 +172,9 @@ namespace Engine {
 
         renderGraph.writeBuffer("PackedNormals", VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
         renderGraph.writeBuffer(
-            "PackedRadiances", VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
+            "PackedRadiances",
+            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+            VK_ACCESS_2_SHADER_WRITE_BIT);
         renderGraph.writeBuffer("WorldPosition", VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
 
         renderGraph.createTransientImage("FinalRender",
@@ -181,40 +192,6 @@ namespace Engine {
         uint32_t currentFrame = renderer.getFrameIndex();
         VkExtent2D extent = renderer.getSwapChain().getSwapChainExtent();
 
-        if (extent.width != lastWidth || extent.height != lastHeight) {
-            lastWidth = extent.width;
-            lastHeight = extent.height;
-            uint32_t pixelCount = lastWidth * lastHeight;
-
-            for (size_t i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
-                worldPositionBuffers[i] = std::make_unique<Buffer>(device,
-                                                                   sizeof(WorldData),
-                                                                   pixelCount,
-                                                                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                                                   VMA_MEMORY_USAGE_GPU_ONLY,
-                                                                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                                                   0);
-
-                VkDescriptorImageInfo depthImageInfo {};
-                depthImageInfo.imageView = renderGraph.getImageView("DepthImage");
-                depthImageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-                depthImageInfo.sampler = sampler;
-
-                VkDescriptorImageInfo visBufferInfo {};
-                visBufferInfo.imageView = renderGraph.getImageView("VisBuffer");
-                visBufferInfo.imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
-                visBufferInfo.sampler = nearestSampler;
-
-                VkDescriptorBufferInfo vertexBufferInfo =
-                    megaBuffer.getPositionBuffer()->descriptorInfo(VK_WHOLE_SIZE, 0);
-                VkDescriptorBufferInfo indexBufferInfo = megaBuffer.getIndexBuffer()->descriptorInfo(VK_WHOLE_SIZE, 0);
-                VkDescriptorBufferInfo meshBufferInfo = meshBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
-                VkDescriptorBufferInfo positionBufferInfo = worldPositionBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
-                VkDescriptorBufferInfo attributeBufferInfo =
-                    megaBuffer.getAttributeBuffer()->descriptorInfo(VK_WHOLE_SIZE, 0);
-            }
-        }
-
         if (meshInfoDirty) {
             cachedMeshInfos.clear();
             cachedMeshInfos.reserve(frameInfo.gameObjects->size());
@@ -225,7 +202,7 @@ namespace Engine {
                 if (obj.alphaMode == AlphaMode::Blend)
                     continue;
 
-                GPUMeshInfo info {};
+                GPUMeshInfo info{};
                 info.firstIndex = obj.subMesh.firstIndex;
                 info.vertexOffset = obj.subMesh.vertexOffset;
                 cachedMeshInfos.push_back(info);
@@ -236,7 +213,9 @@ namespace Engine {
 
         if (framesToUpdate > 0 && !cachedMeshInfos.empty()) {
             meshBuffers[currentFrame]->writeToBuffer(
-                cachedMeshInfos.data(), cachedMeshInfos.size() * sizeof(GPUMeshInfo), 0);
+                cachedMeshInfos.data(),
+                cachedMeshInfos.size() * sizeof(GPUMeshInfo),
+                0);
             meshBuffers[currentFrame]->flush(VK_WHOLE_SIZE, 0);
             framesToUpdate--;
         }
@@ -254,11 +233,11 @@ namespace Engine {
         glm::mat4 clipMatrix = glm::mat4(1.0f);
         glm::mat4 viewProjection = clipMatrix * projection * view;
 
-        MaterialPushConstants pc {};
+        MaterialPushConstants pc{};
         pc.viewProj = viewProjection;
         pc.view = view;
         pc.cameraPos = glm::vec3(glm::inverse(view)[3]);
-        pc.frameWidth = extent.width;
+        pc.enableSSAO = frameInfo.enableSSAO ? 1 : 0;
 
         vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(MaterialPushConstants), &pc);
 
@@ -304,12 +283,12 @@ namespace Engine {
 
         uint32_t currentFrame = frameInfo.frameIndex;
 
-        VkDescriptorImageInfo depthImageInfo {};
+        VkDescriptorImageInfo depthImageInfo{};
         depthImageInfo.imageView = graph.getImageView("DepthImage");
         depthImageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
         depthImageInfo.sampler = sampler;
 
-        VkDescriptorImageInfo visBufferInfo {};
+        VkDescriptorImageInfo visBufferInfo{};
         visBufferInfo.imageView = graph.getImageView("VisBuffer");
         visBufferInfo.imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
         visBufferInfo.sampler = nearestSampler;
@@ -325,11 +304,11 @@ namespace Engine {
         VkDescriptorBufferInfo attributeBufferInfo = megaBuffer.getAttributeBuffer()->descriptorInfo(VK_WHOLE_SIZE, 0);
         VkDescriptorBufferInfo objectBufferInfo = renderGraph.getBufferInfo("CullObjectData", currentFrame);
 
-        VkDescriptorImageInfo finalRenderInfo {};
+        VkDescriptorImageInfo finalRenderInfo{};
         finalRenderInfo.imageView = graph.getImageView("FinalRender");
         finalRenderInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
-        VkDescriptorImageInfo ssaoInfo {};
+        VkDescriptorImageInfo ssaoInfo{};
         ssaoInfo.imageView = graph.getImageView("SsaoBlurImage");
         ssaoInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         ssaoInfo.sampler = sampler;
@@ -352,7 +331,7 @@ namespace Engine {
 
     void MaterialPassNode::createPipelineLayout()
     {
-        VkPushConstantRange pushConstantRange {};
+        VkPushConstantRange pushConstantRange{};
         pushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
         pushConstantRange.offset = 0;
         pushConstantRange.size = sizeof(MaterialPushConstants);
@@ -360,7 +339,7 @@ namespace Engine {
         VkDescriptorSetLayout bindlessLayout = resourceHeap.getDescriptorSetLayout();
         VkDescriptorSetLayout layouts[] = {bindlessLayout, globalSetLayout->getDescriptorSetLayout()};
 
-        VkPipelineLayoutCreateInfo pipelineLayoutInfo {};
+        VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         pipelineLayoutInfo.setLayoutCount = 2; // set 0: Bindless textures/materials, set 1: Pass-specific storage
         pipelineLayoutInfo.pSetLayouts = layouts;
@@ -377,13 +356,13 @@ namespace Engine {
         auto compCode = ShaderUtils::readFile("shaders/material.comp.spv");
         VkShaderModule compModule = ShaderUtils::createShaderModule(device.getDevice(), compCode);
 
-        VkPipelineShaderStageCreateInfo computeStageInfo {};
+        VkPipelineShaderStageCreateInfo computeStageInfo{};
         computeStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         computeStageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
         computeStageInfo.module = compModule;
         computeStageInfo.pName = "main";
 
-        VkComputePipelineCreateInfo pipelineInfo {};
+        VkComputePipelineCreateInfo pipelineInfo{};
         pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
         pipelineInfo.layout = pipelineLayout;
         pipelineInfo.stage = computeStageInfo;

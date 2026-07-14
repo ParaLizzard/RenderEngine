@@ -7,6 +7,12 @@
 
 #include "Buffer.h"
 
+#include <cstring>
+#include <stdexcept>
+#include <vulkan/vulkan.h>
+
+#include "Core/Device.h"
+
 namespace Engine {
     Buffer::Buffer(Device &device,
                    VkDeviceSize instanceSize,

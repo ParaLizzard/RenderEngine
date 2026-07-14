@@ -1,4 +1,5 @@
 #include "FxaaPassNode.h"
+#include "Core/EngineConfig.h"
 
 #include "Renderer/Renderer.h"
 #include "Renderer/ShaderUtils.h"

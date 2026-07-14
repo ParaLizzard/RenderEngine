@@ -4,6 +4,8 @@
 #include <cassert>
 #include <stdexcept>
 
+#include "Core/Device.h"
+
 namespace Engine {
 
     // *************** Descriptor Set Layout Builder *********************

@@ -1,7 +1,7 @@
 #pragma once
 #include "Renderer/RenderPassNode.h"
 #include "Renderer/Renderer.h"
-#include "CullPassNode.h"
+#include "Passes/CullPassNode.h"
 
 namespace Engine {
     struct VisibilityPushConstants

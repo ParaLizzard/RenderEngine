@@ -147,6 +147,21 @@ set(CORE_SOURCES
         src/Core/Descriptor.h
         src/Core/EngineConfig.h
         src/Core/VkUtils.h
+        src/Core/SceneManager.cpp
+        src/Core/SceneManager.h
+        src/Core/AssetStreamer.cpp
+        src/Core/AssetStreamer.h
+        src/Core/InputManager.cpp
+        src/Core/InputManager.h
+        src/Core/InputBackend.h
+        src/Core/InputTypes.h
+        src/Core/InputBackendWindows.cpp
+        src/Core/InputBackendWindows.h
+        src/Core/WindowInterface.h
+        src/Core/WindowWin32.cpp
+        src/Core/WindowWin32.h
+        src/Core/Exception.cpp
+        src/Core/Exception.h
 )
 
 set(RENDERER_SOURCES

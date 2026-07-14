@@ -1,4 +1,8 @@
 #pragma once
+
+#include <memory>
+
+#include "Core/Buffer.h"
 #include "Renderer/RenderPassNode.h"
 #include "Renderer/Renderer.h"
 
@@ -31,7 +35,7 @@ namespace Engine {
         void execute(VkCommandBuffer &cmd, FrameInfo &frameInfo) override;
         void resolve(RenderGraph &graph, const FrameInfo &frameInfo) override;
 
-        void markSceneDirty()
+        void markSceneDirty() override
         {
             sceneDirty = true;
         }

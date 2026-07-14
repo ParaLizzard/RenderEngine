@@ -1,4 +1,9 @@
 #include "IBL.h"
+#include "Scene/GameObject.h"
+#include "Scene/LoaderGLTF.h"
+#include "Scene/Texture.h"
+#include "Core/Device.h"
+#include "Scene/Model.h"
 
 #include "Renderer/ShaderUtils.h"
 

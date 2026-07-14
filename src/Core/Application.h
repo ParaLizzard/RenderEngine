@@ -3,15 +3,25 @@
 #include <limits>
 #include <unordered_map>
 #include <format>
+
+#include "AssetStreamer.h"
+#include "SceneManager.h"
 #include "Core/JobSystem.h"
 #include "Renderer/RenderGraph.h"
 #include "Renderer/Renderer.h"
 #include "Renderer/ResourceHeap.h"
 #include "Scene/Camera.h"
+#include "Scene/GameObject.h"
 #include "Scene/KeyboardMovement.h"
 #include "Scene/Texture.h"
-#include "Device.h"
-#include "Window.h"
+#include "Core/Device.h"
+#include "Core/Window.h"
+#include "Scene/IBL.h"
+#include "Passes/CullPassNode.h"
+#include "Passes/FxaaPassNode.h"
+#include "Passes/MaterialPassNode.h"
+#include "Passes/SsaoPassNode.h"
+#include "Passes/VisibilityPassNode.h"
 
 namespace Engine {
     class Application
@@ -29,6 +39,11 @@ namespace Engine {
         void run();
 
     private:
+        void initScene();
+        void compileFrameGraph();
+        void updateFrameGraph();
+        void updateSceneGraph();
+
         Window window {WIDTH, HEIGHT, "Render Engine"};
         Device device {window};
         Renderer renderer {window, device};
@@ -38,12 +53,31 @@ namespace Engine {
         KeyboardMovementController cameraController {};
         std::shared_ptr<GameObject> cameraObject;
         JobSystem jobSystem {std::max(1u, std::thread::hardware_concurrency() - 1)};
+        SceneManager sceneManager{};
+        AssetStreamer assetStreamer{jobSystem};
+
+        std::vector<std::unique_ptr<Buffer>> sceneUboBuffers;
+        uint32_t blueNoiseSlot;
+        TextureCubeMap skyBox;
+        std::unique_ptr<IBL> ibl;
+        Camera camera{};
+
+        CullPassNode cullPass{device, renderer, megaBuffer};
+        VisibilityPassNode visPass {device, renderer, megaBuffer, cullPass};
+        MaterialPassNode materialPass {device, renderer, megaBuffer, resourceHeap, renderGraph};
+        SsaoPassNode ssaoPass {device, renderer, megaBuffer, resourceHeap};
+        FxaaPassNode fxaaPass {device, renderer, megaBuffer, resourceHeap};
+
+        int currentFrame;
+        uint32_t imgIdx;
+        VkExtent2D currentExtent;
+        VkExtent2D lastExtent;
+        bool graphCompiled;
+        bool sceneGraphDirty;
+
 
         bool enableSSAO = true;
         bool ssaoKeyPressed = false;
-
-        std::deque<Texture2D> sceneTextures;
-        std::vector<GameObject> gameObjects;
 
         float fpsTimer = 0.0f;
         int fpsCount = 0;

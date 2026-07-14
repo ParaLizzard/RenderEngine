@@ -9,9 +9,9 @@
 #include "GLFW/glfw3.h"
 #include "vma/vk_mem_alloc.h"
 
-#include "Window.h"
-
 namespace Engine {
+    class Window;
+
     struct QueueFamilyIndices
     {
         uint32_t graphicsFamily;

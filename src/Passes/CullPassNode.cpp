@@ -1,10 +1,12 @@
 #include "CullPassNode.h"
+#include "Core/Buffer.h"
 #include <array>
 
 #include "Core/EngineConfig.h"
 #include "Renderer/RenderGraph.h"
 #include "Renderer/Renderer.h"
 #include "Renderer/ShaderUtils.h"
+#include "Core/VkUtils.h"
 
 namespace Engine {
     CullPassNode::CullPassNode(Device &device, Renderer &renderer, Model &megaBuffer):
@@ -284,15 +286,11 @@ namespace Engine {
                                 &indCopy);
 
                 std::array<VkBufferMemoryBarrier2, 2> copyBarriers {};
-                copyBarriers[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
-                copyBarriers[0].srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-                copyBarriers[0].srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-                copyBarriers[0].dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT |
-                    VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-                copyBarriers[0].dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-                copyBarriers[0].buffer = gpuObjectSSBOs[currentFrame]->getBuffer();
-                copyBarriers[0].offset = 0;
-                copyBarriers[0].size = VK_WHOLE_SIZE;
+                copyBarriers[0] = VkUtils::bufferBarrier(
+                    gpuObjectSSBOs[currentFrame]->getBuffer(), 0, VK_WHOLE_SIZE,
+                    VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                    VK_ACCESS_2_SHADER_READ_BIT);
 
                 copyBarriers[1] = copyBarriers[0];
                 copyBarriers[1].buffer = gpuIndirectCommandBuffers[currentFrame]->getBuffer();
@@ -309,15 +307,10 @@ namespace Engine {
         if (!objectDataArray.empty()) {
             vkCmdFillBuffer(cmd, gpuDrawCountBuffers[currentFrame]->getBuffer(), 0, sizeof(uint32_t), 0);
 
-            VkBufferMemoryBarrier2 clearBarrier {};
-            clearBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
-            clearBarrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-            clearBarrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-            clearBarrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-            clearBarrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
-            clearBarrier.buffer = gpuDrawCountBuffers[currentFrame]->getBuffer();
-            clearBarrier.offset = 0;
-            clearBarrier.size = VK_WHOLE_SIZE;
+            VkBufferMemoryBarrier2 clearBarrier = VkUtils::bufferBarrier(
+                gpuDrawCountBuffers[currentFrame]->getBuffer(), 0, VK_WHOLE_SIZE,
+                VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT);
 
             VkDependencyInfo clearDep {};
             clearDep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -357,25 +350,6 @@ namespace Engine {
 
             uint32_t groupCount = (objectDataArray.size() + 255) / 256;
             vkCmdDispatch(cmd, groupCount, 1, 1);
-
-            std::array<VkBufferMemoryBarrier2, 2> indirectBarriers {};
-            indirectBarriers[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
-            indirectBarriers[0].srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-            indirectBarriers[0].srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
-            indirectBarriers[0].dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
-            indirectBarriers[0].dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
-            indirectBarriers[0].buffer = gpuCompactedIndirectCommandBuffers[currentFrame]->getBuffer();
-            indirectBarriers[0].offset = 0;
-            indirectBarriers[0].size = VK_WHOLE_SIZE;
-
-            indirectBarriers[1] = indirectBarriers[0];
-            indirectBarriers[1].buffer = gpuDrawCountBuffers[currentFrame]->getBuffer();
-
-            VkDependencyInfo computeDependency {};
-            computeDependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-            computeDependency.bufferMemoryBarrierCount = 2;
-            computeDependency.pBufferMemoryBarriers = indirectBarriers.data();
-            vkCmdPipelineBarrier2(cmd, &computeDependency);
         }
     }
 

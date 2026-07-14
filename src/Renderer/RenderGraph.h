@@ -4,7 +4,8 @@
 #include <unordered_map>
 #include <vector>
 #include <vulkan/vulkan.h>
-#include "RenderPassNode.h"
+#include "vma/vk_mem_alloc.h"
+#include "Renderer//RenderPassNode.h"
 
 namespace Engine {
 
@@ -106,6 +107,7 @@ namespace Engine {
         void compile();
         void execute(VkCommandBuffer cmdBuffer, FrameInfo &frameInfo);
         void clear();
+        void markSceneDirty();
 
         void transitionToPresent(VkCommandBuffer cmdBuffer, const std::string &imageName);
         void updateImageHandle(const std::string &name, VkImage image, VkImageView view, VkExtent2D extent);

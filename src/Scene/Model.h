@@ -1,14 +1,13 @@
 #pragma once
 
-#include "Core/Buffer.h"
-#include "Core/Device.h"
-
 #include <memory>
 #include <vector>
 #include <glm/glm.hpp>
 #include <vulkan/vulkan.h>
 
 namespace Engine {
+    class Buffer;
+    class Device;
     class Model
     {
     public:
@@ -54,15 +53,15 @@ namespace Engine {
 
         std::shared_ptr<Buffer> getPositionBuffer() const
         {
-            return positionBuffer ? positionBuffer : VK_NULL_HANDLE;
+            return positionBuffer ? positionBuffer : nullptr;
         }
         std::shared_ptr<Buffer> getAttributeBuffer() const
         {
-            return attributeBuffer ? attributeBuffer : VK_NULL_HANDLE;
+            return attributeBuffer ? attributeBuffer : nullptr;
         }
         std::shared_ptr<Buffer> getIndexBuffer() const
         {
-            return indexBuffer ? indexBuffer : VK_NULL_HANDLE;
+            return indexBuffer ? indexBuffer : nullptr;
         }
 
     private:

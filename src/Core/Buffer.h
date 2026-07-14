@@ -1,8 +1,11 @@
 #pragma once
 #include <cassert>
-#include "Device.h"
+#include <vulkan/vulkan.h>
+#include "vma/vk_mem_alloc.h"
 
 namespace Engine {
+    class Device;
+
     class Buffer
     {
     public:

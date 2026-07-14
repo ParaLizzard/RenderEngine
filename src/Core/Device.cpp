@@ -3,6 +3,8 @@
 #include "Device.h"
 
 #include <fstream>
+#include "VkUtils.h"
+#include "Window.h"
 
 
 namespace Engine {
@@ -534,63 +536,63 @@ namespace Engine {
                                        VkImageLayout newLayout,
                                        VkImageSubresourceRange subresourceRange)
     {
-        VkImageMemoryBarrier2 barrier {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
-        barrier.oldLayout = oldLayout;
-        barrier.newLayout = newLayout;
-        barrier.image = image;
-        barrier.subresourceRange = subresourceRange;
-        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        VkPipelineStageFlags2 srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+        VkAccessFlags2 srcAccessMask = VK_ACCESS_2_NONE;
+        VkPipelineStageFlags2 dstStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+        VkAccessFlags2 dstAccessMask = VK_ACCESS_2_NONE;
 
         if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
-            barrier.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
-            barrier.srcAccessMask = VK_ACCESS_2_NONE;
-            barrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-            barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+            srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+            srcAccessMask = VK_ACCESS_2_NONE;
+            dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+            dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
         } else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
                    newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-            barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-            barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-            barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-            barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+            srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+            srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+            dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+            dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
         } else if (oldLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL &&
                    newLayout == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR) {
-            barrier.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-            barrier.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-            barrier.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
-            barrier.dstAccessMask = VK_ACCESS_2_NONE;
+            srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+            srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+            dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
+            dstAccessMask = VK_ACCESS_2_NONE;
         } else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL) {
-            barrier.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
-            barrier.srcAccessMask = VK_ACCESS_2_NONE;
-            barrier.dstStageMask =
+            srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+            srcAccessMask = VK_ACCESS_2_NONE;
+            dstStageMask =
                 VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-            barrier.dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+            dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         } else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
-            barrier.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
-            barrier.srcAccessMask = VK_ACCESS_2_NONE;
-            barrier.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-            barrier.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+            srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+            srcAccessMask = VK_ACCESS_2_NONE;
+            dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+            dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
         } else if (oldLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL &&
                    newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-            barrier.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-            barrier.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-            barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-            barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+            srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+            srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+            dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+            dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
         } else if (oldLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL &&
                    newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
-            barrier.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-            barrier.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-            barrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-            barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+            srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+            srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+            dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+            dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
         } else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL &&
                    newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
-            barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-            barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
-            barrier.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-            barrier.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+            srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+            srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+            dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+            dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
         } else {
             throw std::invalid_argument("Device: Unsupported layout transition!");
         }
+
+        VkImageMemoryBarrier2 barrier = VkUtils::imageBarrier(
+            image, oldLayout, newLayout, srcStageMask, srcAccessMask, dstStageMask, dstAccessMask, subresourceRange);
 
         VkDependencyInfo dependencyInfo {VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
         dependencyInfo.imageMemoryBarrierCount = 1;

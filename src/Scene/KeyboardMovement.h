@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Core/Window.h"
-#include "GameObject.h"
+#include "Scene/GameObject.h"
 
 namespace Engine {
     class KeyboardMovementController

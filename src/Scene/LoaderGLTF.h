@@ -5,7 +5,6 @@
 #include <fastgltf/tools.hpp>
 #include <fastgltf/types.hpp>
 
-#include "Core/Device.h"
 #include "Renderer/ResourceHeap.h"
 #include "Scene/GameObject.h"
 #include "Scene/Model.h"
@@ -13,12 +12,14 @@
 
 #include <future>
 #include <vector>
+#include <deque>
 #include <glm/gtx/matrix_decompose.hpp>
 #include <filesystem>
 #include <optional>
-#include "Core/JobSystem.h"
 
 namespace Engine {
+    class JobSystem;
+    class Device;
     struct ParsedImage
     {
         std::vector<unsigned char> data;
