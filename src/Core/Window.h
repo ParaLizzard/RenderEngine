@@ -1,13 +1,15 @@
 #pragma once
-#define GLFW_INCLUDE_VULKAN
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string>
-#include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
 
+#include "WindowInterface.h"
 
 namespace Engine {
+    class InputManager;
+
     class Window
     {
     public:
@@ -21,16 +23,24 @@ namespace Engine {
         void createWindowSurface(VkInstance Instance, VkSurfaceKHR *Surface);
         bool shouldClose()
         {
-            return glfwWindowShouldClose(window);
+            return window->shouldClose();
         }
+
         VkExtent2D getExtent()
         {
             return VkExtent2D(width, height);
         };
-        GLFWwindow *getGlfwWindow()
+
+        std::unique_ptr<WindowInterface>& getWindow()
         {
             return window;
         };
+
+        void setWindowTitle(std::string_view title);
+        void pollEvents(){window->pollEvents();}
+        double getTime(){return window->getTime();}
+        void* getWindowHandle() {return window->getWindowHandle();}
+        void setInputManager(InputManager* manager) {window->setInputManager(manager);}
 
     private:
         static void errorCallback(int error, const char *description);
@@ -38,6 +48,6 @@ namespace Engine {
         std::string title;
         int width, height;
 
-        GLFWwindow *window;
+        std::unique_ptr<WindowInterface> window;
     };
 } // namespace Engine

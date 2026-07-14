@@ -160,7 +160,7 @@ namespace Engine {
         VkExtent2D extent = window.getExtent();
 
         while (extent.width == 0 || extent.height == 0) {
-            glfwWaitEvents();
+            window.pollEvents();
             extent = window.getExtent();
         }
 

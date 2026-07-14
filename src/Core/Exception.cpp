@@ -1,6 +1,3 @@
-//
-// Created by Jan Varga on 14.07.2026.
-//
 
 #include "Exception.h"
 

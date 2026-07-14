@@ -430,8 +430,7 @@ namespace Engine {
     {
         if (!ktxTexPtr)
             throw std::runtime_error("Texture: KTX Pointer is null");
-
-        // Cast the async-transcoded pointer back to a ktxTexture
+        
         ktxTexture *ktxTexture = reinterpret_cast<::ktxTexture *>(ktxTexPtr);
 
         this->device = device;

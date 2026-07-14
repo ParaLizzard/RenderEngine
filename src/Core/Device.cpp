@@ -1,10 +1,10 @@
-
 #define VMA_IMPLEMENTATION
 #include "Device.h"
 
 #include <fstream>
 #include "VkUtils.h"
 #include "Window.h"
+#include "WindowWin32.h"
 
 
 namespace Engine {
@@ -105,12 +105,11 @@ namespace Engine {
 
     std::vector<const char *> Device::getRequiredExtensions()
     {
-        uint32_t glfwExtensionCount = 0;
-        const char **glfwExtensions;
+        std::vector<const char *> extensions;
 
-        glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-
-        std::vector<const char *> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
+        // Win32 surface extension
+        extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+        extensions.push_back(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
 
         if (enableValidationLayers) {
             extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
@@ -506,7 +505,7 @@ namespace Engine {
         for (const auto &required: requiredExtensions) {
             std::cout << "\t" << required << std::endl;
             if (available.find(required) == available.end()) {
-                throw std::runtime_error("Device: required glfw extensions not present");
+                throw std::runtime_error("Device: required Vulkan extensions not present");
             }
         }
     }

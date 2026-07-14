@@ -5,8 +5,8 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
+#define VK_USE_PLATFORM_WIN32_KHR
 #include <vulkan/vulkan.h>
-#include "GLFW/glfw3.h"
 #include "vma/vk_mem_alloc.h"
 
 namespace Engine {
@@ -103,7 +103,7 @@ namespace Engine {
                                    VkImageSubresourceRange subresourceRange);
 
     private:
-        bool enableValidationLayers = true;
+        bool enableValidationLayers = false;
 
         VkDevice device = VK_NULL_HANDLE;
         VkInstance instance = VK_NULL_HANDLE;
@@ -137,6 +137,8 @@ namespace Engine {
         void savePipelineCache();
 
         const std::vector<const char *> validationLayers = {"VK_LAYER_KHRONOS_validation"};
-        const std::vector<const char *> deviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+        const std::vector<const char *> deviceExtensions = {
+            VK_KHR_SWAPCHAIN_EXTENSION_NAME
+        };
     };
 } // namespace Engine

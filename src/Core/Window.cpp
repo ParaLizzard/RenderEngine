@@ -10,45 +10,24 @@ namespace Engine {
 
     Window::~Window()
     {
-        glfwDestroyWindow(window);
-        glfwTerminate();
     }
 
     void Window::initWindow()
     {
-        if (!glfwInit()) {
-            throw std::runtime_error("Window: glfwInit failed");
-        }
-
-        glfwSetErrorCallback(errorCallback);
-        int vulkanSupported = glfwVulkanSupported();
-
-        if (!vulkanSupported) {
-            glfwTerminate();
-            throw std::runtime_error("Window: glfw doesnt support vulkan API");
-        }
-
-        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
-
-        //window = WindowWin32::createWindow(110,100,"gfdg");
-
-        window = glfwCreateWindow(width, height, title.c_str(), nullptr, nullptr);
-        if (!window) {
-            glfwTerminate();
-            throw std::runtime_error("Window: Window creation failed");
-        }
-
-        glfwSetWindowUserPointer(window, this);
+        window = WindowWin32::createWindow(width,height,title);
+        window->setResizable(true);
     }
 
     void Window::createWindowSurface(VkInstance Instance, VkSurfaceKHR *Surface)
     {
-        if (glfwCreateWindowSurface(Instance, window, nullptr, Surface) != VK_SUCCESS) {
-            throw std::runtime_error("Window: failed to create window surface");
-        }
+        window->createWindowSurface(Instance,Surface);
+
     }
 
+    void Window::setWindowTitle(std::string_view title)
+    {
+        window->setWindowTitle(title);
+    }
 
     void Window::errorCallback(int error, const char *description)
     {

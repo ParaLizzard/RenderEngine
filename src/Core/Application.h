@@ -16,6 +16,8 @@
 #include "Scene/Texture.h"
 #include "Core/Device.h"
 #include "Core/Window.h"
+#include "Core/InputManager.h"
+#include "Core/InputBackendWindows.h"
 #include "Scene/IBL.h"
 #include "Passes/CullPassNode.h"
 #include "Passes/FxaaPassNode.h"
@@ -55,6 +57,9 @@ namespace Engine {
         JobSystem jobSystem {std::max(1u, std::thread::hardware_concurrency() - 1)};
         SceneManager sceneManager{};
         AssetStreamer assetStreamer{jobSystem};
+
+        std::unique_ptr<Engine::InputBackend> backend{std::make_unique<Engine::InputBackendWindows>()};
+        Engine::InputManager inputManager{std::move(backend)};
 
         std::vector<std::unique_ptr<Buffer>> sceneUboBuffers;
         uint32_t blueNoiseSlot;
