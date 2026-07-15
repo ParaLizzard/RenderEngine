@@ -85,13 +85,13 @@ set(SHADER_STAGE_EXTENSIONS
 
 set(SHADER_SOURCES "")
 foreach(EXT ${SHADER_STAGE_EXTENSIONS})
-    file(GLOB_RECURSE _found LIST_DIRECTORIES false
+    # CONFIGURE_DEPENDS ensures CMake re-evaluates glob when new shaders are added
+    file(GLOB_RECURSE _found LIST_DIRECTORIES false CONFIGURE_DEPENDS
             "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.${EXT}")
     list(APPEND SHADER_SOURCES ${_found})
 endforeach()
 
 set(SHADER_BINARY_DIR "${CMAKE_BINARY_DIR}/shaders")
-set(SHADER_STAMP_DIR  "${CMAKE_BINARY_DIR}/shader_stamps")
 set(SHADER_OUTPUTS "")
 
 foreach(SHADER_SRC ${SHADER_SOURCES})
@@ -101,102 +101,125 @@ foreach(SHADER_SRC ${SHADER_SOURCES})
 
     set(SPV_OUT   "${SHADER_BINARY_DIR}/${REL_PATH}.spv")
     set(DEP_FILE  "${SHADER_BINARY_DIR}/${REL_PATH}.d")
-    # Stamp file: only touched when glslc actually writes a new SPV.
-    # CMake uses the stamp's mtime to decide whether downstream targets are stale,
-    # so this is what prevents re-linking the executable on every build.
-    set(STAMP     "${SHADER_STAMP_DIR}/${REL_PATH}.stamp")
 
     get_filename_component(SPV_DIR   "${SPV_OUT}" DIRECTORY)
-    get_filename_component(STAMP_DIR "${STAMP}"   DIRECTORY)
-    file(MAKE_DIRECTORY "${SPV_DIR}" "${STAMP_DIR}")
+    file(MAKE_DIRECTORY "${SPV_DIR}")
+
+
+    file(RELATIVE_PATH SRC_REL "${CMAKE_BINARY_DIR}" "${SHADER_SRC}")
+    file(RELATIVE_PATH INCLUDE_REL "${CMAKE_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/shaders")
+    set(OUT_REL "shaders/${REL_PATH}.spv")
+    set(DEP_REL "shaders/${REL_PATH}.d")
 
     add_custom_command(
-            OUTPUT  "${SPV_OUT}" "${STAMP}"
+            OUTPUT  "${SPV_OUT}"
             COMMAND "${GLSLC}"
             -g
             -O
-            -MD -MF "${DEP_FILE}"
-            -I "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+            -MD -MF "${DEP_REL}"
+            -I "${INCLUDE_REL}"
             --target-env=vulkan1.3
-            "${SHADER_SRC}"
-            -o "${SPV_OUT}"
-            COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${SPV_OUT}" "${SPV_OUT}"
-            COMMAND "${CMAKE_COMMAND}" -E touch "${STAMP}"
+            "${SRC_REL}"
+            -o "${OUT_REL}"
             DEPENDS "${SHADER_SRC}"
             DEPFILE "${DEP_FILE}"
-            COMMENT "glslc  ${REL_PATH}  ->  ${REL_PATH}.spv"
+            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+            COMMENT "Compiling shader ${REL_PATH} -> ${REL_PATH}.spv"
             VERBATIM
     )
 
     list(APPEND SHADER_OUTPUTS "${SPV_OUT}")
 endforeach()
 
-add_custom_target(Shaders ALL DEPENDS ${SHADER_OUTPUTS})
-
 # ---------------------------------------------------------------------------
 # Engine executable
 # ---------------------------------------------------------------------------
 set(CORE_SOURCES
         src/Core/main.cpp
-        src/Core/Window.cpp
         src/Core/Application.cpp
-        src/Core/Device.cpp
-        src/Core/Buffer.cpp
-        src/Core/JobSystem.h
-        src/Core/Descriptor.cpp
-        src/Core/Descriptor.h
+        src/Core/Application.h
         src/Core/EngineConfig.h
-        src/Core/VkUtils.h
-        src/Core/SceneManager.cpp
-        src/Core/SceneManager.h
-        src/Core/AssetStreamer.cpp
-        src/Core/AssetStreamer.h
-        src/Core/InputManager.cpp
-        src/Core/InputManager.h
-        src/Core/InputBackend.h
-        src/Core/InputTypes.h
-        src/Core/InputBackendWindows.cpp
-        src/Core/InputBackendWindows.h
-        src/Core/WindowInterface.h
-        src/Core/WindowWin32.cpp
-        src/Core/WindowWin32.h
         src/Core/Exception.cpp
         src/Core/Exception.h
 )
 
-set(RENDERER_SOURCES
-        src/Renderer/Renderer.cpp
-        src/Renderer/Swapchain.cpp
-        src/Renderer/RenderGraph.cpp
-        src/Renderer/ResourceHeap.cpp
-        src/Renderer/ShaderUtils.h
+set(SYSTEM_SOURCES
+        src/System/Window/Window.cpp
+        src/System/Window/Window.h
+        src/System/Window/WindowInterface.h
+        src/System/Window/WindowWin32.cpp
+        src/System/Window/WindowWin32.h
+        src/System/Input/InputManager.cpp
+        src/System/Input/InputManager.h
+        src/System/Input/InputBackend.h
+        src/System/Input/InputBackendWindows.cpp
+        src/System/Input/InputBackendWindows.h
+        src/System/Input/InputTypes.h
 )
 
-set(SCENE_SOURCES
-        src/Scene/Texture.cpp
-        src/Scene/Model.h
-        src/Scene/Model.cpp
-        src/Scene/GameObject.cpp
-        src/Scene/GameObject.h
-        src/Scene/Camera.cpp
-        src/Scene/LoaderGLTF.cpp
-        src/Scene/LoaderGLTF.h
-        src/Scene/KeyboardMovement.cpp
-        src/Scene/IBL.cpp
-        src/Scene/IBL.h
+set(THREADING_SOURCES
+        src/Threading/JobSystem.h
+)
+
+set(VULKAN_SOURCES
+        src/Vulkan/Device.cpp
+        src/Vulkan/Device.h
+        src/Vulkan/Buffer.cpp
+        src/Vulkan/Buffer.h
+        src/Vulkan/Descriptor.cpp
+        src/Vulkan/Descriptor.h
+        src/Vulkan/VkUtils.h
+        src/Vulkan/Swapchain.cpp
+        src/Vulkan/Swapchain.h
+        src/Vulkan/ResourceHeap.cpp
+        src/Vulkan/ResourceHeap.h
+)
+
+set(RENDERER_SOURCES
+        src/Renderer/Renderer.cpp
+        src/Renderer/Renderer.h
+        src/Renderer/RenderGraph.cpp
+        src/Renderer/RenderGraph.h
+        src/Renderer/RenderPassNode.h
+        src/Renderer/ShaderUtils.h
+        src/Renderer/FrameInfo.h
 )
 
 set(PASSES_SOURCES
-        src/Passes/FxaaPassNode.h
-        src/Passes/FxaaPassNode.cpp
-        src/Passes/SsaoPassNode.cpp
-        src/Passes/SsaoPassNode.h
-        src/Passes/VisibilityPassNode.cpp
-        src/Passes/VisibilityPassNode.h
-        src/Passes/CullPassNode.cpp
-        src/Passes/CullPassNode.h
-        src/Passes/MaterialPassNode.cpp
-        src/Passes/MaterialPassNode.h
+        src/Renderer/Passes/FxaaPassNode.h
+        src/Renderer/Passes/FxaaPassNode.cpp
+        src/Renderer/Passes/SsaoPassNode.cpp
+        src/Renderer/Passes/SsaoPassNode.h
+        src/Renderer/Passes/VisibilityPassNode.cpp
+        src/Renderer/Passes/VisibilityPassNode.h
+        src/Renderer/Passes/CullPassNode.cpp
+        src/Renderer/Passes/CullPassNode.h
+        src/Renderer/Passes/MaterialPassNode.cpp
+        src/Renderer/Passes/MaterialPassNode.h
+)
+
+set(SCENE_SOURCES
+        src/Scene/SceneManager.cpp
+        src/Scene/SceneManager.h
+        src/Scene/GameObject.cpp
+        src/Scene/GameObject.h
+        src/Scene/Camera.cpp
+        src/Scene/Camera.h
+        src/Scene/KeyboardMovement.cpp
+        src/Scene/KeyboardMovement.h
+)
+
+set(ASSETSYSTEM_SOURCES
+        src/AssetSystem/AssetStreamer.cpp
+        src/AssetSystem/AssetStreamer.h
+        src/AssetSystem/Texture.cpp
+        src/AssetSystem/Texture.h
+        src/AssetSystem/Model.h
+        src/AssetSystem/Model.cpp
+        src/AssetSystem/LoaderGLTF.cpp
+        src/AssetSystem/LoaderGLTF.h
+        src/AssetSystem/IBL.cpp
+        src/AssetSystem/IBL.h
 )
 
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/models" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
@@ -204,8 +227,12 @@ file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/assets" DESTINATION "${CMAKE_CURRENT_BINA
 
 add_executable(RenderEngine
         ${CORE_SOURCES}
+        ${SYSTEM_SOURCES}
+        ${THREADING_SOURCES}
+        ${VULKAN_SOURCES}
         ${RENDERER_SOURCES}
         ${SCENE_SOURCES}
+        ${ASSETSYSTEM_SOURCES}
         ${PASSES_SOURCES}
 )
 
@@ -221,4 +248,5 @@ target_link_libraries(RenderEngine
         stb
 )
 
-add_dependencies(RenderEngine Shaders)
+
+target_sources(RenderEngine PRIVATE ${SHADER_OUTPUTS})

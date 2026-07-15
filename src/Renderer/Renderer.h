@@ -2,9 +2,9 @@
 #include <cassert>
 #include <memory>
 #include <vulkan/vulkan.h>
-#include "Core/Device.h"
-#include "Core/Window.h"
-#include "Renderer/Swapchain.h"
+#include "Vulkan/Device.h"
+#include "System/Window/Window.h"
+#include "Vulkan/Swapchain.h"
 
 namespace Engine {
     struct FrameData
@@ -19,7 +19,6 @@ namespace Engine {
     class Renderer
     {
     public:
-        //static constexpr size_t MAX_FRAMES_IN_FLIGHT = 3;
         Renderer(Window &window, Device &device);
         ~Renderer();
 

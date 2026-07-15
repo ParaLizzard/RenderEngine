@@ -262,6 +262,13 @@ void main() {
     vec2 ddx_uv = texCoord_dx - texCoord;
     vec2 ddy_uv = texCoord_dy - texCoord;
 
+
+    float maxGradLen = 0.015; // Tuning value: lower = sharper distant textures, higher = blurrier
+    float lenX = length(ddx_uv);
+    float lenY = length(ddy_uv);
+    if (lenX > maxGradLen) ddx_uv *= (maxGradLen / lenX);
+    if (lenY > maxGradLen) ddy_uv *= (maxGradLen / lenY);
+
     uint materialId = a0.texId;
     MaterialData mat = materialHeap.materials[materialId];
 

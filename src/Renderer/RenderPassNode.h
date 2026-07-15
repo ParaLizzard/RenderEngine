@@ -1,7 +1,7 @@
 #pragma once
 #include <fstream>
 #include <vulkan/vulkan.h>
-#include "Scene/FrameInfo.h"
+#include "Renderer/FrameInfo.h"
 
 namespace Engine {
     class RenderGraphBuilder;

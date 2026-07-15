@@ -1,9 +1,9 @@
 
-#include "KeyboardMovement.h"
-#include "Core/Device.h"
+#include "Scene/KeyboardMovement.h"
+#include "Vulkan/Device.h"
 #include <memory>
 
-#include "Core/InputManager.h"
+#include "System/Input/InputManager.h"
 
 namespace Engine {
     void KeyboardMovementController::moveInPlaneXZ(InputManager& manager, float dt, std::shared_ptr<GameObject> gameObject)

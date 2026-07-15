@@ -1,12 +1,12 @@
-#include "Application.h"
+#include "Core/Application.h"
 
 #include <stb_image.h>
 
-#include "Scene/IBL.h"
-#include "Scene/LoaderGLTF.h"
-#include "WindowWin32.h"
+#include "AssetSystem/IBL.h"
+#include "AssetSystem/LoaderGLTF.h"
+#include "System/Window/WindowWin32.h"
 
-#include "Core/SceneManager.h"
+#include "Scene/SceneManager.h"
 #include "Core/EngineConfig.h"
 
 
@@ -32,9 +32,9 @@ namespace Engine {
 
         camera.setViewTarget(glm::vec3{0.0f, 0.0f, -5.0f}, glm::vec3{0.0f, 0.0f, 0.0f});
 
-        assetStreamer.enqueueLoad("models/pbr_sphere.glb");
-        //assetStreamer.enqueueLoad("models/sponza_optimized.glb");
-        //assetStreamer.enqueueLoad("C:/Users/Jan Varga/Downloads/pkg_a_curtains/pkg_a_curtains/NewSponza_Curtains_glTF.gltf");
+        //assetStreamer.enqueueLoad("models/pbr_sphere.glb");
+        assetStreamer.enqueueLoad("models/sponza_optimized.glb");
+        assetStreamer.enqueueLoad("C:/Users/Jan Varga/Downloads/pkg_a_curtains/pkg_a_curtains/NewSponza_Curtains_glTF.gltf");
 
         sceneManager.flattenSceneGraph();
         cullPass.markSceneDirty();

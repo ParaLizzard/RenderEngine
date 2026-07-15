@@ -1,6 +1,6 @@
 #include "Renderer/RenderGraph.h"
-#include "Core/Device.h"
-#include "Core/VkUtils.h"
+#include "Vulkan/Device.h"
+#include "Vulkan/VkUtils.h"
 
 namespace Engine {
     RenderGraph::RenderGraph(Device &device): device(device)

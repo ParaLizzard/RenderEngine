@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Core/Window.h"
+#include "System/Window/Window.h"
 #include "Scene/GameObject.h"
 
 namespace Engine {

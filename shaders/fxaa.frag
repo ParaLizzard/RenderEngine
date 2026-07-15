@@ -47,11 +47,11 @@ vec4 sampleSceneColor(vec2 uv) {
 }
 
 // Standard FXAA 3.11 Quality Parameters
-const float FXAA_SUBPIX = 0.8;
-const float FXAA_EDGE_THRESHOLD = 0.18;
-const float FXAA_EDGE_THRESHOLD_MIN = 0.01;
+const float FXAA_SUBPIX = 0.0;
+const float FXAA_EDGE_THRESHOLD = 0.166;
+const float FXAA_EDGE_THRESHOLD_MIN = 0.0833;
 
-const int FXAA_SEARCH_STEPS = 10;
+const int FXAA_SEARCH_STEPS = 5;
 const float FXAA_SEARCH_OFFSETS[5] = float[](1.0, 1.5, 2.0, 4.0, 12.0);
 
 float fxaaLuma(vec4 color) {

@@ -1,5 +1,9 @@
 #version 460
 
+#extension GL_KHR_shader_subgroup_arithmetic : enable
+#extension GL_KHR_shader_subgroup_basic : enable
+#extension GL_KHR_shader_subgroup_ballot : enable
+
 layout(local_size_x = 256) in;
 
 struct ObjectData {
@@ -39,27 +43,34 @@ layout(push_constant) uniform PushConsts {
     uint objectCount;
 } push;
 
+shared uint sharedValid[256];
+shared uint workgroupBase;
+
 void main() {
     uint gID = gl_GlobalInvocationID.x;
-    if (gID >= push.objectCount) return;
+    uint lID = gl_LocalInvocationID.x;
 
-    vec4 sphere = objects[gID].boundingSphere;
-    mat4 model  = objects[gID].modelMatrix;
+    bool visible = false;
 
-    vec3 worldCenter = (model * vec4(sphere.xyz, 1.0)).xyz;
+    if (gID < push.objectCount) {
+        vec4 sphere = objects[gID].boundingSphere;
+        mat4 model  = objects[gID].modelMatrix;
 
-    float sqX = dot(model[0].xyz, model[0].xyz);
-    float sqY = dot(model[1].xyz, model[1].xyz);
-    float sqZ = dot(model[2].xyz, model[2].xyz);
+        vec3 worldCenter = (model * vec4(sphere.xyz, 1.0)).xyz;
 
-    float maxScale = sqrt(max(max(sqX, sqY), sqZ));
-    float worldRadius = sphere.w * maxScale;
+        float sqX = dot(model[0].xyz, model[0].xyz);
+        float sqY = dot(model[1].xyz, model[1].xyz);
+        float sqZ = dot(model[2].xyz, model[2].xyz);
 
-    bool visible = true;
-    for (int i = 0; i < 6; i++) {
-        if (dot(push.frustumPlanes[i].xyz, worldCenter) + push.frustumPlanes[i].w < -worldRadius) {
-            visible = false;
-            break;
+        float maxScale = sqrt(max(max(sqX, sqY), sqZ));
+        float worldRadius = sphere.w * maxScale;
+
+        visible = true;
+        for (int i = 0; i < 6; i++) {
+            if (dot(push.frustumPlanes[i].xyz, worldCenter) + push.frustumPlanes[i].w < -worldRadius) {
+                visible = false;
+                break;
+            }
         }
     }
 
@@ -67,14 +78,43 @@ void main() {
     //visible = true;
     //
 
-    if (visible) {
-        uint uniqueOutIndex = atomicAdd(drawCount, 1);
+#ifdef GL_KHR_shader_subgroup_arithmetic
+    uint ballot = visible ? 1u : 0u;
+    uint offset = subgroupExclusiveAdd(ballot);
+    uint waveCount = subgroupAdd(ballot);
 
+    uint waveBase;
+    if (subgroupElect()) {
+        waveBase = atomicAdd(drawCount, waveCount);
+    }
+    waveBase = subgroupBroadcastFirst(waveBase);
+#else
+    sharedValid[lID] = visible ? 1u : 0u;
+    barrier();
+
+    uint offset = 0u;
+    for (uint i = 0u; i < lID; i++) {
+        offset += sharedValid[i];
+    }
+
+    uint waveCount = 0u;
+    for (uint i = 0u; i < 256u; i++) {
+        waveCount += sharedValid[i];
+    }
+    barrier();
+
+    uint waveBase;
+    if (lID == 0u) {
+        workgroupBase = atomicAdd(drawCount, waveCount);
+    }
+    barrier();
+    waveBase = workgroupBase;
+#endif
+
+    if (visible) {
         VkDrawIndexedIndirectCommand cmd = blueprints[gID];
         cmd.instanceCount = 1;
-
         cmd.firstInstance = gID;
-
-        compactedCommands[uniqueOutIndex] = cmd;
+        compactedCommands[waveBase + offset] = cmd;
     }
 }
