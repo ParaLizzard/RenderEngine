@@ -225,8 +225,10 @@ set(ASSETSYSTEM_SOURCES
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/models" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/assets" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 
-add_executable(RenderEngine
-        ${CORE_SOURCES}
+# ---------------------------------------------------------------------------
+# Engine static library (everything except main.cpp)
+# ---------------------------------------------------------------------------
+set(ENGINE_LIB_SOURCES
         ${SYSTEM_SOURCES}
         ${THREADING_SOURCES}
         ${VULKAN_SOURCES}
@@ -234,13 +236,20 @@ add_executable(RenderEngine
         ${SCENE_SOURCES}
         ${ASSETSYSTEM_SOURCES}
         ${PASSES_SOURCES}
+        src/Core/Application.cpp
+        src/Core/Application.h
+        src/Core/EngineConfig.h
+        src/Core/Exception.cpp
+        src/Core/Exception.h
 )
 
-target_include_directories(RenderEngine PRIVATE
+add_library(RenderEngineLib STATIC ${ENGINE_LIB_SOURCES})
+
+target_include_directories(RenderEngineLib PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(RenderEngine
+target_link_libraries(RenderEngineLib PUBLIC
         glfw
         Vulkan::Vulkan
         ktx
@@ -248,5 +257,26 @@ target_link_libraries(RenderEngine
         stb
 )
 
+# ---------------------------------------------------------------------------
+# Engine executable
+# ---------------------------------------------------------------------------
+add_executable(RenderEngine src/Core/main.cpp)
+
+target_link_libraries(RenderEngine PRIVATE RenderEngineLib)
 
 target_sources(RenderEngine PRIVATE ${SHADER_OUTPUTS})
+
+# ---------------------------------------------------------------------------
+# Google Test
+# ---------------------------------------------------------------------------
+FetchContent_Declare(
+        googletest
+        GIT_REPOSITORY https://github.com/google/googletest.git
+        GIT_TAG        v1.15.2
+)
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+set(BUILD_GMOCK ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+
+enable_testing()
+add_subdirectory(tests)

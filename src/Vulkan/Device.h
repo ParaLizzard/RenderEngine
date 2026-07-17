@@ -24,6 +24,17 @@ namespace Engine {
         }
     };
 
+    struct LayoutTransitionInfo {
+        VkImageLayout         oldLayout;
+        VkImageLayout         newLayout;
+        VkPipelineStageFlags2 srcStage;
+        VkAccessFlags2        srcAccess;
+        VkPipelineStageFlags2 dstStage;
+        VkAccessFlags2        dstAccess;
+    };
+
+
+
     struct SwapChainSupportDetails
     {
         VkSurfaceCapabilitiesKHR capabilities;

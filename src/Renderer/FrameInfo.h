@@ -43,3 +43,39 @@ namespace Engine {
 
 
 } // namespace Engine
+
+
+
+class PerformanceMonitor
+{
+private:
+    float timer = 0.0f;
+    int count = 0;
+    float interval = 2.0f;
+
+    float cachedFPS = 0.0f;
+    float cachedFrameTimeMs = 0.0f;
+public:
+    void tick(float dt)
+    {
+        timer += dt;
+        count++;
+
+        if (timer >= interval) {
+            cachedFPS = static_cast<float>(count) / timer;
+            cachedFrameTimeMs = (timer * 1000.0f) / static_cast<float>(count);
+
+            timer -= interval;
+            count = 0;
+        }
+    }
+
+    float GetAverageFPS()
+    {
+        return cachedFPS;
+    }
+    float GetAverageFrameTime()
+    {
+        return cachedFrameTimeMs;
+    }
+};

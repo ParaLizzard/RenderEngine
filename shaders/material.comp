@@ -275,6 +275,7 @@ void main() {
     vec3 albedo = textureGrad(bindlessTextures[nonuniformEXT(mat.albedoIndex)], texCoord, ddx_uv, ddy_uv).rgb * mat.albedoFactor.rgb;
     vec3 normalMapSample = textureGrad(bindlessTextures[nonuniformEXT(mat.normalIndex)], texCoord, ddx_uv, ddy_uv).rgb;
     vec4 mrSample = textureGrad(bindlessTextures[nonuniformEXT(mat.roughnessMetallicIndex)], texCoord, ddx_uv, ddy_uv);
+    float materialAO = textureGrad(bindlessTextures[nonuniformEXT(mat.occlusionIndex)], texCoord, ddx_uv, ddy_uv).r;
 
     float roughness = mrSample.g * mat.roughnessFactor;
     float metalness = mrSample.b * mat.metallicFactor;
@@ -302,10 +303,10 @@ void main() {
     float G   = gaSchlickGGX(NdotL, NdotV, lightRoughness);
     vec3  F   = fresnelSchlick(F0, max(dot(H, viewDir), 0.0));
 
-    vec3 specular = (NDF * G * F) / (4.0 * NdotV * NdotL + Epsilon);
+    vec3 specular = (NDF * G * F) / (4.0 * NdotV + Epsilon);
     vec3 kD       = (vec3(1.0) - F) * (1.0 - metalness);
 
-    vec3 directLight = (kD * albedo / PI * NdotL_diffuse + specular * NdotL) * vec3(2.0);
+    vec3 directLight = (kD * albedo / PI * NdotL_diffuse + specular) * vec3(2.0);
 
     vec3 F_ambient  = fresnelSchlickRoughness(NdotV, F0, roughness);
     vec3 kD_ambient = (vec3(1.0) - F_ambient) * (1.0 - metalness);
@@ -325,7 +326,10 @@ void main() {
     if (pc.enableSSAO == 1u) {
         ssao = texture(ssaoBlurTex, uv).r;
     }
-    vec3 ambientLight = (kD_ambient * diffuse_ambient + specular_ambient) * ssao;
+
+    float combinedAO = ssao * materialAO;
+
+    vec3 ambientLight = (kD_ambient * diffuse_ambient + specular_ambient) * combinedAO;
 
     vec3 finalRadiance = directLight + ambientLight;
 

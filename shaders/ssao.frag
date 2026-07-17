@@ -16,7 +16,7 @@ layout(std430, binding = 1) readonly buffer NormalBuffer {
 layout (binding = 2) uniform sampler2D ssaoNoise;
 
 layout (constant_id = 0) const int SSAO_KERNEL_SIZE = 64;
-layout (constant_id = 1) const float SSAO_RADIUS = 0.3;
+layout (constant_id = 1) const float SSAO_RADIUS = 0.5;
 
 layout (binding = 3) uniform UBO
 {
@@ -33,7 +33,6 @@ layout (location = 0) out float outFragColor;
 
 vec3 reconstructViewPos(vec2 uv, float depth)
 {
-    // Convert UV and depth to Normalized Device Coordinates (NDC)
     vec4 ndc = vec4(uv * 2.0 - 1.0, depth, 1.0);
 
     vec4 viewPos = ubo.invProjection * ndc;
@@ -75,6 +74,7 @@ void main()
     mat3 TBN = mat3(tangent, bitangent, normal);
 
     float occlusion = 0.0f;
+    float validSamples = 0.0f;
     const float bias = 0.025f;
 
     for(int i = 0; i < SSAO_KERNEL_SIZE; i++)
@@ -95,10 +95,13 @@ void main()
         vec3 sampledViewPos = reconstructViewPos(offset.xy, rawSampleDepth);
         float sampleDepthZ = sampledViewPos.z;
 
+        // Smoothly fade out samples that are too far away (e.g. background pixels)
         float rangeCheck = smoothstep(0.0, 1.0, 1.0 - (abs(fragPos.z - sampleDepthZ) / SSAO_RADIUS));
 
         occlusion += (sampleDepthZ >= samplePos.z + bias ? 1.0f : 0.0f) * rangeCheck;
+        validSamples += rangeCheck;
     }
 
-    outFragColor = 1.0f - (occlusion / float(SSAO_KERNEL_SIZE));
+    float occlusionRatio = validSamples > 0.1f ? (occlusion / validSamples) : 0.0f;
+    outFragColor = 1.0f - occlusionRatio;
 }

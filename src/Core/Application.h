@@ -84,7 +84,6 @@ namespace Engine {
         bool enableSSAO = true;
         bool ssaoKeyPressed = false;
 
-        float fpsTimer = 0.0f;
-        int fpsCount = 0;
+
     };
 } // namespace Engine

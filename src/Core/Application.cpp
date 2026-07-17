@@ -47,6 +47,8 @@ namespace Engine {
         sceneGraphDirty = true;
         lastExtent = {0, 0};
 
+        PerformanceMonitor monitor{};
+
         while (!window.shouldClose()) {
             window.pollEvents();
             inputManager.Update();
@@ -62,15 +64,11 @@ namespace Engine {
             float deltaTime = currentTime - lastTime;
             lastTime = currentTime;
             double time = window.getTime();
+            monitor.tick(deltaTime);
 
-            fpsTimer += deltaTime;
-            fpsCount++;
-            if (fpsTimer >= 1.0f) {
-                std::string title = "Render Engine - " + std::to_string(fpsCount) + " FPS";
-                window.setWindowTitle(title);
-                fpsTimer -= 1.0f;
-                fpsCount = 0;
-            }
+            std::string title = "Render Engine - " + std::to_string(monitor.GetAverageFPS()) + " FPS";
+            window.setWindowTitle(title);
+
 
             std::vector<ParsedGLTF> parsedModels = assetStreamer.pollCompleted();
             sceneManager.integrateLoadedModels(device, parsedModels, megaBuffer, resourceHeap);
@@ -103,7 +101,7 @@ namespace Engine {
             updateFrameGraph();
 
             float aspect = renderer.getAspectRatio();
-            camera.setPerspectiveProjection(glm::radians(50.0f), aspect, 0.1f, 100.0f);
+            camera.setPerspectiveProjection(glm::radians(30.0f), aspect, 0.1f, 100.0f);
 
             info.frameIndex = currentFrame;
             info.frameTime = time;
