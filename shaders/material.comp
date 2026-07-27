@@ -47,6 +47,16 @@ layout(set = 0, binding = 0) readonly buffer MaterialHeapBuffer {
     MaterialData materials[];
 } materialHeap;
 
+layout(set = 0, binding = 1) uniform SceneUbo {
+    vec4 cameraPos;
+    vec4 directionalLight; // xyz = dir, w = intensity
+    mat4 lightViewProj[4];
+    vec4 cascadesSplits;
+    float maxReflectionLod;
+    uint blueNoiseTexIndex;
+    vec2 _pad;
+} sceneUbo;
+
 layout(set = 0, binding = 2) uniform samplerCube irradianceMap;
 layout(set = 0, binding = 3) uniform samplerCube prefilterMap;
 layout(set = 0, binding = 4) uniform sampler2D brdfLUT;
@@ -108,6 +118,7 @@ layout(set = 1, binding = 10) uniform sampler2D ssaoBlurTex;
 layout(set = 1, binding = 11) writeonly buffer RadianceBuffer {
     uint packedRadiances[];
 } radianceOut;
+layout(set = 1, binding = 12) uniform sampler2DArray csmShadowMap;
 
 struct ObjectData {
     mat4 modelMatrix;
@@ -140,6 +151,74 @@ uint encodeRadiance(vec3 color) {
 
 vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness) {
     return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+const vec2 poissonDisk[16] = vec2[]( 
+    vec2(-0.94201624, -0.39906216), vec2( 0.94558609, -0.76890725),
+    vec2(-0.09418410, -0.92938870), vec2( 0.34495938,  0.29387760),
+    vec2(-0.91588581,  0.45771432), vec2(-0.81544232, -0.87912464),
+    vec2(-0.38277543,  0.27676845), vec2( 0.97484398,  0.75648379),
+    vec2( 0.44323325, -0.97511554), vec2( 0.53742981, -0.47373420),
+    vec2(-0.26496911, -0.41893023), vec2( 0.79197514,  0.19090188),
+    vec2(-0.24188840,  0.99706507), vec2(-0.81409955,  0.91437590),
+    vec2( 0.19984126,  0.78641367), vec2( 0.14383161, -0.14100790)
+);
+
+float SampleShadowBilinear(sampler2DArray shadowMap, vec2 uv, float cascadeIndex, float compareDepth, vec2 texelSize) {
+    ivec2 texSizeInt = textureSize(shadowMap, 0).xy;
+    vec2 pos = uv * vec2(texSizeInt) - 0.5;
+    vec2 f = fract(pos);
+    ivec2 i00 = ivec2(floor(pos));
+
+    bool out00 = i00.x < 0 || i00.x >= texSizeInt.x || i00.y < 0 || i00.y >= texSizeInt.y;
+    bool out10 = i00.x + 1 < 0 || i00.x + 1 >= texSizeInt.x || i00.y < 0 || i00.y >= texSizeInt.y;
+    bool out01 = i00.x < 0 || i00.x >= texSizeInt.x || i00.y + 1 < 0 || i00.y + 1 >= texSizeInt.y;
+    bool out11 = i00.x + 1 < 0 || i00.x + 1 >= texSizeInt.x || i00.y + 1 < 0 || i00.y + 1 >= texSizeInt.y;
+
+    int c = int(cascadeIndex);
+    float d00 = out00 ? 1.0 : texelFetch(shadowMap, ivec3(i00, c), 0).r;
+    float d10 = out10 ? 1.0 : texelFetch(shadowMap, ivec3(i00 + ivec2(1, 0), c), 0).r;
+    float d01 = out01 ? 1.0 : texelFetch(shadowMap, ivec3(i00 + ivec2(0, 1), c), 0).r;
+    float d11 = out11 ? 1.0 : texelFetch(shadowMap, ivec3(i00 + ivec2(1, 1), c), 0).r;
+    
+    float s00 = compareDepth <= d00 ? 1.0 : 0.0;
+    float s10 = compareDepth <= d10 ? 1.0 : 0.0;
+    float s01 = compareDepth <= d01 ? 1.0 : 0.0;
+    float s11 = compareDepth <= d11 ? 1.0 : 0.0;
+    
+    return mix(mix(s00, s10, f.x), mix(s01, s11, f.x), f.y);
+}
+
+float PCSS(sampler2DArray shadowMap, vec4 shadowCoord, uint cascadeIndex, float bias, vec2 texelSize) {
+    const float cascadeScale[3] = float[](1.0, 0.25, 0.05);
+    float scale = cascadeIndex < 3 ? cascadeScale[cascadeIndex] : 0.05;
+
+    float searchRadius = 12.0 * scale; 
+    float avgBlockerDepth = 0.0;
+    int numBlockers = 0;
+
+    for (int i = 0; i < 16; i++) {
+        vec2 offset = poissonDisk[i] * texelSize * searchRadius;
+        float depth = texture(shadowMap, vec3(shadowCoord.xy + offset, float(cascadeIndex))).r;
+        if (depth < shadowCoord.z - bias) {
+            avgBlockerDepth += depth;
+            numBlockers++;
+        }
+    }
+
+    if (numBlockers == 0) return 1.0;
+
+    avgBlockerDepth /= float(numBlockers);
+    float depthDiff = max(shadowCoord.z - avgBlockerDepth, 0.0);
+
+    float pcfRadius = clamp(depthDiff * 2500.0 * scale, 0.001, 16.0 * scale); 
+
+    float illuminated = 0.0;
+    for (int i = 0; i < 16; i++) {
+        vec2 offset = poissonDisk[i] * texelSize * pcfRadius;
+        illuminated += SampleShadowBilinear(shadowMap, shadowCoord.xy + offset, float(cascadeIndex), shadowCoord.z - bias, texelSize);
+    }
+    return illuminated / 16.0;
 }
 
 layout(local_size_x = 16, local_size_y = 16) in;
@@ -241,16 +320,18 @@ void main() {
     VertexAttribute a1 = attributeBuffer.attributes[vOffset + idx1];
     VertexAttribute a2 = attributeBuffer.attributes[vOffset + idx2];
 
-    vec3 n0 = vec3(a0.normalX, a0.normalY, a0.normalZ);
-    vec4 t0 = vec4(a0.tangentX, a0.tangentY, a0.tangentZ, a0.tangentW);
+    mat3 normalMatrix = mat3(objectBuffer.objects[instanceID].normalMatrix);
+
+    vec3 n0 = normalMatrix * vec3(a0.normalX, a0.normalY, a0.normalZ);
+    vec4 t0 = vec4(normalMatrix * vec3(a0.tangentX, a0.tangentY, a0.tangentZ), a0.tangentW);
     vec2 uv0 = vec2(a0.uvX, a0.uvY);
 
-    vec3 n1 = vec3(a1.normalX, a1.normalY, a1.normalZ);
-    vec4 t1 = vec4(a1.tangentX, a1.tangentY, a1.tangentZ, a1.tangentW);
+    vec3 n1 = normalMatrix * vec3(a1.normalX, a1.normalY, a1.normalZ);
+    vec4 t1 = vec4(normalMatrix * vec3(a1.tangentX, a1.tangentY, a1.tangentZ), a1.tangentW);
     vec2 uv1 = vec2(a1.uvX, a1.uvY);
 
-    vec3 n2 = vec3(a2.normalX, a2.normalY, a2.normalZ);
-    vec4 t2 = vec4(a2.tangentX, a2.tangentY, a2.tangentZ, a2.tangentW);
+    vec3 n2 = normalMatrix * vec3(a2.normalX, a2.normalY, a2.normalZ);
+    vec4 t2 = vec4(normalMatrix * vec3(a2.tangentX, a2.tangentY, a2.tangentZ), a2.tangentW);
     vec2 uv2 = vec2(a2.uvX, a2.uvY);
 
     vec3 normal = normalize(bary.x * n0 + bary.y * n1 + bary.z * n2);
@@ -261,13 +342,6 @@ void main() {
     vec2 texCoord_dy = bary_dy.x * uv0 + bary_dy.y * uv1 + bary_dy.z * uv2;
     vec2 ddx_uv = texCoord_dx - texCoord;
     vec2 ddy_uv = texCoord_dy - texCoord;
-
-
-    float maxGradLen = 0.015; // Tuning value: lower = sharper distant textures, higher = blurrier
-    float lenX = length(ddx_uv);
-    float lenY = length(ddy_uv);
-    if (lenX > maxGradLen) ddx_uv *= (maxGradLen / lenX);
-    if (lenY > maxGradLen) ddy_uv *= (maxGradLen / lenY);
 
     uint materialId = a0.texId;
     MaterialData mat = materialHeap.materials[materialId];
@@ -280,12 +354,19 @@ void main() {
     float roughness = mrSample.g * mat.roughnessFactor;
     float metalness = mrSample.b * mat.metallicFactor;
 
-    vec3 mappedNormal = normalMapSample * 2.0 - 1.0;
-    vec3 bitangent = cross(normal, tangent.xyz) * tangent.w;
-    mat3 tbn = mat3(normalize(tangent.xyz), normalize(bitangent), normal);
-    vec3 worldNormal = normalize(tbn * mappedNormal);
+    vec3 worldNormal = normal;
+    if (length(tangent.xyz) > 0.001) {
+        vec3 mappedNormal = normalize(vec3((normalMapSample.xy * 2.0 - 1.0) * mat.normalScale, normalMapSample.z * 2.0 - 1.0));
+        vec3 bitangent = cross(normal, tangent.xyz) * tangent.w;
+        mat3 tbn = mat3(normalize(tangent.xyz), normalize(bitangent), normal);
+        worldNormal = normalize(tbn * mappedNormal);
+    }
 
-    vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
+    if (worldNormal.y > 0.99) {
+        worldNormal.y = -worldNormal.y;
+    }
+
+    vec3 lightDir = normalize(-sceneUbo.directionalLight.xyz);
     vec3 viewDir  = normalize(pc.cameraPos - worldPos);
     vec3 H        = normalize(viewDir + lightDir);
 
@@ -295,8 +376,7 @@ void main() {
 
     vec3 F0 = mix(Fdielectric, albedo, metalness);
 
-    float wrap = 0.5;
-    float NdotL_diffuse = clamp((rawNdotL + wrap) / (1.0 + wrap), 0.0, 1.0);
+    float NdotL_diffuse = NdotL;
     float lightRoughness = max(roughness, 0.05);
 
     float NDF = ndfGGX(max(dot(worldNormal, H), 0.0), lightRoughness);
@@ -306,7 +386,68 @@ void main() {
     vec3 specular = (NDF * G * F) / (4.0 * NdotV + Epsilon);
     vec3 kD       = (vec3(1.0) - F) * (1.0 - metalness);
 
-    vec3 directLight = (kD * albedo / PI * NdotL_diffuse + specular) * vec3(2.0);
+    vec4 viewPos = pc.view * vec4(worldPos, 1.0);
+    float depth = viewPos.z;
+    
+    uint cascadeIndex = 0;
+    for(uint i = 0; i < 3; ++i) {
+        if(depth > sceneUbo.cascadesSplits[i]) {
+            cascadeIndex = i + 1;
+        }
+    }
+
+    const float cascadeScale[3] = float[](1.0, 0.25, 0.05);
+    float scale = cascadeIndex < 3 ? cascadeScale[cascadeIndex] : 0.05;
+
+    float slopeScale = 1.0 - max(rawNdotL, 0.0);
+    float normalBiasAmt = 0.005 + 0.01 * slopeScale;
+    vec3 shadowWorldPos = worldPos + worldNormal * normalBiasAmt;
+
+    vec4 shadowCoord = sceneUbo.lightViewProj[cascadeIndex] * vec4(shadowWorldPos, 1.0);
+    shadowCoord /= shadowCoord.w;
+    shadowCoord.xy = shadowCoord.xy * 0.5 + 0.5;
+
+    float shadowFactor = 1.0;
+    if (shadowCoord.x > 0.0 && shadowCoord.x < 1.0 &&
+        shadowCoord.y > 0.0 && shadowCoord.y < 1.0 &&
+        shadowCoord.z > 0.0 && shadowCoord.z < 1.0) {
+
+        vec2 texelSize = 1.0 / vec2(textureSize(csmShadowMap, 0));
+        float bias = 0.0002;
+
+        shadowFactor = PCSS(csmShadowMap, shadowCoord, cascadeIndex, bias, texelSize);
+    }
+
+    if (cascadeIndex < 2) {
+        float splitDist = sceneUbo.cascadesSplits[cascadeIndex];
+        float blendBand = 0.2; // Blend over 0.2 meters
+        if (depth > splitDist - blendBand && depth < splitDist) {
+            float blendFactor = (depth - (splitDist - blendBand)) / blendBand;
+            
+            uint nextCascade = cascadeIndex + 1;
+            float nextNormalBiasAmt = 0.005 + 0.01 * slopeScale;
+            vec3 nextShadowWorldPos = worldPos + worldNormal * nextNormalBiasAmt;
+            
+            vec4 nextCoord = sceneUbo.lightViewProj[nextCascade] * vec4(nextShadowWorldPos, 1.0);
+            nextCoord /= nextCoord.w;
+            nextCoord.xy = nextCoord.xy * 0.5 + 0.5;
+            
+            float nextShadowFactor = 1.0;
+            if (nextCoord.x > 0.0 && nextCoord.x < 1.0 &&
+                nextCoord.y > 0.0 && nextCoord.y < 1.0 &&
+                nextCoord.z > 0.0 && nextCoord.z < 1.0) {
+                
+                vec2 texelSize = 1.0 / vec2(textureSize(csmShadowMap, 0));
+                float bias = 0.0002;
+
+                nextShadowFactor = PCSS(csmShadowMap, nextCoord, nextCascade, bias, texelSize);
+            }
+            shadowFactor = mix(shadowFactor, nextShadowFactor, blendFactor);
+        }
+    }
+
+    float lightIntensity = sceneUbo.directionalLight.w;
+    vec3 directLight = (kD * albedo / PI * NdotL_diffuse + specular) * vec3(lightIntensity) * shadowFactor;
 
     vec3 F_ambient  = fresnelSchlickRoughness(NdotV, F0, roughness);
     vec3 kD_ambient = (vec3(1.0) - F_ambient) * (1.0 - metalness);

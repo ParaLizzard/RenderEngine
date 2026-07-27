@@ -23,7 +23,7 @@ namespace Engine {
         globalPool = DescriptorPool::Builder(device)
                      .setMaxSets(Config::MAX_FRAMES_IN_FLIGHT)
                      .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, Config::MAX_FRAMES_IN_FLIGHT * 8)
-                     .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, Config::MAX_FRAMES_IN_FLIGHT * 3)
+                     .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, Config::MAX_FRAMES_IN_FLIGHT * 4)
                      .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, Config::MAX_FRAMES_IN_FLIGHT)
                      .build();
 
@@ -51,6 +51,8 @@ namespace Engine {
                           .addBinding(10, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
                           // Packed Radiances buffer
                           .addBinding(11, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
+                          // CsmShadowMap Input Texture
+                          .addBinding(12, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
                           .build();
 
         VkSamplerCreateInfo samplerInfo{};
@@ -61,7 +63,7 @@ namespace Engine {
         samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        samplerInfo.maxAnisotropy = 1.0f;
+        samplerInfo.maxAnisotropy = device.getMaxAnisotropy();
         samplerInfo.pNext = VK_NULL_HANDLE;
         if (vkCreateSampler(device.getDevice(), &samplerInfo, nullptr, &sampler) != VK_SUCCESS) {
             throw std::runtime_error("MaterialPassNode: Failed to create texture sampler");
@@ -75,10 +77,25 @@ namespace Engine {
         nearestSamplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         nearestSamplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         nearestSamplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        nearestSamplerInfo.maxAnisotropy = 1.0f;
+        nearestSamplerInfo.maxAnisotropy = device.getMaxAnisotropy();
         nearestSamplerInfo.pNext = VK_NULL_HANDLE;
         if (vkCreateSampler(device.getDevice(), &nearestSamplerInfo, nullptr, &nearestSampler) != VK_SUCCESS) {
             throw std::runtime_error("MaterialPassNode: Failed to create nearest texture sampler");
+        }
+
+        VkSamplerCreateInfo shadowSamplerInfo{};
+        shadowSamplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        shadowSamplerInfo.magFilter = VK_FILTER_LINEAR;
+        shadowSamplerInfo.minFilter = VK_FILTER_LINEAR;
+        shadowSamplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        shadowSamplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+        shadowSamplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+        shadowSamplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+        shadowSamplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+        shadowSamplerInfo.maxAnisotropy = 1.0f;
+        shadowSamplerInfo.pNext = VK_NULL_HANDLE;
+        if (vkCreateSampler(device.getDevice(), &shadowSamplerInfo, nullptr, &shadowSampler) != VK_SUCCESS) {
+            throw std::runtime_error("MaterialPassNode: Failed to create shadow sampler");
         }
 
         VkExtent2D extent = renderer.getSwapChain().getSwapChainExtent();
@@ -144,6 +161,8 @@ namespace Engine {
             vkDestroySampler(device.getDevice(), nearestSampler, nullptr);
         if (sampler != VK_NULL_HANDLE)
             vkDestroySampler(device.getDevice(), sampler, nullptr);
+        if (shadowSampler != VK_NULL_HANDLE)
+            vkDestroySampler(device.getDevice(), shadowSampler, nullptr);
         if (pipeline != VK_NULL_HANDLE)
             vkDestroyPipeline(device.getDevice(), pipeline, nullptr);
         if (pipelineLayout != VK_NULL_HANDLE)
@@ -155,6 +174,10 @@ namespace Engine {
         renderGraph.readBuffer("CullObjectData", VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
         renderGraph.readImage("VisBuffer",
                               VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
+                              VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                              VK_ACCESS_2_SHADER_READ_BIT);
+        renderGraph.readImage("CsmImage",
+                              VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                               VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                               VK_ACCESS_2_SHADER_READ_BIT);
         VkExtent2D currentExtent = renderer.getSwapChain().getSwapChainExtent();
@@ -180,6 +203,7 @@ namespace Engine {
         renderGraph.createTransientImage("FinalRender",
                                          VK_FORMAT_R16G16B16A16_SFLOAT,
                                          currentExtent,
+                                         1,
                                          VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
         renderGraph.writeImage("FinalRender",
                                VK_IMAGE_LAYOUT_GENERAL,
@@ -313,6 +337,11 @@ namespace Engine {
         ssaoInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         ssaoInfo.sampler = sampler;
 
+        VkDescriptorImageInfo csmInfo{};
+        csmInfo.imageView = graph.getImageView("CsmImage");
+        csmInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        csmInfo.sampler = shadowSampler;
+
         DescriptorWriter(*globalSetLayout, *globalPool)
             .writeBuffer(0, &vertexBufferInfo)
             .writeBuffer(1, &indexBufferInfo)
@@ -326,6 +355,7 @@ namespace Engine {
             .writeImage(9, &finalRenderInfo)
             .writeImage(10, &ssaoInfo)
             .writeBuffer(11, &radianceBufferInfo)
+            .writeImage(12, &csmInfo)
             .overwrite(descriptorSets[currentFrame]);
     }
 

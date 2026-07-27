@@ -37,7 +37,8 @@ namespace Engine {
                                             VkImageView view,
                                             VkFormat format,
                                             VkExtent2D extent,
-                                            VkImageLayout initialLayout)
+                                            VkImageLayout initialLayout,
+                                            uint32_t arrayLayers)
     {
         GraphImage g {};
         g.image = image;
@@ -45,6 +46,7 @@ namespace Engine {
         g.imageFormat = format;
         g.extent = extent;
         g.layout = initialLayout;
+        g.arrayLayers = arrayLayers;
         g.lastAccessMask = VK_ACCESS_2_NONE;
         g.lastStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
 
@@ -82,7 +84,7 @@ namespace Engine {
                         transientCache.erase(decl.name);
                     } else {
                         registerPhysicalImage(
-                            decl.name, cached.image, cached.view, decl.format, decl.extent, VK_IMAGE_LAYOUT_UNDEFINED);
+                            decl.name, cached.image, cached.view, decl.format, decl.extent, VK_IMAGE_LAYOUT_UNDEFINED, decl.arrayLayers);
                         continue;
                     }
                 }
@@ -97,7 +99,7 @@ namespace Engine {
                 imageInfo.imageType = VK_IMAGE_TYPE_2D;
                 imageInfo.format = decl.format;
                 imageInfo.mipLevels = 1;
-                imageInfo.arrayLayers = 1;
+                imageInfo.arrayLayers = decl.arrayLayers;
                 imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
                 imageInfo.usage = decl.usage;
                 imageInfo.extent = {decl.extent.width, decl.extent.height, 1};
@@ -110,13 +112,13 @@ namespace Engine {
                 VkImageViewCreateInfo imageViewInfo {};
                 imageViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
                 imageViewInfo.image = transientImage;
-                imageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+                imageViewInfo.viewType = decl.arrayLayers > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
                 imageViewInfo.format = decl.format;
                 imageViewInfo.pNext = nullptr;
                 imageViewInfo.subresourceRange.aspectMask =
                     VkUtils::isDepthFormat(decl.format) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
                 imageViewInfo.subresourceRange.levelCount = 1;
-                imageViewInfo.subresourceRange.layerCount = 1;
+                imageViewInfo.subresourceRange.layerCount = decl.arrayLayers;
 
                 vkCreateImageView(device.getDevice(), &imageViewInfo, nullptr, &transientImageView);
 
@@ -130,7 +132,7 @@ namespace Engine {
                 transientCache[decl.name] = res;
 
                 registerPhysicalImage(
-                    decl.name, transientImage, transientImageView, decl.format, decl.extent, VK_IMAGE_LAYOUT_UNDEFINED);
+                    decl.name, transientImage, transientImageView, decl.format, decl.extent, VK_IMAGE_LAYOUT_UNDEFINED, decl.arrayLayers);
             }
 
             for (const ImageUsageDeclaration &image: pass.imageUsages) {
@@ -328,9 +330,9 @@ namespace Engine {
     }
 
     void RenderGraphBuilder::createTransientImage(
-        const std::string &name, VkFormat format, VkExtent2D extent, VkImageUsageFlags usage, VkClearValue clearValue)
+        const std::string &name, VkFormat format, VkExtent2D extent, uint32_t arrayLayers, VkImageUsageFlags usage, VkClearValue clearValue)
     {
-        transientImageUsages.push_back({name, format, extent, usage, clearValue});
+        transientImageUsages.push_back({name, format, extent,arrayLayers, usage, clearValue});
     }
 
     void RenderGraph::updateImageHandle(const std::string &name, VkImage image, VkImageView view, VkExtent2D extent)

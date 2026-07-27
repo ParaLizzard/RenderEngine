@@ -88,6 +88,7 @@ namespace Engine {
 
         VkSampler sampler {VK_NULL_HANDLE};
         VkSampler nearestSampler = VK_NULL_HANDLE;
+        VkSampler shadowSampler {VK_NULL_HANDLE};
 
         std::vector<std::unique_ptr<Buffer>> meshBuffers;
         std::vector<std::unique_ptr<Buffer>> packedNormalBuffers;

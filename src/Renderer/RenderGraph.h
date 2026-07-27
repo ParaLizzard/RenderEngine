@@ -5,7 +5,7 @@
 #include <vector>
 #include <vulkan/vulkan.h>
 #include "vma/vk_mem_alloc.h"
-#include "Renderer//RenderPassNode.h"
+#include "Renderer/RenderPassNode.h"
 
 namespace Engine {
 
@@ -43,6 +43,7 @@ namespace Engine {
         std::string name;
         VkFormat format;
         VkExtent2D extent;
+        uint32_t arrayLayers = 1;
         VkImageUsageFlags usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
         VkClearValue clearValue = {};
     };
@@ -96,7 +97,8 @@ namespace Engine {
                                    VkImageView view,
                                    VkFormat format,
                                    VkExtent2D extent,
-                                   VkImageLayout initialLayout);
+                                   VkImageLayout initialLayout,
+                                   uint32_t arrayLayers = 1);
 
         void registerPhysicalBuffer(const std::string &name,
                                     VkBuffer buffer,
@@ -153,6 +155,7 @@ namespace Engine {
         void createTransientImage(const std::string &name,
                                   VkFormat format,
                                   VkExtent2D extent,
+                                  uint32_t arrayLayers = 1,
                                   VkImageUsageFlags usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                                       VK_IMAGE_USAGE_SAMPLED_BIT,
                                   VkClearValue clearValue = {});

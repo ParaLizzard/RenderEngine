@@ -24,7 +24,7 @@
 #include "Renderer/Passes/MaterialPassNode.h"
 #include "Renderer/Passes/SsaoPassNode.h"
 #include "Renderer/Passes/VisibilityPassNode.h"
-
+#include "Renderer/Passes/CsmPassNode.h"
 namespace Engine {
     class Application
     {
@@ -72,6 +72,7 @@ namespace Engine {
         MaterialPassNode materialPass {device, renderer, megaBuffer, resourceHeap, renderGraph};
         SsaoPassNode ssaoPass {device, renderer, megaBuffer, resourceHeap};
         FxaaPassNode fxaaPass {device, renderer, megaBuffer, resourceHeap};
+        CsmPassNode csmPass {device, renderer, megaBuffer, resourceHeap};
 
         int currentFrame;
         uint32_t imgIdx;

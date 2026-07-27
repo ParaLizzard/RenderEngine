@@ -5,6 +5,9 @@
 #include "Scene/Camera.h"
 #include "Scene/GameObject.h"
 
+#define SHADOW_MAP_SIZE 2048
+#define SHADOW_MAP_CASCADES 4
+
 namespace Engine {
     class JobSystem;
     class RenderGraph;
@@ -12,6 +15,8 @@ namespace Engine {
     class Renderer;
     class Device;
     class Model;
+
+
 
     struct FrameInfo
     {
@@ -36,6 +41,8 @@ namespace Engine {
     {
         glm::vec4 cameraPosition;
         glm::vec4 directionalLight;
+        glm::mat4 lightViewProj[SHADOW_MAP_CASCADES];
+        glm::vec4 cascadesSplits;
         float maxReflectionLod;
         uint32_t blueNoiseTexIndex;
         glm::vec2 padding;

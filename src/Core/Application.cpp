@@ -15,7 +15,9 @@ namespace Engine {
     {}
 
     Application::~Application()
-    {}
+    {
+        vkDeviceWaitIdle(device.getDevice());
+    }
 
     void Application::run()
     {
@@ -32,12 +34,14 @@ namespace Engine {
 
         camera.setViewTarget(glm::vec3{0.0f, 0.0f, -5.0f}, glm::vec3{0.0f, 0.0f, 0.0f});
 
-        //assetStreamer.enqueueLoad("models/pbr_sphere.glb");
-        assetStreamer.enqueueLoad("models/sponza_optimized.glb");
-        assetStreamer.enqueueLoad("C:/Users/Jan Varga/Downloads/pkg_a_curtains/pkg_a_curtains/NewSponza_Curtains_glTF.gltf");
+        assetStreamer.enqueueLoad("models/pbr_sphere.glb");
+        assetStreamer.enqueueLoad("models/square.glb");
+        //assetStreamer.enqueueLoad("models/sponza_optimized.glb");
+        //assetStreamer.enqueueLoad("C:/Users/Jan Varga/Downloads/pkg_a_curtains/pkg_a_curtains/NewSponza_Curtains_glTF.gltf");
 
         sceneManager.flattenSceneGraph();
         cullPass.markSceneDirty();
+        csmPass.markSceneDirty();
 
         cameraObject = std::make_shared<GameObject>(GameObject::createGameObject());
         cameraObject->transform.translation = {0.f, 0.f, -5.f};
@@ -50,6 +54,7 @@ namespace Engine {
         PerformanceMonitor monitor{};
 
         while (!window.shouldClose()) {
+
             window.pollEvents();
             inputManager.Update();
 
@@ -88,20 +93,24 @@ namespace Engine {
 
             resourceHeap.update(currentFrame);
 
+            info.camera = &camera;
+
+            float aspect = renderer.getAspectRatio();
+            camera.setPerspectiveProjection(glm::radians(30.0f), aspect, 0.1f, 100.0f);
+
             SceneUbo uboData{};
             uboData.cameraPosition = glm::vec4(cameraObject->transform.translation, 1.0f);
-            uboData.directionalLight = glm::vec4(glm::normalize(glm::vec3(0.f, -50.0f, 0.f)), 1.0f);
+            uboData.directionalLight = glm::vec4(glm::normalize(glm::vec3(0.5f, 1.0f, 0.3f)), 10.0f);
             uboData.maxReflectionLod = static_cast<float>(ibl->prefilteredCube.mipLevels - 1);
             uboData.blueNoiseTexIndex = blueNoiseSlot;
+
+            csmPass.updateCascades(uboData, info);
 
             sceneUboBuffers[currentFrame]->writeToBuffer(&uboData, sizeof(SceneUbo), 0);
             sceneUboBuffers[currentFrame]->flush(sizeof(SceneUbo), 0);
 
             compileFrameGraph();
             updateFrameGraph();
-
-            float aspect = renderer.getAspectRatio();
-            camera.setPerspectiveProjection(glm::radians(30.0f), aspect, 0.1f, 100.0f);
 
             info.frameIndex = currentFrame;
             info.frameTime = time;
@@ -117,8 +126,6 @@ namespace Engine {
 
             renderer.endFrame();
         }
-
-        vkDeviceWaitIdle(device.getDevice());
     }
 
     void Application::initScene()
@@ -148,7 +155,8 @@ namespace Engine {
                                 noiseH,
                                 &device,
                                 resourceHeap,
-                                VK_FILTER_NEAREST);
+                                VK_FILTER_LINEAR,
+                                VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT);
         stbi_image_free(noisePixels);
         blueNoiseSlot = blueNoiseTex.heapHandle.index;
         sceneManager.textures().push_back(std::move(blueNoiseTex));
@@ -211,9 +219,10 @@ namespace Engine {
         sceneManager.flattenSceneGraph();
 
         cullPass.markSceneDirty();
+        csmPass.markSceneDirty();
     }
 
-    void Application::compileFrameGraph()
+   void Application::compileFrameGraph()
     {
         if (!graphCompiled || currentExtent.width != lastExtent.width ||
             currentExtent.height != lastExtent.height) {
@@ -279,6 +288,7 @@ namespace Engine {
                                               currentExtent,
                                               VK_IMAGE_LAYOUT_UNDEFINED);
 
+            renderGraph.addPass(&csmPass);
             renderGraph.addPass(&cullPass);
             renderGraph.addPass(&visPass);
             renderGraph.addPass(&materialPass);

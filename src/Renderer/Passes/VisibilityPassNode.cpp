@@ -29,8 +29,7 @@ namespace Engine {
 
         renderGraph.createTransientImage("VisBuffer",
                                          VK_FORMAT_R32G32_UINT,
-                                         currentExtent,
-                                         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+                                         currentExtent);
 
         renderGraph.readBuffer("CullCompactedIndirectCommands",
                                VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT,

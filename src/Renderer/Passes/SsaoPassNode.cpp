@@ -13,16 +13,41 @@ namespace Engine {
     SsaoPassNode::SsaoPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap):
         device(device), renderer(renderer), megaBuffer(megaBuffer), resourceHeap(resourceHeap)
     {
-        createNoiseTexture();
-        createPipelines();
-
-        ssaoDescriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        blurDescriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        for (int i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
-            if (!descriptorPool->allocateDescriptor(ssaoSetLayout->getDescriptorSetLayout(), ssaoDescriptorSets[i]))
-                throw std::runtime_error("SsaoPassNode: failed to allocate SSAO descriptor sets");
-            if (!descriptorPool->allocateDescriptor(blurSetLayout->getDescriptorSetLayout(), blurDescriptorSets[i]))
-                throw std::runtime_error("SsaoPassNode: failed to allocate blur descriptor sets");
+        try {
+            createNoiseTexture();
+            createPipelines();
+    
+            ssaoDescriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
+            blurDescriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
+            for (int i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
+                if (!descriptorPool->allocateDescriptor(ssaoSetLayout->getDescriptorSetLayout(), ssaoDescriptorSets[i]))
+                    throw std::runtime_error("SsaoPassNode: failed to allocate SSAO descriptor sets");
+                if (!descriptorPool->allocateDescriptor(blurSetLayout->getDescriptorSetLayout(), blurDescriptorSets[i]))
+                    throw std::runtime_error("SsaoPassNode: failed to allocate blur descriptor sets");
+            }
+        } catch (...) {
+            if (noiseSampler != VK_NULL_HANDLE)
+                vkDestroySampler(device.getDevice(), noiseSampler, nullptr);
+            if (colorSampler != VK_NULL_HANDLE)
+                vkDestroySampler(device.getDevice(), colorSampler, nullptr);
+    
+            if (noiseView != VK_NULL_HANDLE)
+                vkDestroyImageView(device.getDevice(), noiseView, nullptr);
+            if (noiseImage != VK_NULL_HANDLE) {
+                vmaDestroyImage(device.getAllocator(), noiseImage, noiseAllocation);
+            }
+    
+            if (ssaoPipeline != VK_NULL_HANDLE)
+                vkDestroyPipeline(device.getDevice(), ssaoPipeline, nullptr);
+            if (ssaoPipelineLayout != VK_NULL_HANDLE)
+                vkDestroyPipelineLayout(device.getDevice(), ssaoPipelineLayout, nullptr);
+    
+            if (blurPipeline != VK_NULL_HANDLE)
+                vkDestroyPipeline(device.getDevice(), blurPipeline, nullptr);
+            if (blurPipelineLayout != VK_NULL_HANDLE)
+                vkDestroyPipelineLayout(device.getDevice(), blurPipelineLayout, nullptr);
+            
+            throw;
         }
     }
 
@@ -121,7 +146,7 @@ namespace Engine {
         ssaoAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
         ssaoAttachment.imageView = frameInfo.renderGraph->getImageView("SsaoImage");
         ssaoAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        ssaoAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        ssaoAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         ssaoAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         ssaoAttachment.clearValue.color = {{1.0f, 1.0f, 1.0f, 1.0f}};
 
@@ -173,8 +198,9 @@ namespace Engine {
         blurAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
         blurAttachment.imageView = frameInfo.renderGraph->getImageView("SsaoBlurImage");
         blurAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        blurAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        blurAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         blurAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        blurAttachment.clearValue.color = {{1.0f, 1.0f, 1.0f, 1.0f}};
 
         VkRenderingInfo blurRenderInfo {};
         blurRenderInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
@@ -335,7 +361,7 @@ namespace Engine {
 
         descriptorPool = DescriptorPool::Builder(device)
                              .setMaxSets(Config::MAX_FRAMES_IN_FLIGHT * 2)
-                             .addPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, Config::MAX_FRAMES_IN_FLIGHT)
+                             .addPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, Config::MAX_FRAMES_IN_FLIGHT * 2)
                              .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, Config::MAX_FRAMES_IN_FLIGHT * 4)
                              .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, Config::MAX_FRAMES_IN_FLIGHT)
                              .build();
@@ -433,7 +459,7 @@ namespace Engine {
         VkPipelineRasterizationStateCreateInfo rasterizer {};
         rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
         rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-        rasterizer.cullMode = VK_CULL_MODE_FRONT_BIT;
+        rasterizer.cullMode = VK_CULL_MODE_NONE;
         rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         rasterizer.lineWidth = 1.0f;
 

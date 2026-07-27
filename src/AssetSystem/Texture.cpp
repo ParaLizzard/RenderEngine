@@ -714,7 +714,7 @@ namespace Engine {
                                            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
                                            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
 
-        VmaAllocationCreateInfo allocInfo;
+        VmaAllocationCreateInfo allocInfo {};
         allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
         VkResult imageResult =

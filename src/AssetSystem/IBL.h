@@ -16,10 +16,10 @@ namespace Engine {
     class Device;
     struct TextureData
     {
-        VkImage image;
-        VkImageView imageView;
-        VkSampler sampler;
-        uint32_t mipLevels;
+        VkImage image = VK_NULL_HANDLE;
+        VkImageView imageView = VK_NULL_HANDLE;
+        VkSampler sampler = VK_NULL_HANDLE;
+        uint32_t mipLevels = 1;
     };
 
     class IBL

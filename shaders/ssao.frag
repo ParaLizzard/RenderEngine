@@ -95,10 +95,9 @@ void main()
         vec3 sampledViewPos = reconstructViewPos(offset.xy, rawSampleDepth);
         float sampleDepthZ = sampledViewPos.z;
 
-        // Smoothly fade out samples that are too far away (e.g. background pixels)
         float rangeCheck = smoothstep(0.0, 1.0, 1.0 - (abs(fragPos.z - sampleDepthZ) / SSAO_RADIUS));
 
-        occlusion += (sampleDepthZ >= samplePos.z + bias ? 1.0f : 0.0f) * rangeCheck;
+        occlusion += (sampleDepthZ <= samplePos.z - bias ? 1.0f : 0.0f) * rangeCheck;
         validSamples += rangeCheck;
     }
 

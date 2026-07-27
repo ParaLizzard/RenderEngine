@@ -29,10 +29,14 @@ layout(std430, set = 0, binding = 1) readonly buffer BlueprintBuffer {
     VkDrawIndexedIndirectCommand blueprints[];
 };
 
+// One counter per cascade -- each cascade's dispatch only ever touches its own
+// index, so all cascades can run without a barrier between them.
 layout(std430, set = 0, binding = 2) buffer DrawCountBuffer {
-    uint drawCount;
+    uint drawCount[];
 };
 
+// Laid out as objectCapacity-sized slices, one per cascade (see objectCapacity
+// below); a given dispatch only ever writes into its own slice.
 layout(std430, set = 0, binding = 3) buffer CompactedIndirectBuffer {
     VkDrawIndexedIndirectCommand compactedCommands[];
 };
@@ -41,6 +45,9 @@ layout(push_constant) uniform PushConsts {
     mat4 viewProj;
     vec4 frustumPlanes[6];
     uint objectCount;
+    uint cascadeIndex;
+    uint objectCapacity;
+    uint clipPlaneCount;
 } push;
 
 shared uint sharedValid[256];
@@ -66,10 +73,23 @@ void main() {
         float worldRadius = sphere.w * maxScale;
 
         visible = true;
-        for (int i = 0; i < 6; i++) {
+        for (uint i = 0u; i < push.clipPlaneCount; i++) {
             if (dot(push.frustumPlanes[i].xyz, worldCenter) + push.frustumPlanes[i].w < -worldRadius) {
                 visible = false;
                 break;
+            }
+        }
+
+        // contribution Culling
+        if (visible) {
+            vec4 clipCenter = push.viewProj * vec4(worldCenter, 1.0);
+            if (clipCenter.w > 0.0) {
+                float projectedRadiusNDC = (worldRadius * abs(push.viewProj[1][1])) / clipCenter.w;
+
+                const float MIN_NDC_RADIUS = 0.001; // cull objects projecting to less than 1 pixel
+                if (projectedRadiusNDC < MIN_NDC_RADIUS) {
+                    visible = false;
+                }
             }
         }
     }
@@ -78,17 +98,17 @@ void main() {
     //visible = true;
     //
 
-#ifdef GL_KHR_shader_subgroup_arithmetic
+    #ifdef GL_KHR_shader_subgroup_arithmetic
     uint ballot = visible ? 1u : 0u;
     uint offset = subgroupExclusiveAdd(ballot);
     uint waveCount = subgroupAdd(ballot);
 
     uint waveBase;
     if (subgroupElect()) {
-        waveBase = atomicAdd(drawCount, waveCount);
+        waveBase = atomicAdd(drawCount[push.cascadeIndex], waveCount);
     }
     waveBase = subgroupBroadcastFirst(waveBase);
-#else
+    #else
     sharedValid[lID] = visible ? 1u : 0u;
     barrier();
 
@@ -105,16 +125,16 @@ void main() {
 
     uint waveBase;
     if (lID == 0u) {
-        workgroupBase = atomicAdd(drawCount, waveCount);
+        workgroupBase = atomicAdd(drawCount[push.cascadeIndex], waveCount);
     }
     barrier();
     waveBase = workgroupBase;
-#endif
+    #endif
 
     if (visible) {
         VkDrawIndexedIndirectCommand cmd = blueprints[gID];
         cmd.instanceCount = 1;
         cmd.firstInstance = gID;
-        compactedCommands[waveBase + offset] = cmd;
+        compactedCommands[push.cascadeIndex * push.objectCapacity + waveBase + offset] = cmd;
     }
 }

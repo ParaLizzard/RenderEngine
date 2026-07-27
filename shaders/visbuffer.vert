@@ -19,12 +19,10 @@ layout(push_constant) uniform PushConstants {
 } pc;
 
 void main() {
-    // 1. Fetch the true global ID for this object
     uint objectID = gl_InstanceIndex;
 
-    // 2. Pass it down to the VisBuffer
     outInstanceID = objectID;
 
     mat4 model = objects[objectID].modelMatrix;
-    gl_Position = pc.viewProj * model * vec4(inPosition, 1.0);
+    gl_Position = pc.viewProj * (model * vec4(inPosition, 1.0));
 }

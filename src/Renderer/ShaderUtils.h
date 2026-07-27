@@ -9,6 +9,19 @@ namespace Engine::ShaderUtils {
     static std::vector<char> readFile(const std::string &filename)
     {
         std::ifstream file(filename, std::ios::ate | std::ios::binary);
+        if (!file.is_open()) {
+            std::vector<std::string> fallbackPaths = {
+                "../" + filename,
+                "../../" + filename
+            };
+            for (const auto &altPath : fallbackPaths) {
+                file.clear();
+                file.open(altPath, std::ios::ate | std::ios::binary);
+                if (file.is_open()) {
+                    break;
+                }
+            }
+        }
         if (!file.is_open())
             throw std::runtime_error("failed to open file: " + filename);
         size_t fileSize = (size_t)file.tellg();

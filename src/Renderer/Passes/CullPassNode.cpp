@@ -197,14 +197,22 @@ namespace Engine {
         pipelineLayoutInfo.pushConstantRangeCount = 1;
         pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
-        vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &computePipelineLayout);
+        if (vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &computePipelineLayout) !=
+            VK_SUCCESS) {
+            throw std::runtime_error("CullPassNode: failed to create compute pipeline layout");
+        }
 
         VkComputePipelineCreateInfo pipelineInfo {};
         pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
         pipelineInfo.layout = computePipelineLayout;
         pipelineInfo.stage = computeStageInfo;
 
-        vkCreateComputePipelines(device.getDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &computePipeline);
+        if (vkCreateComputePipelines(device.getDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &computePipeline) !=
+            VK_SUCCESS) {
+            throw std::runtime_error(
+                "CullPassNode: failed to create compute pipeline (check that ComputePushConstants matches "
+                "cull.comp's push_constant block -- this shader is shared with CsmPassNode)");
+        }
         vkDestroyShaderModule(device.getDevice(), compModule, nullptr);
     }
 
@@ -344,11 +352,14 @@ namespace Engine {
                 compPc.frustumPlanes[i] /= len;
             }
 
-            compPc.objectCount = objectDataArray.size();
+            compPc.objectCount = static_cast<uint32_t>(objectDataArray.size());
+            compPc.cascadeIndex = 0;
+            compPc.objectCapacity = Config::MAX_SCENE_OBJECTS;
+            compPc.clipPlaneCount = 6; // Main camera uses 6 frustum planes
             vkCmdPushConstants(
                 cmd, computePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ComputePushConstants), &compPc);
 
-            uint32_t groupCount = (objectDataArray.size() + 255) / 256;
+            uint32_t groupCount = (static_cast<uint32_t>(objectDataArray.size()) + 255) / 256;
             vkCmdDispatch(cmd, groupCount, 1, 1);
         }
     }

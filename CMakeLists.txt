@@ -131,6 +131,8 @@ foreach(SHADER_SRC ${SHADER_SOURCES})
     list(APPEND SHADER_OUTPUTS "${SPV_OUT}")
 endforeach()
 
+add_custom_target(CompileShaders ALL DEPENDS ${SHADER_OUTPUTS})
+
 # ---------------------------------------------------------------------------
 # Engine executable
 # ---------------------------------------------------------------------------
@@ -196,6 +198,8 @@ set(PASSES_SOURCES
         src/Renderer/Passes/CullPassNode.h
         src/Renderer/Passes/MaterialPassNode.cpp
         src/Renderer/Passes/MaterialPassNode.h
+        src/Renderer/Passes/CsmPassNode.cpp
+        src/Renderer/Passes/CsmPassNode.h
 )
 
 set(SCENE_SOURCES
@@ -244,6 +248,7 @@ set(ENGINE_LIB_SOURCES
 )
 
 add_library(RenderEngineLib STATIC ${ENGINE_LIB_SOURCES})
+add_dependencies(RenderEngineLib CompileShaders)
 
 target_include_directories(RenderEngineLib PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/src

@@ -129,13 +129,12 @@ TEST_F(RenderGraphBuilderTest, CreateTransientImagePushesCorrectDeclaration)
     clear.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
 
     auto builder = createBuilder();
-    builder.createTransientImage(
-        "ssaoOutput",
-        VK_FORMAT_R8_UNORM,
-        extent,
-        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-        clear
-    );
+    builder.createTransientImage("ssaoOutput",
+                                 VK_FORMAT_R8_UNORM,
+                                 extent,
+                                 1,
+                                 VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                                 clear);
 
     ASSERT_EQ(transientImages.size(), 1);
     EXPECT_EQ(transientImages[0].name, "ssaoOutput");
@@ -149,11 +148,7 @@ TEST_F(RenderGraphBuilderTest, CreateTransientImagePushesCorrectDeclaration)
 TEST_F(RenderGraphBuilderTest, CreateTransientImageDefaultUsageFlags)
 {
     auto builder = createBuilder();
-    builder.createTransientImage(
-        "depthBuffer",
-        VK_FORMAT_D32_SFLOAT,
-        {1920, 1080}
-    );
+    builder.createTransientImage("depthBuffer", VK_FORMAT_D32_SFLOAT, {1920, 1080}, 1);
 
     ASSERT_EQ(transientImages.size(), 1);
     // Default usage: COLOR_ATTACHMENT | SAMPLED
@@ -175,7 +170,7 @@ TEST_F(RenderGraphBuilderTest, MultipleDeclsAccumulateInOrder)
                        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
     builder.readBuffer("C", VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
     builder.writeBuffer("D", VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
-    builder.createTransientImage("E", VK_FORMAT_R8G8B8A8_UNORM, {800, 600});
+    builder.createTransientImage("E", VK_FORMAT_R8G8B8A8_UNORM, {800, 600}, 1);
 
     EXPECT_EQ(imageUsages.size(), 2);
     EXPECT_EQ(imageUsages[0].imageName, "A");
