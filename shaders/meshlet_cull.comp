@@ -1,0 +1,176 @@
+#version 460
+
+#extension GL_KHR_shader_subgroup_arithmetic : enable
+#extension GL_KHR_shader_subgroup_basic : enable
+#extension GL_KHR_shader_subgroup_ballot : enable
+
+layout(local_size_x_id = 0, local_size_x = 256) in;
+
+struct Meshlet {
+    float center_x;
+    float center_y;
+    float center_z;
+    float radius;
+    uint cone_axis_cutoff; // packed 4x8 signed chars
+    uint vertexOffset;
+    uint indexOffset;
+    uint vertexCount;
+    uint triangleCount;
+};
+
+struct ObjectData {
+    mat4 modelMatrix;
+    mat4 normalMatrix;
+    vec4 boundingSphere;
+    uint baseMeshlet;
+    uint meshletCount;
+};
+
+layout(std430, set = 0, binding = 5) readonly buffer ObjectBuffer {
+    ObjectData objects[];
+};
+
+layout(std430, set = 0, binding = 8) readonly buffer MeshletBuffer {
+    Meshlet meshlets[];
+};
+
+// --- CullPass Local Buffers (set = 1) ---
+
+layout(std430, set = 1, binding = 1) readonly buffer VisibleObjectBuffer {
+    uint visibleObjects[];
+};
+
+layout(std430, set = 1, binding = 2) buffer SingleIndirectCommandBuffer {
+    uint vertexCount;
+    uint instanceCount;
+    uint firstVertex;
+    uint firstInstance;
+};
+
+layout(std430, set = 1, binding = 3) buffer CompactedIndexBuffer {
+    uint syntheticIndices[];
+};
+
+layout(push_constant) uniform PushConsts {
+    mat4 viewProj;
+    vec4 frustumPlanes[6];
+    vec3 cameraPos;
+    uint objectCount; // total Meshlets
+    uint actualObjectCount; // real objects
+    uint cascadeIndex;
+    uint objectCapacity;
+    uint clipPlaneCount;
+} push;
+
+shared uint sharedIndexCount[gl_WorkGroupSize.x];
+shared uint workgroupBase;
+
+void main() {
+    // 1 Workgroup = 1 Visible Object
+    uint visibleObjectIndex = gl_WorkGroupID.x;
+    uint objectID = visibleObjects[visibleObjectIndex];
+    ObjectData obj = objects[objectID];
+
+    // Precalculate scales that are identical for all meshlets in this object
+    float sqX = dot(obj.modelMatrix[0].xyz, obj.modelMatrix[0].xyz);
+    float sqY = dot(obj.modelMatrix[1].xyz, obj.modelMatrix[1].xyz);
+    float sqZ = dot(obj.modelMatrix[2].xyz, obj.modelMatrix[2].xyz);
+    float maxScale = sqrt(max(max(sqX, sqY), sqZ));
+    
+    // Each thread processes one meshlet of this object
+    for (uint i = gl_LocalInvocationID.x; i < obj.meshletCount; i += gl_WorkGroupSize.x) {
+        uint meshletID = obj.baseMeshlet + i;
+        Meshlet m = meshlets[meshletID];
+
+        // 1. Calculate World Space Sphere for the Meshlet
+        vec3 localCenter = vec3(m.center_x, m.center_y, m.center_z);
+        vec3 worldCenter = (obj.modelMatrix * vec4(localCenter, 1.0)).xyz;
+        float worldRadius = m.radius * maxScale;
+
+        // 2. Frustum Culling
+        bool visible = true;
+        for (uint p = 0u; p < push.clipPlaneCount; p++) {
+            if (dot(push.frustumPlanes[p].xyz, worldCenter) + push.frustumPlanes[p].w < -worldRadius) {
+                visible = false;
+                break;
+            }
+        }
+
+        // 3. Contribution Culling
+        if (visible) {
+            vec4 clipCenter = push.viewProj * vec4(worldCenter, 1.0);
+            if (clipCenter.w > 0.0) {
+                float projectedRadiusNDC = (worldRadius * abs(push.viewProj[1][1])) / clipCenter.w;
+                const float MIN_NDC_RADIUS = 0.001; 
+                if (projectedRadiusNDC < MIN_NDC_RADIUS) {
+                    visible = false;
+                }
+            }
+        }
+
+        // 4. Normal Cone Culling (Dequantization)
+        if (visible) {
+            vec4 cone = unpackSnorm4x8(m.cone_axis_cutoff); 
+            vec3 cone_axis_local = cone.xyz;
+            float cone_cutoff = cone.w;
+
+            vec3 cone_axis_world = normalize(mat3(obj.normalMatrix) * cone_axis_local);
+            vec3 view_dir = normalize(worldCenter - push.cameraPos);
+            
+            if (dot(cone_axis_world, view_dir) >= cone_cutoff) {
+                visible = false;
+            }
+        }
+
+        // 5. Subgroup-Optimized Block Allocation
+        uint indexCount = visible ? (m.triangleCount * 3) : 0;
+        
+        #ifdef GL_KHR_shader_subgroup_arithmetic
+        uint waveIndexCount = subgroupAdd(indexCount);
+        uint offset = subgroupExclusiveAdd(indexCount);
+        uint waveBase;
+        
+        if (subgroupElect()) {
+            waveBase = atomicAdd(vertexCount, waveIndexCount);
+        }
+        waveBase = subgroupBroadcastFirst(waveBase);
+        
+        uint baseSlot = waveBase + offset;
+        
+        #else
+        uint lID = gl_LocalInvocationID.x;
+        sharedIndexCount[lID] = indexCount;
+        barrier();
+
+        uint offset = 0u;
+        for (uint j = 0u; j < lID; j++) {
+            offset += sharedIndexCount[j];
+        }
+
+        uint waveIndexCount = 0u;
+        for (uint j = 0u; j < gl_WorkGroupSize.x; j++) {
+            waveIndexCount += sharedIndexCount[j];
+        }
+        barrier();
+
+        if (lID == 0u) {
+            workgroupBase = atomicAdd(vertexCount, waveIndexCount);
+        }
+        barrier();
+        
+        uint baseSlot = workgroupBase + offset;
+        #endif
+
+        // 6. Write Synthetic Indices
+        if (visible) {
+            for (uint j = 0; j < indexCount; j++) {
+                uint syntheticIndex = (meshletID << 10) | j;
+                syntheticIndices[baseSlot + j] = syntheticIndex;
+            }
+            
+            instanceCount = 1;
+            firstVertex = 0;
+            firstInstance = 0;
+        }
+    }
+}

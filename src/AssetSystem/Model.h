@@ -96,12 +96,14 @@ namespace Engine {
 
         [[nodiscard]] uint32_t getVertexCount() const {return  totalAllocatedVertices;}
         [[nodiscard]] uint32_t getIndexCount() const {return  totalAllocatedIndices;}
+        [[nodiscard]] uint32_t getMeshletCount() const {return  totalAllocatedMeshlets;}
 
     private:
         Device &device;
 
         uint32_t totalAllocatedVertices = 0;
         uint32_t totalAllocatedIndices = 0;
+        uint32_t totalAllocatedMeshlets = 0;
 
         // CPU staging arrays
         std::vector<VertexPosition> cpuPositions;

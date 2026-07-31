@@ -1,0 +1,91 @@
+#version 460
+
+layout(local_size_x_id = 0, local_size_x = 256) in;
+
+struct ObjectData {
+    mat4 modelMatrix;
+    mat4 normalMatrix;
+    vec4 boundingSphere;
+    uint baseMeshlet;
+    uint meshletCount;
+};
+
+layout(std430, set = 0, binding = 5) readonly buffer ObjectBuffer {
+    ObjectData objects[];
+};
+
+// --- CullPass Local Buffers (set = 1) ---
+
+layout(std430, set = 1, binding = 0) buffer DispatchCommandBuffer {
+    uint dispatchX;
+    uint dispatchY;
+    uint dispatchZ;
+};
+
+layout(std430, set = 1, binding = 1) buffer VisibleObjectBuffer {
+    uint visibleObjects[];
+};
+
+layout(push_constant) uniform PushConsts {
+    mat4 viewProj;
+    vec4 frustumPlanes[6];
+    vec3 cameraPos;
+    uint objectCount; // total Meshlets
+    uint actualObjectCount; // real objects
+    uint cascadeIndex;
+    uint objectCapacity;
+    uint clipPlaneCount;
+} push;
+
+void main() {
+    uint objectID = gl_GlobalInvocationID.x;
+    if (objectID >= push.actualObjectCount) return;
+
+    ObjectData obj = objects[objectID];
+
+    // 1. Calculate World Space Sphere
+    vec4 sphere = obj.boundingSphere;
+    vec3 localCenter = sphere.xyz;
+    vec3 worldCenter = (obj.modelMatrix * vec4(localCenter, 1.0)).xyz;
+    
+    // Scale radius by object transform
+    float sqX = dot(obj.modelMatrix[0].xyz, obj.modelMatrix[0].xyz);
+    float sqY = dot(obj.modelMatrix[1].xyz, obj.modelMatrix[1].xyz);
+    float sqZ = dot(obj.modelMatrix[2].xyz, obj.modelMatrix[2].xyz);
+    float maxScale = sqrt(max(max(sqX, sqY), sqZ));
+    float worldRadius = sphere.w * maxScale;
+
+    // 2. Frustum Culling
+    bool visible = true;
+    for (uint i = 0u; i < push.clipPlaneCount; i++) {
+        if (dot(push.frustumPlanes[i].xyz, worldCenter) + push.frustumPlanes[i].w < -worldRadius) {
+            visible = false;
+            break;
+        }
+    }
+
+    // 3. Contribution Culling
+    if (visible) {
+        vec4 clipCenter = push.viewProj * vec4(worldCenter, 1.0);
+        if (clipCenter.w > 0.0) {
+            float projectedRadiusNDC = (worldRadius * abs(push.viewProj[1][1])) / clipCenter.w;
+            const float MIN_NDC_RADIUS = 0.001; 
+            if (projectedRadiusNDC < MIN_NDC_RADIUS) {
+                visible = false;
+            }
+        }
+    }
+
+    // 4. Output to Visible Object List if it survives
+    if (visible) {
+        // Increment the dispatchX count, which serves as the length of our visible object array
+        uint slot = atomicAdd(dispatchX, 1);
+        visibleObjects[slot] = objectID;
+    }
+
+    // Thread 0 ensures the other dimensions of the indirect dispatch command are set
+    if (gl_GlobalInvocationID.x == 0) {
+        dispatchY = 1;
+        dispatchZ = 1;
+    }
+}

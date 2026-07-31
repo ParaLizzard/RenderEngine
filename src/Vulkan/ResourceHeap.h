@@ -113,6 +113,15 @@ namespace Engine {
             return globalDescriptorSetLayout;
         }
 
+        void setGeometryBuffers(std::shared_ptr<Buffer> positionBuf,
+                                std::shared_ptr<Buffer> attributeBuf,
+                                std::shared_ptr<Buffer> indexBuffer,
+                                std::shared_ptr<Buffer> meshletBuf,
+                                std::shared_ptr<Buffer> meshletVerticesBuf,
+                                std::shared_ptr<Buffer> meshletTrianglesBuf);
+                                
+        void setObjectBuffer(std::shared_ptr<Buffer> objectBuf);
+
     private:
         uint32_t fallbackWhiteSlot = 0;
         uint32_t fallbackFlatNormalSlot = 1;
@@ -134,6 +143,14 @@ namespace Engine {
         std::unique_ptr<Texture2D> fallbackFlatNormalTex;
 
         std::vector<std::unique_ptr<Buffer>> materialBuffers;
+        
+        std::shared_ptr<Buffer> globalObjectBuffer;
+        std::shared_ptr<Buffer> globalPositionBuffer;
+        std::shared_ptr<Buffer> globalAttributeBuffer;
+        std::shared_ptr<Buffer> globalIndexBuffer;
+        std::shared_ptr<Buffer> globalMeshletBuffer;
+        std::shared_ptr<Buffer> globalMeshletVerticesBuffer;
+        std::shared_ptr<Buffer> globalMeshletTrianglesBuffer;
 
         std::vector<SlotMetadata> slots;
         std::vector<PendingWrite> pendingWrites;

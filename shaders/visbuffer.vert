@@ -10,7 +10,7 @@ struct ObjectData {
     vec4 boundingSphere;
 };
 
-layout(std430, set = 0, binding = 0) readonly buffer ObjectBuffer {
+layout(std430, set = 0, binding = 5) readonly buffer ObjectBuffer {
     ObjectData objects[];
 };
 

@@ -79,7 +79,27 @@ namespace Engine {
 
 
             std::vector<ParsedGLTF> parsedModels = assetStreamer.pollCompleted();
-            sceneManager.integrateLoadedModels(device, parsedModels, megaBuffer, resourceHeap);
+            for (auto& parsedModel : parsedModels) {
+                auto newObjects = LoaderGLTF::finalize(parsedModel, device, megaBuffer, resourceHeap, sceneManager.textures());
+                sceneManager.addGameObjects(std::move(newObjects));
+                resourceHeap.markMaterialsDirty();
+                megaBuffer.uploadToGPU();
+                
+                resourceHeap.setGeometryBuffers(
+                    megaBuffer.getPositionBuffer(),
+                    megaBuffer.getAttributeBuffer(),
+                    megaBuffer.getIndexBuffer(),
+                    megaBuffer.getMeshletBuffer(),
+                    megaBuffer.getMeshletVerticesBuffer(),
+                    megaBuffer.getMeshletTrianglesBuffer()
+                );
+                
+                transformPass.markSceneDirty();
+                cullPass.markSceneDirty();
+                csmPass.markSceneDirty();
+                
+                std::cout << "Successfully streamed in async model!" << std::endl;
+            }
 
             cameraController.moveInPlaneXZ(inputManager, deltaTime, cameraObject);
             camera.setViewYXZ(cameraObject->transform.translation, cameraObject->transform.rotation);
@@ -182,6 +202,16 @@ namespace Engine {
 
         megaBuffer.uploadToGPU();
 
+        resourceHeap.setGeometryBuffers(
+            megaBuffer.getPositionBuffer(),
+            megaBuffer.getAttributeBuffer(),
+            megaBuffer.getIndexBuffer(),
+            megaBuffer.getMeshletBuffer(),
+            megaBuffer.getMeshletVerticesBuffer(),
+            megaBuffer.getMeshletTrianglesBuffer()
+        );
+        resourceHeap.setObjectBuffer(transformPass.getGlobalObjectBuffer());
+
         ibl = std::make_unique<IBL>(device, skyBox, resourceHeap, megaBuffer, *localCubeMeshNode);
 
         VkDescriptorImageInfo irradianceInfo{};
@@ -221,6 +251,7 @@ namespace Engine {
 
         sceneManager.flattenSceneGraph();
 
+        transformPass.markSceneDirty();
         cullPass.markSceneDirty();
         csmPass.markSceneDirty();
     }
@@ -291,7 +322,10 @@ namespace Engine {
                                               currentExtent,
                                               VK_IMAGE_LAYOUT_UNDEFINED);
 
-            renderGraph.addPass(&cullPass);
+            renderGraph.addPass(&transformPass);
+            if (!device.isMeshShaderSupported()) {
+                renderGraph.addPass(&cullPass);
+            }
             renderGraph.addPass(&csmPass);
             renderGraph.addPass(&visPass);
             renderGraph.addPass(&materialPass);
@@ -310,12 +344,8 @@ namespace Engine {
                                        resourceHeap.getMaterialBufferInfo(currentFrame).buffer,
                                        resourceHeap.getMaterialBufferSize());
         renderGraph.updateBufferHandle("CullCompactedIndirectCommands",
-                                       cullPass.getCompactedIndirectBuffer(currentFrame),
-                                       Config::MAX_SCENE_OBJECTS * sizeof(VkDrawIndexedIndirectCommand));
-        renderGraph.updateBufferHandle(
-            "CullObjectData",
-            cullPass.getGpuObjectBuffer(currentFrame),
-            Config::MAX_SCENE_OBJECTS * sizeof(ObjectData));
+                                       cullPass.getCompactedIndexBuffer(currentFrame),
+                                       Config::MAX_SCENE_OBJECTS * Config::MAX_TRIANGLES * 3 * sizeof(uint32_t));
 
         renderGraph.updateBufferHandle(
             "CullDrawCount",

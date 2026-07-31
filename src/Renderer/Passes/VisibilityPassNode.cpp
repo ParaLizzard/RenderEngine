@@ -8,8 +8,9 @@ namespace Engine {
     VisibilityPassNode::VisibilityPassNode(Device &device,
                                            Renderer &renderer,
                                            Model &megaBuffer,
-                                           CullPassNode &cullPass):
-        device(device), megaBuffer(megaBuffer), renderer(renderer), cullPass(cullPass)
+                                           CullPassNode &cullPass,
+                                           ResourceHeap &resourceHeap):
+        device(device), megaBuffer(megaBuffer), renderer(renderer), cullPass(cullPass), resourceHeap(resourceHeap)
     {
         createPipelineLayout();
         createPipeline();
@@ -102,8 +103,8 @@ namespace Engine {
 
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
-        VkDescriptorSet cullingSet = cullPass.getObjectDescriptorSet(currentFrame);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &cullingSet, 0, nullptr);
+        VkDescriptorSet sets[] = {resourceHeap.getDescriptorSet(currentFrame), cullPass.getObjectDescriptorSet(currentFrame)};
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 2, sets, 0, nullptr);
 
         vkCmdPushConstants(cmd,
                            pipelineLayout,
@@ -114,13 +115,11 @@ namespace Engine {
         megaBuffer.bindPositionOnly(cmd);
 
 
-        vkCmdDrawIndexedIndirectCount(cmd,
-                                      cullPass.getCompactedIndirectBuffer(currentFrame),
-                                      0,
-                                      cullPass.getDrawCountBuffer(currentFrame),
-                                      0,
-                                      cullPass.getMaxObjectCount(),
-                                      sizeof(VkDrawIndexedIndirectCommand));
+        vkCmdDrawIndirect(cmd,
+                          cullPass.getSingleIndirectCommandBuffer(currentFrame),
+                          0,
+                          1,
+                          sizeof(VkDrawIndirectCommand));
 
         vkCmdEndRendering(cmd);
     }
@@ -137,13 +136,13 @@ namespace Engine {
         pushConstantRange.offset = 0;
         pushConstantRange.size = sizeof(VisibilityPushConstants);
 
-        VkDescriptorSetLayout layouts[] = {cullPass.getObjectSetLayout()};
+        VkDescriptorSetLayout layouts[] = {resourceHeap.getDescriptorSetLayout(), cullPass.getObjectSetLayout()};
 
         VkPipelineLayoutCreateInfo pipelineLayoutInfo {};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         pipelineLayoutInfo.pushConstantRangeCount = 1;
         pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
-        pipelineLayoutInfo.setLayoutCount = 1;
+        pipelineLayoutInfo.setLayoutCount = 2;
         pipelineLayoutInfo.pSetLayouts = layouts;
 
         vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &pipelineLayout);

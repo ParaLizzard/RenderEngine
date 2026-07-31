@@ -64,16 +64,16 @@ layout(set = 0, binding = 2) uniform samplerCube irradianceMap;
 layout(set = 0, binding = 3) uniform samplerCube prefilterMap;
 layout(set = 0, binding = 4) uniform sampler2D brdfLUT;
 
-layout(set = 0, binding = 5) uniform sampler2D bindlessTextures[];
+layout(set = 0, binding = 12) uniform sampler2D bindlessTextures[];
 
 struct PositionData {
     float x, y, z;
 };
-layout(set = 1, binding = 0) readonly buffer VertexBuffer {
+layout(set = 0, binding = 6) readonly buffer VertexBuffer {
     PositionData positions[];
 } vertexBuffer;
 
-layout(set = 1, binding = 1) readonly buffer IndexBuffer {
+layout(set = 0, binding = 11) readonly buffer IndexBuffer {
     uint indices[];
 } indexBuffer;
 
@@ -111,7 +111,7 @@ struct VertexAttribute {
     uint texId;
 };
 
-layout(set = 1, binding = 7) readonly buffer AttributeBuffer {
+layout(set = 0, binding = 7) readonly buffer AttributeBuffer {
     VertexAttribute attributes[];
 } attributeBuffer;
 
@@ -131,7 +131,7 @@ struct ObjectData {
     vec4 boundingSphere;
 };
 
-layout(set = 1, binding = 8) readonly buffer ObjectBuffer {
+layout(set = 0, binding = 5) readonly buffer ObjectBuffer {
     ObjectData objects[];
 } objectBuffer;
 

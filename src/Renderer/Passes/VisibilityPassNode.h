@@ -2,6 +2,7 @@
 #include "Renderer/RenderPassNode.h"
 #include "Renderer/Renderer.h"
 #include "Renderer/Passes/CullPassNode.h"
+#include "Vulkan/ResourceHeap.h"
 
 namespace Engine {
     struct VisibilityPushConstants
@@ -12,7 +13,7 @@ namespace Engine {
     class VisibilityPassNode: public RenderPassNode
     {
     public:
-        VisibilityPassNode(Device &device, Renderer &renderer, Model &megaBuffer, CullPassNode &cullPass);
+        VisibilityPassNode(Device &device, Renderer &renderer, Model &megaBuffer, CullPassNode &cullPass, ResourceHeap &resourceHeap);
         ~VisibilityPassNode();
 
         VisibilityPassNode(const VisibilityPassNode &) = delete;
@@ -31,6 +32,7 @@ namespace Engine {
         Model &megaBuffer;
         Renderer &renderer;
         CullPassNode &cullPass;
+        ResourceHeap &resourceHeap;
 
         VkPipelineLayout pipelineLayout;
         VkPipeline pipeline;

@@ -21,7 +21,7 @@ namespace Engine {
 
         std::array<VkDescriptorPoolSize, 3> poolSizes {};
         poolSizes[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        poolSizes[0].descriptorCount = 1 * Config::MAX_FRAMES_IN_FLIGHT;
+        poolSizes[0].descriptorCount = 8 * Config::MAX_FRAMES_IN_FLIGHT;
         poolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         poolSizes[1].descriptorCount = 1 * Config::MAX_FRAMES_IN_FLIGHT;
         poolSizes[2].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -38,7 +38,7 @@ namespace Engine {
             throw std::runtime_error("ResourceHeap: Failed to create bindless descriptor pool");
         }
 
-        std::array<VkDescriptorSetLayoutBinding, 6> bindings {};
+        std::array<VkDescriptorSetLayoutBinding, 13> bindings {};
 
         // Binding 0: Material SSBO
         bindings[0].binding = 0;
@@ -70,19 +70,68 @@ namespace Engine {
         bindings[4].descriptorCount = 1;
         bindings[4].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
 
-        // Binding 5: Variable Textures (Must be last!)
+        // Binding 5: ObjectBuffer
         bindings[5].binding = 5;
-        bindings[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        bindings[5].descriptorCount = maxDescriptors;
-        bindings[5].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+        bindings[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        bindings[5].descriptorCount = 1;
+        bindings[5].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
-        std::array<VkDescriptorBindingFlags, 6> bindingFlags {};
+        // Binding 6: PositionBuffer
+        bindings[6].binding = 6;
+        bindings[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        bindings[6].descriptorCount = 1;
+        bindings[6].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+
+        // Binding 7: AttributeBuffer
+        bindings[7].binding = 7;
+        bindings[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        bindings[7].descriptorCount = 1;
+        bindings[7].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+
+        // Binding 8: MeshletBuffer
+        bindings[8].binding = 8;
+        bindings[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        bindings[8].descriptorCount = 1;
+        bindings[8].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+
+        // Binding 9: MeshletVerticesBuffer
+        bindings[9].binding = 9;
+        bindings[9].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        bindings[9].descriptorCount = 1;
+        bindings[9].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+
+        // Binding 10: MeshletTrianglesBuffer
+        bindings[10].binding = 10;
+        bindings[10].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        bindings[10].descriptorCount = 1;
+        bindings[10].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+
+        // Binding 11: IndexBuffer
+        bindings[11].binding = 11;
+        bindings[11].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        bindings[11].descriptorCount = 1;
+        bindings[11].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        // Binding 12: Variable Textures (Must be last!)
+        bindings[12].binding = 12;
+        bindings[12].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[12].descriptorCount = maxDescriptors;
+        bindings[12].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+
+        std::array<VkDescriptorBindingFlags, 13> bindingFlags {};
         bindingFlags[0] = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
         bindingFlags[1] = 0;
         bindingFlags[2] = 0;
         bindingFlags[3] = 0;
         bindingFlags[4] = 0;
-        bindingFlags[5] = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
+        bindingFlags[5] = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+        bindingFlags[6] = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+        bindingFlags[7] = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+        bindingFlags[8] = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+        bindingFlags[9] = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+        bindingFlags[10] = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+        bindingFlags[11] = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+        bindingFlags[12] = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
             VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT;
 
 
@@ -222,7 +271,7 @@ namespace Engine {
                 VkWriteDescriptorSet write {};
                 write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
                 write.dstSet = globalDescriptorSets[f];
-                write.dstBinding = 5;
+                write.dstBinding = 12;
                 write.dstArrayElement = pending.dstArrayElement;
                 write.descriptorCount = 1;
                 write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -382,6 +431,75 @@ namespace Engine {
         }
 
         vkUpdateDescriptorSets(device.getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+    }
+
+    void ResourceHeap::setGeometryBuffers(std::shared_ptr<Buffer> positionBuf,
+                                          std::shared_ptr<Buffer> attributeBuf,
+                                          std::shared_ptr<Buffer> indexBuffer,
+                                          std::shared_ptr<Buffer> meshletBuf,
+                                          std::shared_ptr<Buffer> meshletVerticesBuf,
+                                          std::shared_ptr<Buffer> meshletTrianglesBuf)
+    {
+        globalPositionBuffer = positionBuf;
+        globalAttributeBuffer = attributeBuf;
+        globalIndexBuffer = indexBuffer;
+        globalMeshletBuffer = meshletBuf;
+        globalMeshletVerticesBuffer = meshletVerticesBuf;
+        globalMeshletTrianglesBuffer = meshletTrianglesBuf;
+
+        std::vector<VkWriteDescriptorSet> writes;
+        for (size_t i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
+            auto addWrite = [&](std::shared_ptr<Buffer> buf, uint32_t binding) {
+                if (!buf) return;
+                VkDescriptorBufferInfo* info = new VkDescriptorBufferInfo(buf->descriptorInfo(VK_WHOLE_SIZE, 0));
+                VkWriteDescriptorSet write {};
+                write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                write.dstSet = globalDescriptorSets[i];
+                write.dstBinding = binding;
+                write.dstArrayElement = 0;
+                write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                write.descriptorCount = 1;
+                write.pBufferInfo = info;
+                writes.push_back(write);
+            };
+
+            addWrite(globalPositionBuffer, 6);
+            addWrite(globalAttributeBuffer, 7);
+            addWrite(globalMeshletBuffer, 8);
+            addWrite(globalMeshletVerticesBuffer, 9);
+            addWrite(globalMeshletTrianglesBuffer, 10);
+            addWrite(globalIndexBuffer, 11);
+        }
+
+        if (!writes.empty()) {
+            vkUpdateDescriptorSets(device.getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+            for (auto& w : writes) delete w.pBufferInfo;
+        }
+    }
+
+    void ResourceHeap::setObjectBuffer(std::shared_ptr<Buffer> objectBuf)
+    {
+        globalObjectBuffer = objectBuf;
+        if (!globalObjectBuffer) return;
+
+        std::vector<VkWriteDescriptorSet> writes;
+        for (size_t i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
+            VkDescriptorBufferInfo* info = new VkDescriptorBufferInfo(globalObjectBuffer->descriptorInfo(VK_WHOLE_SIZE, 0));
+            VkWriteDescriptorSet write {};
+            write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            write.dstSet = globalDescriptorSets[i];
+            write.dstBinding = 5;
+            write.dstArrayElement = 0;
+            write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            write.descriptorCount = 1;
+            write.pBufferInfo = info;
+            writes.push_back(write);
+        }
+
+        if (!writes.empty()) {
+            vkUpdateDescriptorSets(device.getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+            for (auto& w : writes) delete w.pBufferInfo;
+        }
     }
 
 } // namespace Engine

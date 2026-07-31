@@ -5,29 +5,27 @@
 #include "Vulkan/Buffer.h"
 #include "Renderer/RenderPassNode.h"
 #include "Renderer/Renderer.h"
+#include "Vulkan/ResourceHeap.h"
 
 namespace Engine {
     struct ComputePushConstants
     {
         glm::mat4 viewProj;
         glm::vec4 frustumPlanes[6];
+        glm::vec3 cameraPos;
         uint32_t objectCount;
+        uint32_t actualObjectCount;
         uint32_t cascadeIndex;
         uint32_t objectCapacity;
         uint32_t clipPlaneCount;
     };
 
-    struct ObjectData
-    {
-        glm::mat4 modelMatrix;
-        glm::mat4 normalMatrix;
-        glm::vec4 boundingSphere;
-    };
+    // ObjectData moved to TransformUpdatePassNode
 
     class CullPassNode: public RenderPassNode
     {
     public:
-        CullPassNode(Device &device, Renderer &renderer, Model &megaBuffer);
+        CullPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap);
         ~CullPassNode();
 
 
@@ -43,18 +41,11 @@ namespace Engine {
             sceneDirty = true;
         }
 
-        [[nodiscard]] VkBuffer getCompactedIndirectBuffer(uint32_t frameIdx) const
-        {
-            return gpuCompactedIndirectCommandBuffers[frameIdx]->getBuffer();
-        }
         [[nodiscard]] VkBuffer getDrawCountBuffer(uint32_t frameIdx) const
         {
             return gpuDrawCountBuffers[frameIdx]->getBuffer();
         }
-        [[nodiscard]] VkBuffer getGpuObjectBuffer(uint32_t frameIdx) const
-        {
-            return gpuObjectSSBOs[frameIdx]->getBuffer();
-        }
+        // Object buffer is now managed globally by ResourceHeap and TransformUpdatePassNode
         [[nodiscard]] VkBuffer getGpuIndirectCommandBuffer(uint32_t frameIdx) const
         {
             return gpuIndirectCommandBuffers[frameIdx]->getBuffer();
@@ -67,9 +58,17 @@ namespace Engine {
         {
             return objectSetLayout;
         }
+        [[nodiscard]] VkBuffer getCompactedIndexBuffer(uint32_t frameIdx) const
+        {
+            return compactedIndexBuffers[frameIdx]->getBuffer();
+        }
+        [[nodiscard]] VkBuffer getSingleIndirectCommandBuffer(uint32_t frameIdx) const
+        {
+            return singleIndirectCommandBuffers[frameIdx]->getBuffer();
+        }
         [[nodiscard]] uint32_t getMaxObjectCount() const
         {
-            return static_cast<uint32_t>(objectDataArray.size());
+            return Config::MAX_SCENE_OBJECTS;
         }
 
     private:
@@ -78,24 +77,29 @@ namespace Engine {
         Device &device;
         Model &megaBuffer;
         Renderer &renderer;
+        ResourceHeap &resourceHeap;
 
-        VkPipeline computePipeline {VK_NULL_HANDLE};
-        ;
+        VkPipeline objectCullPipeline {VK_NULL_HANDLE};
+        VkPipeline meshletCullPipeline {VK_NULL_HANDLE};
         VkPipelineLayout computePipelineLayout {VK_NULL_HANDLE};
 
         VkDescriptorSetLayout objectSetLayout {VK_NULL_HANDLE};
         VkDescriptorPool objectDescriptorPool {VK_NULL_HANDLE};
         std::vector<VkDescriptorSet> objectDescriptorSets;
 
-        std::vector<ObjectData> objectDataArray;
         std::vector<VkDrawIndexedIndirectCommand> indirectCommandsArray;
         std::vector<const GameObject *> opaqueDraws;
 
-        std::vector<std::unique_ptr<Buffer>> gpuObjectSSBOs;
         std::vector<std::unique_ptr<Buffer>> gpuIndirectCommandBuffers;
 
-        std::vector<std::unique_ptr<Buffer>> gpuCompactedIndirectCommandBuffers;
-        std::vector<std::unique_ptr<Buffer>> gpuDrawCountBuffers;
+        //std::vector<std::unique_ptr<Buffer>> gpuCompactedIndirectCommandBuffers;
+        std::vector<std::unique_ptr<Buffer>> compactedIndexBuffers;
+        std::vector<std::unique_ptr<Buffer>> singleIndirectCommandBuffers;
+
+        std::vector<std::unique_ptr<Buffer>> gpuDrawCountBuffers; // old counter
+
+        std::vector<std::unique_ptr<Buffer>> gpuDispatchCommandBuffers;
+        std::vector<std::unique_ptr<Buffer>> gpuVisibleObjectBuffers;
 
         bool sceneDirty = true;
         int framesToUpdate = 0;

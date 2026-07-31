@@ -85,24 +85,11 @@ namespace Engine {
         }
     }
 
-    void SceneManager::integrateLoadedModels(Device &device, std::vector<ParsedGLTF> &parsedModels, Model &megaBuffer, ResourceHeap &resourceHeap)
+    void SceneManager::addGameObjects(std::vector<GameObject>&& newObjects)
     {
-        for (auto parsedModel : parsedModels) {
-            auto newObjects = LoaderGLTF::finalize(parsedModel, device, megaBuffer, resourceHeap, sceneTextures);
-
-            for (auto &obj: newObjects)
-                gameObjects.push_back(std::move(obj));
-            flattenSceneGraph();
-            isDirty = true;
-
-            resourceHeap.markMaterialsDirty();
-
-            megaBuffer.uploadToGPU();
-
-            // Needs probably get called somewhere
-            //cullPass.markSceneDirty();
-
-            std::cout << "Successfully streamed in async model!" << std::endl;
-        }
+        for (auto &obj: newObjects)
+            gameObjects.push_back(std::move(obj));
+        flattenSceneGraph();
+        isDirty = true;
     }
 } // Engine

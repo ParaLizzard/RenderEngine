@@ -29,30 +29,16 @@ namespace Engine {
                      .build();
 
         globalSetLayout = DescriptorSetLayout::Builder(device)
-                          // Vertex Position Buffer
-                          .addBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
-                          // Index Buffer
-                          .addBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
-                          // Object Metadata Lookup Buffer
+                          // Object Metadata Lookup Buffer (was 2, now we'll keep the numbers as they were for now, or match the shader)
+                          // Wait, the shader uses set=1, binding=... Let's just remove 0, 1, 7, 8
                           .addBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
-                          // VisBuffer Texture Input
                           .addBinding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
-                          // Depth Texture Input
                           .addBinding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
-                          // Packer Normals Buffer
                           .addBinding(5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
-                          // World Position Output Buffer
                           .addBinding(6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
-                          // Vertex Attributes Buffer (UV, Normal, Tangent)
-                          .addBinding(7, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
-                          .addBinding(8, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
-                          // FinalRender Output Image
                           .addBinding(9, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT)
-                          // SsaoBlurImage Input Texture (Previous frame)
                           .addBinding(10, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
-                          // Packed Radiances buffer
                           .addBinding(11, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
-                          // CsmShadowMap Input Texture
                           .addBinding(12, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
                           .addBinding(13, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
                           .build();
@@ -334,16 +320,6 @@ namespace Engine {
         visBufferInfo.imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
         visBufferInfo.sampler = nearestSampler;
 
-        VkDescriptorBufferInfo vertexBufferInfo = megaBuffer.getPositionBuffer()
-            ? megaBuffer.getPositionBuffer()->descriptorInfo(VK_WHOLE_SIZE, 0)
-            : VkDescriptorBufferInfo{VK_NULL_HANDLE, 0, VK_WHOLE_SIZE};
-        VkDescriptorBufferInfo indexBufferInfo = megaBuffer.getIndexBuffer()
-            ? megaBuffer.getIndexBuffer()->descriptorInfo(VK_WHOLE_SIZE, 0)
-            : VkDescriptorBufferInfo{VK_NULL_HANDLE, 0, VK_WHOLE_SIZE};
-        VkDescriptorBufferInfo attributeBufferInfo = megaBuffer.getAttributeBuffer()
-            ? megaBuffer.getAttributeBuffer()->descriptorInfo(VK_WHOLE_SIZE, 0)
-            : VkDescriptorBufferInfo{VK_NULL_HANDLE, 0, VK_WHOLE_SIZE};
-
         VkDescriptorImageInfo finalRenderInfo{};
         finalRenderInfo.imageView = graph.getImageView("FinalRender");
         finalRenderInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
@@ -367,18 +343,12 @@ namespace Engine {
         VkDescriptorBufferInfo normalBufferInfo = packedNormalBuffers[currentFrame]->descriptorInfo(VK_WHOLE_SIZE, 0);
         VkDescriptorBufferInfo radianceBufferInfo = packedRadianceBuffers[currentFrame]->descriptorInfo(VK_WHOLE_SIZE, 0);
         VkDescriptorBufferInfo positionBufferInfo = worldPositionBuffers[currentFrame]->descriptorInfo(VK_WHOLE_SIZE, 0);
-        VkDescriptorBufferInfo objectBufferInfo = renderGraph.getBufferInfo("CullObjectData", currentFrame);
-
         DescriptorWriter(*globalSetLayout, *globalPool)
-            .writeBuffer(0, &vertexBufferInfo)
-            .writeBuffer(1, &indexBufferInfo)
             .writeBuffer(2, &meshBufferInfo)
             .writeImage(3, &visBufferInfo)
             .writeImage(4, &depthImageInfo)
             .writeBuffer(5, &normalBufferInfo)
             .writeBuffer(6, &positionBufferInfo)
-            .writeBuffer(7, &attributeBufferInfo)
-            .writeBuffer(8, &objectBufferInfo)
             .writeImage(9, &finalRenderInfo)
             .writeImage(10, &ssaoInfo)
             .writeBuffer(11, &radianceBufferInfo)

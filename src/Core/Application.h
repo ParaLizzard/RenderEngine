@@ -20,6 +20,7 @@
 #include "System/Input/InputBackendWindows.h"
 #include "AssetSystem/IBL.h"
 #include "Renderer/Passes/CullPassNode.h"
+#include "Renderer/Passes/TransformUpdatePassNode.h"
 #include "Renderer/Passes/FxaaPassNode.h"
 #include "Renderer/Passes/MaterialPassNode.h"
 #include "Renderer/Passes/SsaoPassNode.h"
@@ -67,8 +68,9 @@ namespace Engine {
         std::unique_ptr<IBL> ibl;
         Camera camera{};
 
-        CullPassNode cullPass{device, renderer, megaBuffer};
-        VisibilityPassNode visPass {device, renderer, megaBuffer, cullPass};
+        TransformUpdatePassNode transformPass {device, renderer};
+        CullPassNode cullPass {device, renderer, megaBuffer, resourceHeap};
+        VisibilityPassNode visPass {device, renderer, megaBuffer, cullPass, resourceHeap};
         MaterialPassNode materialPass {device, renderer, megaBuffer, resourceHeap, renderGraph};
         SsaoPassNode ssaoPass {device, renderer, megaBuffer, resourceHeap};
         FxaaPassNode fxaaPass {device, renderer, megaBuffer, resourceHeap};

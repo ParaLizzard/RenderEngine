@@ -138,10 +138,8 @@ namespace Engine {
             meshlet.triangleCount = m.triangle_count;
 
             cpuMeshlets.push_back(meshlet);
-            
-            // Append local meshlet topology to global buffers
+
             for (uint32_t i = 0; i < m.vertex_count; ++i) {
-                // Adjust vertex index by subMesh.vertexOffset so it points to the correct place in the global unified vertex buffer
                 cpuMeshletVertices.push_back(vertices[m.vertex_offset + i] + subMesh.vertexOffset);
             }
             for (uint32_t i = 0; i < m.triangle_count * 3; ++i) {
@@ -246,6 +244,7 @@ namespace Engine {
 
         totalAllocatedVertices += cpuPositions.size();
         totalAllocatedIndices += cpuIndices.size();
+        totalAllocatedMeshlets += cpuMeshlets.size();
 
         cpuPositions.clear(); cpuPositions.shrink_to_fit();
         cpuAttributes.clear(); cpuAttributes.shrink_to_fit();

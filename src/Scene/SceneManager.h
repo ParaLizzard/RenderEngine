@@ -5,11 +5,6 @@
 #include "AssetSystem/Texture.h"
 
 namespace Engine {
-    class ResourceHeap;
-    class Model;
-    class Device;
-    struct ParsedGLTF;
-
     class SceneManager
     {
     private:
@@ -23,7 +18,7 @@ namespace Engine {
 
         void flattenSceneGraph();
         void updateHierarchy(GameObject &obj, std::vector<GameObject> &allObjects, const glm::mat4 &parentMatrix);
-        void integrateLoadedModels(Device& device, std::vector<ParsedGLTF>& parsedModels, Model& megaBuffer, ResourceHeap& resourceHeap);
+        void addGameObjects(std::vector<GameObject>&& newObjects);
 
         [[nodiscard]] bool isSceneGraphDirty() const { return isDirty; }
         void markClean() { isDirty = false; }
