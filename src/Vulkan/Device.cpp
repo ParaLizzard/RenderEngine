@@ -341,6 +341,7 @@ namespace Engine {
         vulkan13Features.synchronization2 = VK_TRUE;
         vulkan13Features.dynamicRendering = VK_TRUE;
         vulkan13Features.shaderDemoteToHelperInvocation = VK_TRUE;
+        vulkan13Features.maintenance4 = VK_TRUE;
 
 
         VkPhysicalDeviceVulkan12Features vulkan12Features {};
@@ -355,6 +356,7 @@ namespace Engine {
         vulkan12Features.descriptorBindingVariableDescriptorCount = VK_TRUE;
         vulkan12Features.bufferDeviceAddress = VK_TRUE;
         vulkan12Features.drawIndirectCount = VK_TRUE;
+        vulkan12Features.shaderOutputLayer = VK_TRUE;
 
         VkPhysicalDeviceFeatures2 deviceFeatures2 {};
         deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;

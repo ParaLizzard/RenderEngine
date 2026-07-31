@@ -1,5 +1,6 @@
 #version 460
 #extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_ARB_shader_viewport_layer_array : require
 
 layout(location = 0) in vec3 inPosition;
 
@@ -12,7 +13,7 @@ struct ObjectData {
 layout(set = 0, binding = 1) uniform SceneUbo {
     vec4 cameraPosition;
     vec4 directionalLight;
-    mat4 lightViewProj[4];
+    mat4 lightViewProj[3];
     vec4 cascadesSplits;
     float maxReflectionLod;
     uint blueNoiseTexIndex;
@@ -23,12 +24,16 @@ layout(set = 1, binding = 0) readonly buffer ObjectDataBuffer {
     ObjectData objects[];
 } objectData;
 
-layout(push_constant) uniform PushConstants {
+layout(push_constant) uniform PushConsts {
     uint cascadeIndex;
-} pc;
+} push;
 
 void main() {
-    mat4 model = objectData.objects[gl_InstanceIndex].modelMatrix;
-    mat4 lightViewProj = sceneUbo.lightViewProj[pc.cascadeIndex];
+    uint objectIndex  = uint(gl_InstanceIndex);
+    uint cascadeIndex = push.cascadeIndex;
+
+    mat4 model         = objectData.objects[objectIndex].modelMatrix;
+    mat4 lightViewProj = sceneUbo.lightViewProj[cascadeIndex];
     gl_Position = lightViewProj * (model * vec4(inPosition, 1.0));
+    gl_Layer    = int(cascadeIndex);
 }

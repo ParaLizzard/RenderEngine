@@ -52,43 +52,27 @@ namespace Engine {
         poolInfo.maxSets = Config::MAX_FRAMES_IN_FLIGHT;
         vkCreateDescriptorPool(device.getDevice(), &poolInfo, nullptr, &objectDescriptorPool);
 
-        cpuObjectSSBOs.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        cpuIndirectCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
         gpuObjectSSBOs.resize(Config::MAX_FRAMES_IN_FLIGHT);
         gpuIndirectCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
         gpuCompactedIndirectCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
         gpuDrawCountBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
 
         for (uint32_t i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
-            cpuObjectSSBOs[i] = std::make_unique<Buffer>(device,
-                                                         sizeof(ObjectData),
-                                                         Config::MAX_SCENE_OBJECTS,
-                                                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                                         VMA_MEMORY_USAGE_CPU_TO_GPU,
-                                                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-                                                         0);
-            cpuIndirectCommandBuffers[i] = std::make_unique<Buffer>(device,
-                                                                    sizeof(VkDrawIndexedIndirectCommand),
-                                                                    Config::MAX_SCENE_OBJECTS,
-                                                                    VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                                                    VMA_MEMORY_USAGE_CPU_TO_GPU,
-                                                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-                                                                    0);
             gpuObjectSSBOs[i] =
                 std::make_unique<Buffer>(device,
                                          sizeof(ObjectData),
                                          Config::MAX_SCENE_OBJECTS,
-                                         VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                         VMA_MEMORY_USAGE_GPU_ONLY,
-                                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                         VMA_MEMORY_USAGE_CPU_TO_GPU,
+                                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                          0);
             gpuIndirectCommandBuffers[i] =
                 std::make_unique<Buffer>(device,
                                          sizeof(VkDrawIndexedIndirectCommand),
                                          Config::MAX_SCENE_OBJECTS,
-                                         VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                         VMA_MEMORY_USAGE_GPU_ONLY,
-                                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                         VMA_MEMORY_USAGE_CPU_TO_GPU,
+                                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                          0);
 
             gpuCompactedIndirectCommandBuffers[i] =
@@ -104,8 +88,7 @@ namespace Engine {
                 std::make_unique<Buffer>(device,
                                          sizeof(uint32_t),
                                          1,
-                                         VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                                             VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
+                                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
                                          VMA_MEMORY_USAGE_GPU_ONLY,
                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                          0);
@@ -184,6 +167,21 @@ namespace Engine {
         computeStageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
         computeStageInfo.module = compModule;
         computeStageInfo.pName = "main";
+
+        VkSpecializationMapEntry specializationMapEntry{};
+        specializationMapEntry.constantID = 0;
+        specializationMapEntry.offset = 0;
+        specializationMapEntry.size = sizeof(uint32_t);
+
+        uint32_t workgroupSize = Config::CULL_WORKGROUP_SIZE;
+
+        VkSpecializationInfo specializationInfo{};
+        specializationInfo.mapEntryCount = 1;
+        specializationInfo.pMapEntries = &specializationMapEntry;
+        specializationInfo.dataSize = sizeof(workgroupSize);
+        specializationInfo.pData = &workgroupSize;
+
+        computeStageInfo.pSpecializationInfo = &specializationInfo;
 
         VkPushConstantRange pushConstantRange {};
         pushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
@@ -268,63 +266,20 @@ namespace Engine {
 
         if (framesToUpdate > 0) {
             if (!objectDataArray.empty()) {
-                cpuObjectSSBOs[currentFrame]->writeToBuffer(
+                gpuObjectSSBOs[currentFrame]->writeToBuffer(
                     objectDataArray.data(), objectDataArray.size() * sizeof(ObjectData), 0);
-                cpuObjectSSBOs[currentFrame]->flush(VK_WHOLE_SIZE, 0);
-                cpuIndirectCommandBuffers[currentFrame]->writeToBuffer(
+                gpuObjectSSBOs[currentFrame]->flush(VK_WHOLE_SIZE, 0);
+                
+                gpuIndirectCommandBuffers[currentFrame]->writeToBuffer(
                     indirectCommandsArray.data(),
                     indirectCommandsArray.size() * sizeof(VkDrawIndexedIndirectCommand),
                     0);
-                cpuIndirectCommandBuffers[currentFrame]->flush(VK_WHOLE_SIZE, 0);
-
-                VkBufferCopy objCopy {};
-                objCopy.size = objectDataArray.size() * sizeof(ObjectData);
-                vkCmdCopyBuffer(cmd,
-                                cpuObjectSSBOs[currentFrame]->getBuffer(),
-                                gpuObjectSSBOs[currentFrame]->getBuffer(),
-                                1,
-                                &objCopy);
-
-                VkBufferCopy indCopy {};
-                indCopy.size = indirectCommandsArray.size() * sizeof(VkDrawIndexedIndirectCommand);
-                vkCmdCopyBuffer(cmd,
-                                cpuIndirectCommandBuffers[currentFrame]->getBuffer(),
-                                gpuIndirectCommandBuffers[currentFrame]->getBuffer(),
-                                1,
-                                &indCopy);
-
-                std::array<VkBufferMemoryBarrier2, 2> copyBarriers {};
-                copyBarriers[0] = VkUtils::bufferBarrier(
-                    gpuObjectSSBOs[currentFrame]->getBuffer(), 0, VK_WHOLE_SIZE,
-                    VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
-                    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                    VK_ACCESS_2_SHADER_READ_BIT);
-
-                copyBarriers[1] = copyBarriers[0];
-                copyBarriers[1].buffer = gpuIndirectCommandBuffers[currentFrame]->getBuffer();
-
-                VkDependencyInfo copyDependency {};
-                copyDependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-                copyDependency.bufferMemoryBarrierCount = 2;
-                copyDependency.pBufferMemoryBarriers = copyBarriers.data();
-                vkCmdPipelineBarrier2(cmd, &copyDependency);
+                gpuIndirectCommandBuffers[currentFrame]->flush(VK_WHOLE_SIZE, 0);
             }
             framesToUpdate--;
         }
 
         if (!objectDataArray.empty()) {
-            vkCmdFillBuffer(cmd, gpuDrawCountBuffers[currentFrame]->getBuffer(), 0, sizeof(uint32_t), 0);
-
-            VkBufferMemoryBarrier2 clearBarrier = VkUtils::bufferBarrier(
-                gpuDrawCountBuffers[currentFrame]->getBuffer(), 0, VK_WHOLE_SIZE,
-                VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
-                VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT);
-
-            VkDependencyInfo clearDep {};
-            clearDep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-            clearDep.bufferMemoryBarrierCount = 1;
-            clearDep.pBufferMemoryBarriers = &clearBarrier;
-            vkCmdPipelineBarrier2(cmd, &clearDep);
 
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
             vkCmdBindDescriptorSets(cmd,
@@ -359,7 +314,7 @@ namespace Engine {
             vkCmdPushConstants(
                 cmd, computePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ComputePushConstants), &compPc);
 
-            uint32_t groupCount = (static_cast<uint32_t>(objectDataArray.size()) + 255) / 256;
+            uint32_t groupCount = (static_cast<uint32_t>(objectDataArray.size()) + Config::CULL_WORKGROUP_SIZE - 1) / Config::CULL_WORKGROUP_SIZE;
             vkCmdDispatch(cmd, groupCount, 1, 1);
         }
     }

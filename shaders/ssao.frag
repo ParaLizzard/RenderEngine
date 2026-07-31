@@ -15,7 +15,7 @@ layout(std430, binding = 1) readonly buffer NormalBuffer {
 
 layout (binding = 2) uniform sampler2D ssaoNoise;
 
-layout (constant_id = 0) const int SSAO_KERNEL_SIZE = 64;
+layout (constant_id = 0) const int SSAO_KERNEL_SIZE = 32;
 layout (constant_id = 1) const float SSAO_RADIUS = 0.5;
 
 layout (binding = 3) uniform UBO
@@ -23,7 +23,7 @@ layout (binding = 3) uniform UBO
     mat4 projection;
     mat4 invProjection;
     mat4 view;
-    vec4 samples[64];
+    vec4 samples[32];
     float nearPlane;
     float farPlane;
 } ubo;

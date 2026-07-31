@@ -6,7 +6,7 @@
 #include "Scene/GameObject.h"
 
 #define SHADOW_MAP_SIZE 2048
-#define SHADOW_MAP_CASCADES 4
+#define SHADOW_MAP_CASCADES 3
 
 namespace Engine {
     class JobSystem;

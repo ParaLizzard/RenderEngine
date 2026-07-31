@@ -72,7 +72,7 @@ namespace Engine {
         MaterialPassNode materialPass {device, renderer, megaBuffer, resourceHeap, renderGraph};
         SsaoPassNode ssaoPass {device, renderer, megaBuffer, resourceHeap};
         FxaaPassNode fxaaPass {device, renderer, megaBuffer, resourceHeap};
-        CsmPassNode csmPass {device, renderer, megaBuffer, resourceHeap};
+        CsmPassNode csmPass {device, renderer, megaBuffer, resourceHeap, cullPass};
 
         int currentFrame;
         uint32_t imgIdx;

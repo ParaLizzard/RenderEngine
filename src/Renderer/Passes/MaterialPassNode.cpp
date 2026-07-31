@@ -53,6 +53,7 @@ namespace Engine {
                           .addBinding(11, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
                           // CsmShadowMap Input Texture
                           .addBinding(12, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
+                          .addBinding(13, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
                           .build();
 
         VkSamplerCreateInfo samplerInfo{};
@@ -96,6 +97,12 @@ namespace Engine {
         shadowSamplerInfo.pNext = VK_NULL_HANDLE;
         if (vkCreateSampler(device.getDevice(), &shadowSamplerInfo, nullptr, &shadowSampler) != VK_SUCCESS) {
             throw std::runtime_error("MaterialPassNode: Failed to create shadow sampler");
+        }
+
+        shadowSamplerInfo.compareEnable = VK_TRUE;
+        shadowSamplerInfo.compareOp = VK_COMPARE_OP_LESS;
+        if (vkCreateSampler(device.getDevice(), &shadowSamplerInfo, nullptr, &hardwareShadowSampler) != VK_SUCCESS) {
+            throw std::runtime_error("MaterialPassNode: Failed to create hardware shadow sampler");
         }
 
         VkExtent2D extent = renderer.getSwapChain().getSwapChainExtent();
@@ -163,6 +170,8 @@ namespace Engine {
             vkDestroySampler(device.getDevice(), sampler, nullptr);
         if (shadowSampler != VK_NULL_HANDLE)
             vkDestroySampler(device.getDevice(), shadowSampler, nullptr);
+        if (hardwareShadowSampler != VK_NULL_HANDLE)
+            vkDestroySampler(device.getDevice(), hardwareShadowSampler, nullptr);
         if (pipeline != VK_NULL_HANDLE)
             vkDestroyPipeline(device.getDevice(), pipeline, nullptr);
         if (pipelineLayout != VK_NULL_HANDLE)
@@ -303,9 +312,16 @@ namespace Engine {
             }
         }
 
-        RenderPassNode::resolve(graph, frameInfo);
-
         uint32_t currentFrame = frameInfo.frameIndex;
+        VkDeviceSize normalBufferSize = static_cast<VkDeviceSize>(lastWidth) * lastHeight * sizeof(uint32_t);
+        VkDeviceSize radianceBufferSize = static_cast<VkDeviceSize>(lastWidth) * lastHeight * sizeof(uint32_t);
+        VkDeviceSize worldPosBufferSize = static_cast<VkDeviceSize>(lastWidth) * lastHeight * sizeof(WorldData);
+
+        graph.updateBufferHandle("PackedNormals", packedNormalBuffers[currentFrame]->getBuffer(), normalBufferSize);
+        graph.updateBufferHandle("PackedRadiances", packedRadianceBuffers[currentFrame]->getBuffer(), radianceBufferSize);
+        graph.updateBufferHandle("WorldPosition", worldPositionBuffers[currentFrame]->getBuffer(), worldPosBufferSize);
+
+        RenderPassNode::resolve(graph, frameInfo);
 
         VkDescriptorImageInfo depthImageInfo{};
         depthImageInfo.imageView = graph.getImageView("DepthImage");
@@ -317,16 +333,15 @@ namespace Engine {
         visBufferInfo.imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
         visBufferInfo.sampler = nearestSampler;
 
-        VkDescriptorBufferInfo vertexBufferInfo = megaBuffer.getPositionBuffer()->descriptorInfo(VK_WHOLE_SIZE, 0);
-        VkDescriptorBufferInfo indexBufferInfo = megaBuffer.getIndexBuffer()->descriptorInfo(VK_WHOLE_SIZE, 0);
-        VkDescriptorBufferInfo meshBufferInfo = meshBuffers[currentFrame]->descriptorInfo(VK_WHOLE_SIZE, 0);
-        VkDescriptorBufferInfo normalBufferInfo = packedNormalBuffers[currentFrame]->descriptorInfo(VK_WHOLE_SIZE, 0);
-        VkDescriptorBufferInfo radianceBufferInfo =
-            packedRadianceBuffers[currentFrame]->descriptorInfo(VK_WHOLE_SIZE, 0);
-        VkDescriptorBufferInfo positionBufferInfo =
-            worldPositionBuffers[currentFrame]->descriptorInfo(VK_WHOLE_SIZE, 0);
-        VkDescriptorBufferInfo attributeBufferInfo = megaBuffer.getAttributeBuffer()->descriptorInfo(VK_WHOLE_SIZE, 0);
-        VkDescriptorBufferInfo objectBufferInfo = renderGraph.getBufferInfo("CullObjectData", currentFrame);
+        VkDescriptorBufferInfo vertexBufferInfo = megaBuffer.getPositionBuffer()
+            ? megaBuffer.getPositionBuffer()->descriptorInfo(VK_WHOLE_SIZE, 0)
+            : VkDescriptorBufferInfo{VK_NULL_HANDLE, 0, VK_WHOLE_SIZE};
+        VkDescriptorBufferInfo indexBufferInfo = megaBuffer.getIndexBuffer()
+            ? megaBuffer.getIndexBuffer()->descriptorInfo(VK_WHOLE_SIZE, 0)
+            : VkDescriptorBufferInfo{VK_NULL_HANDLE, 0, VK_WHOLE_SIZE};
+        VkDescriptorBufferInfo attributeBufferInfo = megaBuffer.getAttributeBuffer()
+            ? megaBuffer.getAttributeBuffer()->descriptorInfo(VK_WHOLE_SIZE, 0)
+            : VkDescriptorBufferInfo{VK_NULL_HANDLE, 0, VK_WHOLE_SIZE};
 
         VkDescriptorImageInfo finalRenderInfo{};
         finalRenderInfo.imageView = graph.getImageView("FinalRender");
@@ -342,6 +357,17 @@ namespace Engine {
         csmInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         csmInfo.sampler = shadowSampler;
 
+        VkDescriptorImageInfo csmHardwareInfo{};
+        csmHardwareInfo.imageView = graph.getImageView("CsmImage");
+        csmHardwareInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        csmHardwareInfo.sampler = hardwareShadowSampler;
+
+        VkDescriptorBufferInfo meshBufferInfo = meshBuffers[currentFrame]->descriptorInfo(VK_WHOLE_SIZE, 0);
+        VkDescriptorBufferInfo normalBufferInfo = packedNormalBuffers[currentFrame]->descriptorInfo(VK_WHOLE_SIZE, 0);
+        VkDescriptorBufferInfo radianceBufferInfo = packedRadianceBuffers[currentFrame]->descriptorInfo(VK_WHOLE_SIZE, 0);
+        VkDescriptorBufferInfo positionBufferInfo = worldPositionBuffers[currentFrame]->descriptorInfo(VK_WHOLE_SIZE, 0);
+        VkDescriptorBufferInfo objectBufferInfo = renderGraph.getBufferInfo("CullObjectData", currentFrame);
+
         DescriptorWriter(*globalSetLayout, *globalPool)
             .writeBuffer(0, &vertexBufferInfo)
             .writeBuffer(1, &indexBufferInfo)
@@ -356,6 +382,7 @@ namespace Engine {
             .writeImage(10, &ssaoInfo)
             .writeBuffer(11, &radianceBufferInfo)
             .writeImage(12, &csmInfo)
+            .writeImage(13, &csmHardwareInfo)
             .overwrite(descriptorSets[currentFrame]);
     }
 
@@ -391,6 +418,20 @@ namespace Engine {
         computeStageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
         computeStageInfo.module = compModule;
         computeStageInfo.pName = "main";
+
+        VkSpecializationMapEntry specEntry{};
+        specEntry.constantID = 0;
+        specEntry.offset = 0;
+        specEntry.size = sizeof(uint32_t);
+
+        uint32_t enablePCSS = Config::ENABLE_PCSS;
+        VkSpecializationInfo specInfo{};
+        specInfo.mapEntryCount = 1;
+        specInfo.pMapEntries = &specEntry;
+        specInfo.dataSize = sizeof(uint32_t);
+        specInfo.pData = &enablePCSS;
+
+        computeStageInfo.pSpecializationInfo = &specInfo;
 
         VkComputePipelineCreateInfo pipelineInfo{};
         pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;

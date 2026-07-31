@@ -165,6 +165,10 @@ namespace Engine {
 
         device.endSingleTimeCommands(copyCmd);
 
+        if (oldPosSize > 0 || oldIdxSize > 0) {
+            vkDeviceWaitIdle(device.getDevice());
+        }
+
         positionBuffer = std::move(expandedPosBuffer);
         attributeBuffer = std::move(expandedAttrBuffer);
         indexBuffer = std::move(expandedIdxBuffer);

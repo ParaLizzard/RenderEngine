@@ -8,7 +8,7 @@
 #include "Vulkan/ResourceHeap.h"
 #include "Renderer/FrameInfo.h"
 
-#define SSAO_KERNEL_SIZE 64
+#define SSAO_KERNEL_SIZE 32
 #define SSAO_RADIUS 0.4f
 #define SSAO_NOISE_DIM 4
 

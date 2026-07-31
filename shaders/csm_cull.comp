@@ -1,0 +1,135 @@
+#version 460
+
+#extension GL_KHR_shader_subgroup_arithmetic : enable
+#extension GL_KHR_shader_subgroup_basic : enable
+#extension GL_KHR_shader_subgroup_ballot : enable
+
+layout(local_size_x = 64) in;
+
+struct ObjectData {
+    mat4 modelMatrix;
+    mat4 normalMatrix;
+    vec4 boundingSphere;
+};
+
+struct VkDrawIndexedIndirectCommand {
+    uint indexCount;
+    uint instanceCount;
+    uint firstIndex;
+    int  vertexOffset;
+    uint firstInstance;
+};
+
+// Binding 0: The objects
+layout(std430, set = 0, binding = 0) readonly buffer ObjectBuffer {
+    ObjectData objects[];
+};
+
+layout(std430, set = 0, binding = 1) readonly buffer BlueprintBuffer {
+    VkDrawIndexedIndirectCommand blueprints[];
+};
+
+layout(std430, set = 0, binding = 2) buffer DrawCountBuffer {
+    uint drawCounts[3];
+};
+
+layout(std430, set = 0, binding = 3) buffer CompactedIndirectBuffer {
+    VkDrawIndexedIndirectCommand compactedCommands[];
+};
+
+layout(std430, set = 0, binding = 4) readonly buffer CascadeDataBuffer {
+    mat4  cascadeViewProj[3];
+    vec4  cascadePlanes[18];
+};
+
+layout(push_constant) uniform PushConsts {
+    uint objectCount;
+    uint objectCapacity;
+} push;
+
+void main() {
+    uint gID = gl_GlobalInvocationID.x;
+
+    if (gID == 0) {
+        drawCounts[0] = 0;
+        drawCounts[1] = 0;
+        drawCounts[2] = 0;
+    }
+
+    if (gID >= push.objectCount)
+        return;
+
+    vec4 sphere = objects[gID].boundingSphere;
+    mat4 model  = objects[gID].modelMatrix;
+
+    vec3 worldCenter = (model * vec4(sphere.xyz, 1.0)).xyz;
+
+    float sqX = dot(model[0].xyz, model[0].xyz);
+    float sqY = dot(model[1].xyz, model[1].xyz);
+    float sqZ = dot(model[2].xyz, model[2].xyz);
+    float maxScale = sqrt(max(max(sqX, sqY), sqZ));
+    float worldRadius = sphere.w * maxScale;
+
+    uint cascadeMask = 0u;
+    uint visibleCascadeCount = 0u;
+
+    for (uint c = 0u; c < 3u; c++) {
+        bool visible = true;
+
+        for (uint p = 0u; p < 6u; p++) {
+            vec4 plane = cascadePlanes[c * 6u + p];
+            if (dot(plane.xyz, worldCenter) + plane.w < -worldRadius) {
+                visible = false;
+                break;
+            }
+        }
+
+        if (visible) {
+            mat4 vp = cascadeViewProj[c];
+            vec4 clipCenter = vp * vec4(worldCenter, 1.0);
+            if (clipCenter.w > 0.0) {
+                float projectedRadiusNDC = (worldRadius * abs(vp[1][1])) / clipCenter.w;
+                float MIN_NDC_RADIUS = 0.001 * pow(4.0, float(c));
+                if (projectedRadiusNDC < MIN_NDC_RADIUS) {
+                    visible = false;
+                }
+            }
+        }
+
+        if (visible) {
+            cascadeMask |= (1u << c);
+            visibleCascadeCount++;
+        }
+    }
+
+    for (uint c = 0; c < 3; c++) {
+        bool visibleInCascade = (cascadeMask & (1u << c)) != 0u;
+
+        #ifdef GL_KHR_shader_subgroup_arithmetic
+        uint ballot    = visibleInCascade ? 1u : 0u;
+        uint offset    = subgroupExclusiveAdd(ballot);
+        uint waveCount = subgroupAdd(ballot);
+
+        uint waveBase;
+        if (subgroupElect()) {
+            waveBase = atomicAdd(drawCounts[c], waveCount);
+        }
+        waveBase = subgroupBroadcastFirst(waveBase);
+
+        if (visibleInCascade) {
+            VkDrawIndexedIndirectCommand cmd = blueprints[gID];
+            cmd.instanceCount = 1;
+            cmd.firstInstance = gID;
+            compactedCommands[c * push.objectCapacity + waveBase + offset] = cmd;
+        }
+        #else
+        if (visibleInCascade) {
+            uint slot = atomicAdd(drawCounts[c], 1u);
+            VkDrawIndexedIndirectCommand cmd = blueprints[gID];
+            cmd.instanceCount = 1;
+            cmd.firstInstance = gID;
+            compactedCommands[c * push.objectCapacity + slot] = cmd;
+        }
+        #endif
+    }
+}

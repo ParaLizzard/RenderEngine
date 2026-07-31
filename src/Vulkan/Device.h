@@ -114,7 +114,7 @@ namespace Engine {
                                    VkImageSubresourceRange subresourceRange);
 
     private:
-        bool enableValidationLayers = false;
+        bool enableValidationLayers = true;
 
         VkDevice device = VK_NULL_HANDLE;
         VkInstance instance = VK_NULL_HANDLE;

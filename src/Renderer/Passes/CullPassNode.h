@@ -12,15 +12,9 @@ namespace Engine {
         glm::mat4 viewProj;
         glm::vec4 frustumPlanes[6];
         uint32_t objectCount;
-        // cull.comp is shared with CsmPassNode, which culls SHADOW_MAP_CASCADES
-        // separate regions into one buffer via these two fields. CullPassNode only
-        // ever culls a single region (the main camera frustum), but the push
-        // constant block must still match byte-for-byte or the driver either
-        // rejects the pipeline layout or reads stale bytes left over from whichever
-        // pass last pushed a full range into the same command buffer.
-        uint32_t cascadeIndex;   // Always 0 -- CullPassNode has exactly one region.
-        uint32_t objectCapacity; // Unused when cascadeIndex is 0, but still read by the shader.
-        uint32_t clipPlaneCount; // Number of active clip planes (6 for main camera)
+        uint32_t cascadeIndex;
+        uint32_t objectCapacity;
+        uint32_t clipPlaneCount;
     };
 
     struct ObjectData
@@ -61,6 +55,10 @@ namespace Engine {
         {
             return gpuObjectSSBOs[frameIdx]->getBuffer();
         }
+        [[nodiscard]] VkBuffer getGpuIndirectCommandBuffer(uint32_t frameIdx) const
+        {
+            return gpuIndirectCommandBuffers[frameIdx]->getBuffer();
+        }
         [[nodiscard]] VkDescriptorSet getObjectDescriptorSet(uint32_t frameIdx) const
         {
             return objectDescriptorSets[frameIdx];
@@ -93,10 +91,7 @@ namespace Engine {
         std::vector<VkDrawIndexedIndirectCommand> indirectCommandsArray;
         std::vector<const GameObject *> opaqueDraws;
 
-        std::vector<std::unique_ptr<Buffer>> cpuObjectSSBOs;
         std::vector<std::unique_ptr<Buffer>> gpuObjectSSBOs;
-
-        std::vector<std::unique_ptr<Buffer>> cpuIndirectCommandBuffers;
         std::vector<std::unique_ptr<Buffer>> gpuIndirectCommandBuffers;
 
         std::vector<std::unique_ptr<Buffer>> gpuCompactedIndirectCommandBuffers;

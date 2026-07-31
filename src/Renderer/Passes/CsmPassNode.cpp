@@ -7,11 +7,12 @@
 #include "Vulkan/VkUtils.h"
 
 namespace Engine {
-    CsmPassNode::CsmPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap):device(device),renderer(renderer), megaBuffer(megaBuffer),resourceHeap(resourceHeap)
+    CsmPassNode::CsmPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap, CullPassNode &cullPass):device(device),renderer(renderer), megaBuffer(megaBuffer),resourceHeap(resourceHeap),cullPass(cullPass)
     {
         objectDescriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
 
-        std::array<VkDescriptorSetLayoutBinding, 4> ssboBindings {};
+        // --- Descriptor set layout: 5 bindings (0-4) ---
+        std::array<VkDescriptorSetLayoutBinding, 5> ssboBindings {};
         ssboBindings[0].binding = 0;
         ssboBindings[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         ssboBindings[0].descriptorCount = 1;
@@ -32,15 +33,22 @@ namespace Engine {
         ssboBindings[3].descriptorCount = 1;
         ssboBindings[3].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
+        // Binding 4: Cascade data SSBO (compute only)
+        ssboBindings[4].binding = 4;
+        ssboBindings[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        ssboBindings[4].descriptorCount = 1;
+        ssboBindings[4].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
         VkDescriptorSetLayoutCreateInfo layoutInfo {};
         layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
         layoutInfo.bindingCount = static_cast<uint32_t>(ssboBindings.size());
         layoutInfo.pBindings = ssboBindings.data();
         vkCreateDescriptorSetLayout(device.getDevice(), &layoutInfo, nullptr, &objectSetLayout);
 
+        // --- Descriptor pool: 5 storage buffers per frame ---
         std::array<VkDescriptorPoolSize, 1> poolSizes {};
         poolSizes[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        poolSizes[0].descriptorCount = Config::MAX_FRAMES_IN_FLIGHT * 4;
+        poolSizes[0].descriptorCount = Config::MAX_FRAMES_IN_FLIGHT * 5;
 
         VkDescriptorPoolCreateInfo poolInfo {};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -49,45 +57,11 @@ namespace Engine {
         poolInfo.maxSets = Config::MAX_FRAMES_IN_FLIGHT;
         vkCreateDescriptorPool(device.getDevice(), &poolInfo, nullptr, &objectDescriptorPool);
 
-        cpuObjectSSBOs.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        gpuObjectSSBOs.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        cpuIndirectCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        gpuIndirectCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
         gpuCompactedIndirectCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
         gpuDrawCountBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        cascadeDataBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
 
         for (uint32_t i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
-            cpuObjectSSBOs[i] = std::make_unique<Buffer>(device,
-                                                         sizeof(ObjectData),
-                                                         Config::MAX_SCENE_OBJECTS,
-                                                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                                         VMA_MEMORY_USAGE_CPU_TO_GPU,
-                                                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-                                                         0);
-            cpuIndirectCommandBuffers[i] = std::make_unique<Buffer>(device,
-                                                                    sizeof(VkDrawIndexedIndirectCommand),
-                                                                    Config::MAX_SCENE_OBJECTS,
-                                                                    VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                                                    VMA_MEMORY_USAGE_CPU_TO_GPU,
-                                                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-                                                                    0);
-            gpuObjectSSBOs[i] =
-                std::make_unique<Buffer>(device,
-                                         sizeof(ObjectData),
-                                         Config::MAX_SCENE_OBJECTS,
-                                         VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                         VMA_MEMORY_USAGE_GPU_ONLY,
-                                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                         0);
-            gpuIndirectCommandBuffers[i] =
-                std::make_unique<Buffer>(device,
-                                         sizeof(VkDrawIndexedIndirectCommand),
-                                         Config::MAX_SCENE_OBJECTS,
-                                         VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                         VMA_MEMORY_USAGE_GPU_ONLY,
-                                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                         0);
-
             gpuCompactedIndirectCommandBuffers[i] =
                 std::make_unique<Buffer>(device,
                                          sizeof(VkDrawIndexedIndirectCommand),
@@ -107,6 +81,15 @@ namespace Engine {
                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                          0);
 
+            cascadeDataBuffers[i] =
+                std::make_unique<Buffer>(device,
+                                         sizeof(CascadeGpuData),
+                                         1,
+                                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                         VMA_MEMORY_USAGE_CPU_TO_GPU,
+                                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                         0);
+
             VkDescriptorSetAllocateInfo allocInfo {};
             allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
             allocInfo.descriptorPool = objectDescriptorPool;
@@ -114,13 +97,22 @@ namespace Engine {
             allocInfo.pSetLayouts = &objectSetLayout;
             vkAllocateDescriptorSets(device.getDevice(), &allocInfo, &objectDescriptorSets[i]);
 
-            VkDescriptorBufferInfo bufferInfo = gpuObjectSSBOs[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
-            VkDescriptorBufferInfo blueprintInfo = gpuIndirectCommandBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
+            VkDescriptorBufferInfo bufferInfo {};
+            bufferInfo.buffer = cullPass.getGpuObjectBuffer(i);
+            bufferInfo.offset = 0;
+            bufferInfo.range = VK_WHOLE_SIZE;
+
+            VkDescriptorBufferInfo blueprintInfo {};
+            blueprintInfo.buffer = cullPass.getGpuIndirectCommandBuffer(i);
+            blueprintInfo.offset = 0;
+            blueprintInfo.range = VK_WHOLE_SIZE;
+
             VkDescriptorBufferInfo countInfo = gpuDrawCountBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
             VkDescriptorBufferInfo compactedInfo =
                 gpuCompactedIndirectCommandBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
+            VkDescriptorBufferInfo cascadeInfo = cascadeDataBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
 
-            std::array<VkWriteDescriptorSet, 4> descriptorWrites {};
+            std::array<VkWriteDescriptorSet, 5> descriptorWrites {};
             descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             descriptorWrites[0].dstSet = objectDescriptorSets[i];
             descriptorWrites[0].dstBinding = 0;
@@ -149,19 +141,27 @@ namespace Engine {
             descriptorWrites[3].descriptorCount = 1;
             descriptorWrites[3].pBufferInfo = &compactedInfo;
 
+            descriptorWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrites[4].dstSet = objectDescriptorSets[i];
+            descriptorWrites[4].dstBinding = 4;
+            descriptorWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            descriptorWrites[4].descriptorCount = 1;
+            descriptorWrites[4].pBufferInfo = &cascadeInfo;
+
             vkUpdateDescriptorSets(device.getDevice(),
                                    static_cast<uint32_t>(descriptorWrites.size()),
                                    descriptorWrites.data(),
                                    0,
                                    nullptr);
         }
-
         createPipelineLayout();
         createPipeline();
     }
 
     CsmPassNode::~CsmPassNode()
     {
+        if (csmArrayView != VK_NULL_HANDLE)
+            vkDestroyImageView(device.getDevice(), csmArrayView, nullptr);
         if (objectDescriptorPool != VK_NULL_HANDLE)
             vkDestroyDescriptorPool(device.getDevice(), objectDescriptorPool, nullptr);
         if (objectSetLayout != VK_NULL_HANDLE)
@@ -181,7 +181,7 @@ namespace Engine {
         VkExtent2D mapExtent = {SHADOW_MAP_SIZE, SHADOW_MAP_SIZE};
         renderGraph.createTransientImage(
             "CsmImage",
-            VK_FORMAT_D32_SFLOAT,
+            Config::USE_D16_SHADOW_MAPS ? VK_FORMAT_D16_UNORM : VK_FORMAT_D32_SFLOAT,
             mapExtent,
             SHADOW_MAP_CASCADES,
             VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
@@ -198,98 +198,42 @@ namespace Engine {
     void CsmPassNode::execute(VkCommandBuffer &cmd, FrameInfo &frameInfo)
     {
         uint32_t currentFrame = renderer.getFrameIndex();
+        uint32_t objectCount = cullPass.getMaxObjectCount();
 
-        if (sceneDirty) {
-            opaqueDraws.clear();
-            objectDataArray.clear();
-            indirectCommandsArray.clear();
+        if (objectCount > 0) {
 
-            for (const auto &obj: *frameInfo.gameObjects) {
-                if (obj.subMesh.indexCount == 0) continue;
-                if (obj.alphaMode == AlphaMode::Blend) continue;
-                opaqueDraws.push_back(&obj);
+            CascadeGpuData cascadeData {};
+            for (uint32_t c = 0; c < SHADOW_MAP_CASCADES; c++) {
+                cascadeData.viewProj[c] = cascadeViewProjs[c];
+
+                glm::mat4 tvp = glm::transpose(cascadeViewProjs[c]);
+                glm::vec4 planes[6];
+                planes[0] = tvp[3] + tvp[0]; // Left
+                planes[1] = tvp[3] - tvp[0]; // Right
+                planes[2] = tvp[3] + tvp[1]; // Bottom
+                planes[3] = tvp[3] - tvp[1]; // Top
+                planes[4] = tvp[2];           // Near
+                planes[5] = tvp[3] - tvp[2];  // Far
+
+                for (int p = 0; p < 6; p++) {
+                    float len = glm::length(glm::vec3(planes[p]));
+                    cascadeData.frustumPlanes[c * 6 + p] = planes[p] / len;
+                }
             }
+            cascadeDataBuffers[currentFrame]->writeToBuffer(&cascadeData, sizeof(CascadeGpuData), 0);
+            cascadeDataBuffers[currentFrame]->flush(VK_WHOLE_SIZE, 0);
 
-            for (const auto *obj: opaqueDraws) {
-                ObjectData data {};
-                data.modelMatrix = obj->currentWorldMatrix;
-                data.normalMatrix = glm::mat4(glm::transpose(glm::inverse(glm::mat3(obj->currentWorldMatrix))));
-                data.boundingSphere = obj->boundingSphere;
-                objectDataArray.push_back(data);
+            VkBufferMemoryBarrier2 barriers[1];
+            barriers[0] = VkUtils::bufferBarrier(
+                cascadeDataBuffers[currentFrame]->getBuffer(), 0, VK_WHOLE_SIZE,
+                VK_PIPELINE_STAGE_2_HOST_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_HOST_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
 
-                VkDrawIndexedIndirectCommand cmdCommand {};
-                cmdCommand.indexCount = obj->subMesh.indexCount;
-                cmdCommand.instanceCount = 1;
-                cmdCommand.firstIndex = obj->subMesh.firstIndex;
-                cmdCommand.vertexOffset = obj->subMesh.vertexOffset;
-                cmdCommand.firstInstance = static_cast<uint32_t>(objectDataArray.size() - 1);
-                indirectCommandsArray.push_back(cmdCommand);
-            }
-
-            framesToUpdate = Config::MAX_FRAMES_IN_FLIGHT;
-            sceneDirty = false;
-        }
-
-        if (framesToUpdate > 0) {
-            if (!objectDataArray.empty()) {
-                cpuObjectSSBOs[currentFrame]->writeToBuffer(
-                    objectDataArray.data(), objectDataArray.size() * sizeof(ObjectData), 0);
-                cpuObjectSSBOs[currentFrame]->flush(VK_WHOLE_SIZE, 0);
-                cpuIndirectCommandBuffers[currentFrame]->writeToBuffer(
-                    indirectCommandsArray.data(),
-                    indirectCommandsArray.size() * sizeof(VkDrawIndexedIndirectCommand),
-                    0);
-                cpuIndirectCommandBuffers[currentFrame]->flush(VK_WHOLE_SIZE, 0);
-
-                VkBufferCopy objCopy {};
-                objCopy.size = objectDataArray.size() * sizeof(ObjectData);
-                vkCmdCopyBuffer(cmd,
-                                cpuObjectSSBOs[currentFrame]->getBuffer(),
-                                gpuObjectSSBOs[currentFrame]->getBuffer(),
-                                1,
-                                &objCopy);
-
-                VkBufferCopy indCopy {};
-                indCopy.size = indirectCommandsArray.size() * sizeof(VkDrawIndexedIndirectCommand);
-                vkCmdCopyBuffer(cmd,
-                                cpuIndirectCommandBuffers[currentFrame]->getBuffer(),
-                                gpuIndirectCommandBuffers[currentFrame]->getBuffer(),
-                                1,
-                                &indCopy);
-
-                std::array<VkBufferMemoryBarrier2, 2> copyBarriers {};
-                copyBarriers[0] = VkUtils::bufferBarrier(
-                    gpuObjectSSBOs[currentFrame]->getBuffer(), 0, VK_WHOLE_SIZE,
-                    VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
-                    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT,
-                    VK_ACCESS_2_SHADER_READ_BIT);
-
-                copyBarriers[1] = copyBarriers[0];
-                copyBarriers[1].buffer = gpuIndirectCommandBuffers[currentFrame]->getBuffer();
-
-                VkDependencyInfo copyDependency {};
-                copyDependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-                copyDependency.bufferMemoryBarrierCount = 2;
-                copyDependency.pBufferMemoryBarriers = copyBarriers.data();
-                vkCmdPipelineBarrier2(cmd, &copyDependency);
-            }
-            framesToUpdate--;
-        }
-
-        if (!objectDataArray.empty()) {
-            vkCmdFillBuffer(
-                cmd, gpuDrawCountBuffers[currentFrame]->getBuffer(), 0, sizeof(uint32_t) * SHADOW_MAP_CASCADES, 0);
-
-            VkBufferMemoryBarrier2 fillBarrier = VkUtils::bufferBarrier(
-                gpuDrawCountBuffers[currentFrame]->getBuffer(), 0, VK_WHOLE_SIZE,
-                VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
-                VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT);
-
-            VkDependencyInfo fillDep {};
-            fillDep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-            fillDep.bufferMemoryBarrierCount = 1;
-            fillDep.pBufferMemoryBarriers = &fillBarrier;
-            vkCmdPipelineBarrier2(cmd, &fillDep);
+            VkDependencyInfo depInfo {};
+            depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+            depInfo.bufferMemoryBarrierCount = 1;
+            depInfo.pBufferMemoryBarriers = barriers;
+            vkCmdPipelineBarrier2(cmd, &depInfo);
 
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
             vkCmdBindDescriptorSets(cmd,
@@ -301,33 +245,14 @@ namespace Engine {
                                     0,
                                     nullptr);
 
-            for (uint32_t cascadeIndex = 0; cascadeIndex < SHADOW_MAP_CASCADES; cascadeIndex++) {
-                ComputePushConstants compPc {};
-                compPc.viewProj = cascadeViewProjs[cascadeIndex];
+            CsmCullPushConstants compPc {};
+            compPc.objectCount = objectCount;
+            compPc.objectCapacity = Config::MAX_SCENE_OBJECTS;
+            vkCmdPushConstants(
+                cmd, computePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(CsmCullPushConstants), &compPc);
 
-                glm::mat4 tvp = glm::transpose(compPc.viewProj);
-                compPc.frustumPlanes[0] = tvp[3] + tvp[0];
-                compPc.frustumPlanes[1] = tvp[3] - tvp[0];
-                compPc.frustumPlanes[2] = tvp[3] + tvp[1];
-                compPc.frustumPlanes[3] = tvp[3] - tvp[1];
-                compPc.frustumPlanes[4] = tvp[2];
-                compPc.frustumPlanes[5] = tvp[3] - tvp[2];
-
-                for (int i = 0; i < 6; i++) {
-                    float len = glm::length(glm::vec3(compPc.frustumPlanes[i]));
-                    compPc.frustumPlanes[i] /= len;
-                }
-
-                compPc.objectCount = static_cast<uint32_t>(objectDataArray.size());
-                compPc.cascadeIndex = cascadeIndex;
-                compPc.objectCapacity = Config::MAX_SCENE_OBJECTS;
-                compPc.clipPlaneCount = 4;
-                vkCmdPushConstants(
-                    cmd, computePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ComputePushConstants), &compPc);
-
-                uint32_t groupCount = (static_cast<uint32_t>(objectDataArray.size()) + 255) / 256;
-                vkCmdDispatch(cmd, groupCount, 1, 1);
-            }
+            uint32_t groupCountX = (objectCount + 63) / 64;
+            vkCmdDispatch(cmd, groupCountX, 1, 1);
 
             VkBufferMemoryBarrier2 computeBarrier = VkUtils::bufferBarrier(
                 gpuCompactedIndirectCommandBuffers[currentFrame]->getBuffer(), 0, VK_WHOLE_SIZE,
@@ -347,67 +272,65 @@ namespace Engine {
             vkCmdPipelineBarrier2(cmd, &computeDep);
         }
 
-        for (uint32_t cascadeIndex = 0; cascadeIndex < SHADOW_MAP_CASCADES; cascadeIndex++) {
-            VkRenderingAttachmentInfo depthAttachment {};
-            depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-            depthAttachment.imageView = cascadeViews[cascadeIndex];
-            depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-            depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-            depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-            depthAttachment.clearValue.depthStencil = {1.0f, 0};
+        VkRenderingAttachmentInfo depthAttachment {};
+        depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        depthAttachment.imageView = csmArrayView;
+        depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        depthAttachment.clearValue.depthStencil = {1.0f, 0};
 
-            VkRenderingInfo renderingInfo {};
-            renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-            renderingInfo.renderArea.offset = {0, 0};
-            renderingInfo.renderArea.extent = {SHADOW_MAP_SIZE, SHADOW_MAP_SIZE};
-            renderingInfo.layerCount = 1;
-            renderingInfo.colorAttachmentCount = 0;
-            renderingInfo.pDepthAttachment = &depthAttachment;
+        VkRenderingInfo renderingInfo {};
+        renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+        renderingInfo.renderArea.offset = {0, 0};
+        renderingInfo.renderArea.extent = {SHADOW_MAP_SIZE, SHADOW_MAP_SIZE};
+        renderingInfo.layerCount = SHADOW_MAP_CASCADES;
+        renderingInfo.colorAttachmentCount = 0;
+        renderingInfo.pDepthAttachment = &depthAttachment;
 
-            vkCmdBeginRendering(cmd, &renderingInfo);
+        vkCmdBeginRendering(cmd, &renderingInfo);
 
-            VkViewport viewport {};
-            viewport.x = 0.0f;
-            viewport.y = 0.0f;
-            viewport.width = static_cast<float>(SHADOW_MAP_SIZE);
-            viewport.height = static_cast<float>(SHADOW_MAP_SIZE);
-            viewport.minDepth = 0.0f;
-            viewport.maxDepth = 1.0f;
-            vkCmdSetViewport(cmd, 0, 1, &viewport);
+        VkViewport viewport {};
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = static_cast<float>(SHADOW_MAP_SIZE);
+        viewport.height = static_cast<float>(SHADOW_MAP_SIZE);
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        vkCmdSetViewport(cmd, 0, 1, &viewport);
 
-            VkRect2D scissor {};
-            scissor.offset = {0, 0};
-            scissor.extent = {SHADOW_MAP_SIZE, SHADOW_MAP_SIZE};
-            vkCmdSetScissor(cmd, 0, 1, &scissor);
+        VkRect2D scissor {};
+        scissor.offset = {0, 0};
+        scissor.extent = {SHADOW_MAP_SIZE, SHADOW_MAP_SIZE};
+        vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
-            VkDescriptorSet bindlessSet = resourceHeap.getDescriptorSet(currentFrame);
-            VkDescriptorSet sets[] = {bindlessSet, objectDescriptorSets[currentFrame]};
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 2, sets, 0, nullptr);
+        VkDescriptorSet bindlessSet = resourceHeap.getDescriptorSet(currentFrame);
+        VkDescriptorSet sets[] = {bindlessSet, objectDescriptorSets[currentFrame]};
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 2, sets, 0, nullptr);
 
-            CsmPassPushConstants pc {};
-            pc.cascadeIndex = cascadeIndex;
-            vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(CsmPassPushConstants), &pc);
+        megaBuffer.bindPositionOnly(cmd);
 
-            megaBuffer.bindPositionOnly(cmd);
+        if (objectCount > 0) {
+            for (uint32_t c = 0; c < SHADOW_MAP_CASCADES; c++) {
+                uint32_t cascadeIndex = c;
+                vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uint32_t), &cascadeIndex);
 
-            if (!objectDataArray.empty()) {
-                VkDeviceSize compactedOffset = static_cast<VkDeviceSize>(cascadeIndex) *
-                    Config::MAX_SCENE_OBJECTS * sizeof(VkDrawIndexedIndirectCommand);
-                VkDeviceSize countOffset = static_cast<VkDeviceSize>(cascadeIndex) * sizeof(uint32_t);
+                VkDeviceSize commandOffset = c * Config::MAX_SCENE_OBJECTS * sizeof(VkDrawIndexedIndirectCommand);
+                VkDeviceSize countOffset = c * sizeof(uint32_t);
 
                 vkCmdDrawIndexedIndirectCount(cmd,
                                               gpuCompactedIndirectCommandBuffers[currentFrame]->getBuffer(),
-                                              compactedOffset,
+                                              commandOffset,
                                               gpuDrawCountBuffers[currentFrame]->getBuffer(),
                                               countOffset,
-                                              static_cast<uint32_t>(objectDataArray.size()),
+                                              objectCount,
                                               sizeof(VkDrawIndexedIndirectCommand));
             }
-
-            vkCmdEndRendering(cmd);
         }
+
+        vkCmdEndRendering(cmd);
     }
 
     void CsmPassNode::resolve(RenderGraph &graph, const FrameInfo &frameInfo)
@@ -416,24 +339,22 @@ namespace Engine {
 
         VkImage currentImage = graph.getImage("CsmImage");
         if (currentImage != VK_NULL_HANDLE && currentImage != csmImageCache) {
-            for (uint32_t i = 0; i < SHADOW_MAP_CASCADES; i++) {
-                if (cascadeViews[i] != VK_NULL_HANDLE) {
-                    vkDestroyImageView(device.getDevice(), cascadeViews[i], nullptr);
-                }
-
-                VkImageViewCreateInfo viewInfo {};
-                viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-                viewInfo.image = currentImage;
-                viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-                viewInfo.format = VK_FORMAT_D32_SFLOAT;
-                viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-                viewInfo.subresourceRange.baseMipLevel = 0;
-                viewInfo.subresourceRange.levelCount = 1;
-                viewInfo.subresourceRange.baseArrayLayer = i;
-                viewInfo.subresourceRange.layerCount = 1;
-
-                vkCreateImageView(device.getDevice(), &viewInfo, nullptr, &cascadeViews[i]);
+            if (csmArrayView != VK_NULL_HANDLE) {
+                vkDestroyImageView(device.getDevice(), csmArrayView, nullptr);
             }
+
+            VkImageViewCreateInfo viewInfo {};
+            viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+            viewInfo.image = currentImage;
+            viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+            viewInfo.format = Config::USE_D16_SHADOW_MAPS ? VK_FORMAT_D16_UNORM : VK_FORMAT_D32_SFLOAT;
+            viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+            viewInfo.subresourceRange.baseMipLevel = 0;
+            viewInfo.subresourceRange.levelCount = 1;
+            viewInfo.subresourceRange.baseArrayLayer = 0;
+            viewInfo.subresourceRange.layerCount = SHADOW_MAP_CASCADES;
+
+            vkCreateImageView(device.getDevice(), &viewInfo, nullptr, &csmArrayView);
             csmImageCache = currentImage;
         }
     }
@@ -444,15 +365,15 @@ namespace Engine {
         VkDescriptorSetLayout bindlessLayout = resourceHeap.getDescriptorSetLayout();
         VkDescriptorSetLayout layouts[] = {bindlessLayout, objectSetLayout};
 
-        VkPushConstantRange pushConstantRangeGraphics {};
-        pushConstantRangeGraphics.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-        pushConstantRangeGraphics.offset = 0;
-        pushConstantRangeGraphics.size = sizeof(CsmPassPushConstants);
-
         VkPipelineLayoutCreateInfo pipelineLayoutInfo {};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        VkPushConstantRange graphicsPushConstant {};
+        graphicsPushConstant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        graphicsPushConstant.offset = 0;
+        graphicsPushConstant.size = sizeof(uint32_t); // cascadeIndex
+
         pipelineLayoutInfo.pushConstantRangeCount = 1;
-        pipelineLayoutInfo.pPushConstantRanges = &pushConstantRangeGraphics;
+        pipelineLayoutInfo.pPushConstantRanges = &graphicsPushConstant;
         pipelineLayoutInfo.setLayoutCount = 2;
         pipelineLayoutInfo.pSetLayouts = layouts;
 
@@ -461,7 +382,7 @@ namespace Engine {
         VkPushConstantRange pushConstantRangeCompute {};
         pushConstantRangeCompute.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
         pushConstantRangeCompute.offset = 0;
-        pushConstantRangeCompute.size = sizeof(ComputePushConstants);
+        pushConstantRangeCompute.size = sizeof(CsmCullPushConstants);
 
         VkPipelineLayoutCreateInfo pipelineLayoutComputeInfo {};
         pipelineLayoutComputeInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -478,7 +399,7 @@ namespace Engine {
         // depth only
 
         auto vertCode = ShaderUtils::readFile("shaders/shadow.vert.spv");
-        auto compCode = ShaderUtils::readFile("shaders/cull.comp.spv");
+        auto compCode = ShaderUtils::readFile("shaders/csm_cull.comp.spv");
 
         VkShaderModule vertShaderModule = ShaderUtils::createShaderModule(device.getDevice(), vertCode);
         VkShaderModule compModule = ShaderUtils::createShaderModule(device.getDevice(), compCode);
@@ -561,7 +482,7 @@ namespace Engine {
         renderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
         renderingCreateInfo.colorAttachmentCount = 0;
         renderingCreateInfo.pColorAttachmentFormats = nullptr;
-        renderingCreateInfo.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
+        renderingCreateInfo.depthAttachmentFormat = Config::USE_D16_SHADOW_MAPS ? VK_FORMAT_D16_UNORM : VK_FORMAT_D32_SFLOAT;
 
         VkGraphicsPipelineCreateInfo pipelineInfo {};
         pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -595,7 +516,8 @@ namespace Engine {
     void CsmPassNode::updateCascades(SceneUbo &sceneUbo, FrameInfo &frameInfo)
     {
         float nearClip = frameInfo.camera->getNearClip();
-        float farClip = frameInfo.camera->getFarClip();
+        const float maxShadowDistance = 90.0f;
+        float farClip = std::min(frameInfo.camera->getFarClip(), maxShadowDistance);
         float clipRange = farClip - nearClip;
 
         float minZ = nearClip;
@@ -604,7 +526,7 @@ namespace Engine {
         float range = maxZ - minZ;
         float ratio = maxZ / minZ;
 
-        float cascadeSplitLambda = 0.95f;
+        float cascadeSplitLambda = 0.75f;
 
         for (uint32_t i = 0; i < SHADOW_MAP_CASCADES; i++) {
             float p = (i+1) / static_cast<float>(SHADOW_MAP_CASCADES);
@@ -661,12 +583,12 @@ namespace Engine {
             glm::vec3 maxExtents = glm::vec3(radius);
             glm::vec3 minExtents = -maxExtents;
 
-            glm::vec3 lightDir = glm::normalize(glm::vec3(-sceneUbo.directionalLight));
+            glm::vec3 lightDir = glm::normalize(glm::vec3(sceneUbo.directionalLight));
             glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);
             if (std::abs(lightDir.y) > 0.999f) {
                 up = glm::vec3(0.0f, 0.0f, 1.0f);
             }
-            float zMultiplier = 300.0f;
+            float zMultiplier = 40.0f;
 
             float nearPlane = 0.01f;
             float farPlane  = zMultiplier + radius * 1.5f;

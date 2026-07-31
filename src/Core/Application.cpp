@@ -34,10 +34,13 @@ namespace Engine {
 
         camera.setViewTarget(glm::vec3{0.0f, 0.0f, -5.0f}, glm::vec3{0.0f, 0.0f, 0.0f});
 
-        assetStreamer.enqueueLoad("models/pbr_sphere.glb");
-        assetStreamer.enqueueLoad("models/square.glb");
-        //assetStreamer.enqueueLoad("models/sponza_optimized.glb");
-        //assetStreamer.enqueueLoad("C:/Users/Jan Varga/Downloads/pkg_a_curtains/pkg_a_curtains/NewSponza_Curtains_glTF.gltf");
+        //assetStreamer.enqueueLoad("models/pbr_sphere.glb");
+        //assetStreamer.enqueueLoad("models/square.glb");
+        assetStreamer.enqueueLoad("models/sponza_optimized.glb");
+        assetStreamer.enqueueLoad("C:/Users/Jan Varga/Downloads/pkg_a_curtains/pkg_a_curtains/NewSponza_Curtains_glTF.gltf");
+        //assetStreamer.enqueueLoad("C:/Users/Jan Varga/Downloads/Sponza-crytek/Sponza.gltf");
+
+
 
         sceneManager.flattenSceneGraph();
         cullPass.markSceneDirty();
@@ -100,7 +103,7 @@ namespace Engine {
 
             SceneUbo uboData{};
             uboData.cameraPosition = glm::vec4(cameraObject->transform.translation, 1.0f);
-            uboData.directionalLight = glm::vec4(glm::normalize(glm::vec3(0.5f, 1.0f, 0.3f)), 10.0f);
+            uboData.directionalLight = glm::vec4(glm::normalize(glm::vec3(0.2f, -1.0f, 0.1f)), 7.0f);
             uboData.maxReflectionLod = static_cast<float>(ibl->prefilteredCube.mipLevels - 1);
             uboData.blueNoiseTexIndex = blueNoiseSlot;
 
@@ -288,8 +291,8 @@ namespace Engine {
                                               currentExtent,
                                               VK_IMAGE_LAYOUT_UNDEFINED);
 
-            renderGraph.addPass(&csmPass);
             renderGraph.addPass(&cullPass);
+            renderGraph.addPass(&csmPass);
             renderGraph.addPass(&visPass);
             renderGraph.addPass(&materialPass);
             renderGraph.addPass(&ssaoPass);
