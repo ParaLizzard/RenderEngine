@@ -53,7 +53,13 @@ FetchContent_Declare(
         GIT_TAG        master
 )
 
-FetchContent_MakeAvailable(glfw ktx fastgltf stb)
+FetchContent_Declare(
+        meshoptimizer
+        GIT_REPOSITORY https://github.com/zeux/meshoptimizer.git
+        GIT_TAG        v0.22
+)
+
+FetchContent_MakeAvailable(glfw ktx fastgltf stb meshoptimizer)
 
 # stb is header-only — expose it as an INTERFACE target so we can link it cleanly
 add_library(stb INTERFACE)
@@ -260,6 +266,7 @@ target_link_libraries(RenderEngineLib PUBLIC
         ktx
         fastgltf
         stb
+        meshoptimizer
 )
 
 # ---------------------------------------------------------------------------

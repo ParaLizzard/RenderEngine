@@ -286,7 +286,13 @@ namespace Engine {
 
         std::set<std::string> requiredExtensions(deviceExtensions.begin(), deviceExtensions.end());
         for (const auto &extension: availableExtensions) {
+            if (extension.extensionName == VK_EXT_MESH_SHADER_EXTENSION_NAME) bMeshShaderSupported = true;
             requiredExtensions.erase(extension.extensionName);
+        }
+
+        if (requiredExtensions.contains(VK_EXT_MESH_SHADER_EXTENSION_NAME)) {
+            bMeshShaderSupported = false;
+            requiredExtensions.erase(VK_EXT_MESH_SHADER_EXTENSION_NAME);
         }
 
         return requiredExtensions.empty();
@@ -343,7 +349,6 @@ namespace Engine {
         vulkan13Features.shaderDemoteToHelperInvocation = VK_TRUE;
         vulkan13Features.maintenance4 = VK_TRUE;
 
-
         VkPhysicalDeviceVulkan12Features vulkan12Features {};
         vulkan12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
         vulkan12Features.pNext = &vulkan13Features;
@@ -358,9 +363,17 @@ namespace Engine {
         vulkan12Features.drawIndirectCount = VK_TRUE;
         vulkan12Features.shaderOutputLayer = VK_TRUE;
 
+        VkPhysicalDeviceMeshShaderFeaturesEXT meshShaderFeatures{};
+        meshShaderFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
+        meshShaderFeatures.pNext = &vulkan12Features;
+        if (bMeshShaderSupported) {
+            meshShaderFeatures.meshShader = VK_TRUE;
+            meshShaderFeatures.taskShader = VK_TRUE;
+        }
+
         VkPhysicalDeviceFeatures2 deviceFeatures2 {};
         deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-        deviceFeatures2.pNext = &vulkan12Features;
+        deviceFeatures2.pNext = &meshShaderFeatures;
         deviceFeatures2.features = {.geometryShader = VK_TRUE,
                                     .multiDrawIndirect = VK_TRUE,
                                     .drawIndirectFirstInstance = VK_TRUE,

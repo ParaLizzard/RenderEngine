@@ -4,6 +4,8 @@
 #include <vector>
 #include <glm/glm.hpp>
 #include <vulkan/vulkan.h>
+#include <meshoptimizer.h>
+
 
 namespace Engine {
     class Buffer;
@@ -16,6 +18,22 @@ namespace Engine {
             uint32_t indexCount = 0;
             uint32_t firstIndex = 0;
             int32_t vertexOffset = 0;
+            uint32_t baseMeshlet = 0;
+            uint32_t meshletCount = 0;
+        };
+
+        struct Meshlet {
+            glm::vec3 center;
+            float radius;
+
+            // Quantized normal cone
+            signed char cone_axis[3];
+            signed char cone_cutoff;
+
+            glm::uint vertexOffset;
+            glm::uint indexOffset;
+            glm::uint vertexCount;
+            glm::uint triangleCount;
         };
 
         struct VertexPosition
@@ -63,6 +81,18 @@ namespace Engine {
         {
             return indexBuffer ? indexBuffer : nullptr;
         }
+        std::shared_ptr<Buffer> getMeshletBuffer() const
+        {
+            return meshletBuffer ? meshletBuffer : nullptr;
+        }
+        std::shared_ptr<Buffer> getMeshletVerticesBuffer() const
+        {
+            return meshletVerticesBuffer ? meshletVerticesBuffer : nullptr;
+        }
+        std::shared_ptr<Buffer> getMeshletTrianglesBuffer() const
+        {
+            return meshletTrianglesBuffer ? meshletTrianglesBuffer : nullptr;
+        }
 
         [[nodiscard]] uint32_t getVertexCount() const {return  totalAllocatedVertices;}
         [[nodiscard]] uint32_t getIndexCount() const {return  totalAllocatedIndices;}
@@ -77,10 +107,16 @@ namespace Engine {
         std::vector<VertexPosition> cpuPositions;
         std::vector<VertexAttribute> cpuAttributes;
         std::vector<uint32_t> cpuIndices;
+        std::vector<Meshlet> cpuMeshlets;
+        std::vector<uint32_t> cpuMeshletVertices;
+        std::vector<uint8_t> cpuMeshletTriangles;
 
         // Unified GPU-Only
         std::shared_ptr<Buffer> positionBuffer;
         std::shared_ptr<Buffer> attributeBuffer;
         std::shared_ptr<Buffer> indexBuffer;
+        std::shared_ptr<Buffer> meshletBuffer;
+        std::shared_ptr<Buffer> meshletVerticesBuffer;
+        std::shared_ptr<Buffer> meshletTrianglesBuffer;
     };
 } // namespace Engine
