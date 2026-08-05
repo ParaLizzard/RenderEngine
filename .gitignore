@@ -2,6 +2,9 @@
 models/*
 assets/*
 docs/*
+cmake-build-debug
+cmake-build-release
+
 
 !models/.gitkeep
 !assets/.gitkeep

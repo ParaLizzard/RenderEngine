@@ -16,6 +16,8 @@ namespace Engine {
         glm::vec4 boundingSphere;
         uint32_t baseMeshlet;
         uint32_t meshletCount;
+        uint32_t alphaMode;
+        uint32_t padding1;
     };
 
     class TransformUpdatePassNode: public RenderPassNode
@@ -38,7 +40,17 @@ namespace Engine {
 
         std::shared_ptr<Buffer> getGlobalObjectBuffer() const
         {
-            return globalObjectBuffer;
+            return globalObjectBuffers[renderer.getFrameIndex()];
+        }
+
+        [[nodiscard]] const std::vector<std::shared_ptr<Buffer>>& getGlobalObjectBuffers() const
+        {
+            return globalObjectBuffers;
+        }
+
+        [[nodiscard]] std::shared_ptr<Buffer> getGlobalObjectBuffer(uint32_t frameIndex) const
+        {
+            return globalObjectBuffers[frameIndex];
         }
 
     private:
@@ -46,7 +58,7 @@ namespace Engine {
         Renderer &renderer;
 
         std::vector<ObjectData> objectDataArray;
-        std::shared_ptr<Buffer> globalObjectBuffer;
+        std::vector<std::shared_ptr<Buffer>> globalObjectBuffers;
         std::vector<std::unique_ptr<Buffer>> stagingBuffers;
 
         bool sceneDirty = true;

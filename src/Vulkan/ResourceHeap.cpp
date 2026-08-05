@@ -4,6 +4,7 @@
 
 #include "Renderer/Renderer.h"
 #include "AssetSystem/Texture.h"
+#include "Vulkan/Device.h"
 
 namespace Engine {
 
@@ -70,17 +71,22 @@ namespace Engine {
         bindings[4].descriptorCount = 1;
         bindings[4].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
 
+        VkShaderStageFlags meshStages = 0;
+        if (device.isMeshShaderSupported()) {
+            meshStages = VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT;
+        }
+
         // Binding 5: ObjectBuffer
         bindings[5].binding = 5;
         bindings[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         bindings[5].descriptorCount = 1;
-        bindings[5].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+        bindings[5].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | meshStages;
 
         // Binding 6: PositionBuffer
         bindings[6].binding = 6;
         bindings[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         bindings[6].descriptorCount = 1;
-        bindings[6].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+        bindings[6].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT | meshStages;
 
         // Binding 7: AttributeBuffer
         bindings[7].binding = 7;
@@ -92,19 +98,19 @@ namespace Engine {
         bindings[8].binding = 8;
         bindings[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         bindings[8].descriptorCount = 1;
-        bindings[8].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+        bindings[8].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT | meshStages;
 
         // Binding 9: MeshletVerticesBuffer
         bindings[9].binding = 9;
         bindings[9].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         bindings[9].descriptorCount = 1;
-        bindings[9].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+        bindings[9].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT | meshStages;
 
         // Binding 10: MeshletTrianglesBuffer
         bindings[10].binding = 10;
         bindings[10].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         bindings[10].descriptorCount = 1;
-        bindings[10].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+        bindings[10].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT | meshStages;
 
         // Binding 11: IndexBuffer
         bindings[11].binding = 11;
@@ -132,7 +138,7 @@ namespace Engine {
         bindingFlags[10] = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
         bindingFlags[11] = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
         bindingFlags[12] = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
-            VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT;
+                           VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT;
 
 
         VkDescriptorSetLayoutBindingFlagsCreateInfo bindingFlagsInfo {};
@@ -339,6 +345,7 @@ namespace Engine {
 
     void ResourceHeap::update(uint32_t currentFrame)
     {
+        flushPendingUpdates();
         if (materialFramesToUpdate > 0) {
             uploadMaterialBuffer(currentFrame);
             writeMaterialDescriptor(currentFrame);
@@ -477,14 +484,20 @@ namespace Engine {
         }
     }
 
-    void ResourceHeap::setObjectBuffer(std::shared_ptr<Buffer> objectBuf)
+    void ResourceHeap::setObjectBuffer(const std::vector<std::shared_ptr<Buffer>> &objectBufs)
     {
-        globalObjectBuffer = objectBuf;
-        if (!globalObjectBuffer) return;
+        globalObjectBuffers = objectBufs;
+        if (globalObjectBuffers.empty()) return;
 
+        std::vector<VkDescriptorBufferInfo> bufferInfos(Config::MAX_FRAMES_IN_FLIGHT);
         std::vector<VkWriteDescriptorSet> writes;
+        writes.reserve(Config::MAX_FRAMES_IN_FLIGHT);
+
         for (size_t i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
-            VkDescriptorBufferInfo* info = new VkDescriptorBufferInfo(globalObjectBuffer->descriptorInfo(VK_WHOLE_SIZE, 0));
+            if (i >= globalObjectBuffers.size() || !globalObjectBuffers[i]) continue;
+
+            bufferInfos[i] = globalObjectBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
+
             VkWriteDescriptorSet write {};
             write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             write.dstSet = globalDescriptorSets[i];
@@ -492,14 +505,12 @@ namespace Engine {
             write.dstArrayElement = 0;
             write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
             write.descriptorCount = 1;
-            write.pBufferInfo = info;
+            write.pBufferInfo = &bufferInfos[i];
             writes.push_back(write);
         }
 
         if (!writes.empty()) {
             vkUpdateDescriptorSets(device.getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
-            for (auto& w : writes) delete w.pBufferInfo;
         }
     }
-
 } // namespace Engine

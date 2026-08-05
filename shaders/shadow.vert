@@ -8,6 +8,10 @@ struct ObjectData {
     mat4 modelMatrix;
     mat4 normalMatrix;
     vec4 boundingSphere;
+    uint baseMeshlet;
+    uint meshletCount;
+    uint alphaMode;
+    uint padding1;
 };
 
 layout(set = 0, binding = 1) uniform SceneUbo {
@@ -20,7 +24,8 @@ layout(set = 0, binding = 1) uniform SceneUbo {
     vec2 padding;
 } sceneUbo;
 
-layout(set = 1, binding = 0) readonly buffer ObjectDataBuffer {
+// Set 0: ResourceHeap
+layout(set = 0, binding = 5) readonly buffer ObjectDataBuffer {
     ObjectData objects[];
 } objectData;
 

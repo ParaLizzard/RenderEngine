@@ -79,22 +79,22 @@ namespace Engine {
     {
         VkExtent2D currentExtent = renderer.getSwapChain().getSwapChainExtent();
         VkExtent2D halfExtent = {currentExtent.width / 2, currentExtent.height / 2};
-        renderGraph.createTransientImage("SsaoImage", VK_FORMAT_R8_UNORM, halfExtent);
+        renderGraph.createTransientImage("SsaoImage", VK_FORMAT_R8_UNORM, halfExtent, 1, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT);
 
         renderGraph.readImage("DepthImage",
                               VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-                              VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                              VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                               VK_ACCESS_2_SHADER_READ_BIT);
-        renderGraph.readBuffer("PackedNormals", VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+        renderGraph.readBuffer("PackedNormals", VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
 
         renderGraph.writeImage("SsaoImage",
-                               VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                               VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                               VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+                               VK_IMAGE_LAYOUT_GENERAL,
+                               VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                               VK_ACCESS_2_SHADER_WRITE_BIT);
         renderGraph.writeImage("SsaoBlurImage",
-                               VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                               VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                               VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+                               VK_IMAGE_LAYOUT_GENERAL,
+                               VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                               VK_ACCESS_2_SHADER_WRITE_BIT);
     }
 
     void SsaoPassNode::resolve(RenderGraph &graph, const FrameInfo &frameInfo)
@@ -107,20 +107,28 @@ namespace Engine {
         VkDescriptorImageInfo noiseInfo {noiseSampler, noiseView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
         VkDescriptorBufferInfo bufferInfo = uboBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
 
+        VkDescriptorImageInfo ssaoWriteInfo {
+            VK_NULL_HANDLE, graph.getImageView("SsaoImage"), VK_IMAGE_LAYOUT_GENERAL};
+
         DescriptorWriter(*ssaoSetLayout, *descriptorPool)
             .writeImage(0, &depthInfo)
             .writeBuffer(1, &normalInfo)
             .writeImage(2, &noiseInfo)
             .writeBuffer(3, &bufferInfo)
+            .writeImage(4, &ssaoWriteInfo)
             .overwrite(ssaoDescriptorSets[i]);
 
         VkDescriptorImageInfo ssaoResultInfo {
             colorSampler, graph.getImageView("SsaoImage"), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+            
+        VkDescriptorImageInfo blurWriteInfo {
+            VK_NULL_HANDLE, graph.getImageView("SsaoBlurImage"), VK_IMAGE_LAYOUT_GENERAL};
 
         DescriptorWriter(*blurSetLayout, *descriptorPool)
             .writeImage(0, &ssaoResultInfo)
             .writeImage(1, &depthInfo)
             .writeBuffer(2, &bufferInfo)
+            .writeImage(3, &blurWriteInfo)
             .overwrite(blurDescriptorSets[i]);
     }
 
@@ -142,50 +150,19 @@ namespace Engine {
         uboBuffers[currentFrame]->writeToBuffer(&ubo, sizeof(SsaoUbo), 0);
         uboBuffers[currentFrame]->flush(VK_WHOLE_SIZE, 0);
 
-        VkRenderingAttachmentInfo ssaoAttachment {};
-        ssaoAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        ssaoAttachment.imageView = frameInfo.renderGraph->getImageView("SsaoImage");
-        ssaoAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        ssaoAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        ssaoAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        ssaoAttachment.clearValue.color = {{1.0f, 1.0f, 1.0f, 1.0f}};
-
-        VkRenderingInfo renderingInfo {};
-        renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-        renderingInfo.renderArea.offset = {0, 0};
-        renderingInfo.renderArea.extent = halfExtent;
-        renderingInfo.layerCount = 1;
-        renderingInfo.colorAttachmentCount = 1;
-        renderingInfo.pColorAttachments = &ssaoAttachment;
-
-        vkCmdBeginRendering(cmd, &renderingInfo);
-
-        VkViewport viewport {};
-        viewport.x = 0.0f;
-        viewport.y = 0.0f;
-        viewport.width = static_cast<float>(halfExtent.width);
-        viewport.height = static_cast<float>(halfExtent.height);
-        viewport.minDepth = 0.0f;
-        viewport.maxDepth = 1.0f;
-        vkCmdSetViewport(cmd, 0, 1, &viewport);
-
-        VkRect2D scissor {};
-        scissor.offset = {0, 0};
-        scissor.extent = halfExtent;
-        vkCmdSetScissor(cmd, 0, 1, &scissor);
-
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoPipeline);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, ssaoPipeline);
         VkDescriptorSet sets[] = {ssaoDescriptorSets[currentFrame]};
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoPipelineLayout, 0, 1, sets, 0, nullptr);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, ssaoPipelineLayout, 0, 1, sets, 0, nullptr);
 
-        vkCmdDraw(cmd, 3, 1, 0, 0);
-        vkCmdEndRendering(cmd);
+        uint32_t groupCountX = (halfExtent.width + 15) / 16;
+        uint32_t groupCountY = (halfExtent.height + 15) / 16;
+        vkCmdDispatch(cmd, groupCountX, groupCountY, 1);
 
         VkImageMemoryBarrier2 barrier = VkUtils::imageBarrier(
             frameInfo.renderGraph->getImage("SsaoImage"),
-            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT,
+            VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT,
             {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1});
 
         VkDependencyInfo depInfo {};
@@ -194,27 +171,9 @@ namespace Engine {
         depInfo.pImageMemoryBarriers = &barrier;
         vkCmdPipelineBarrier2(cmd, &depInfo);
 
-        VkRenderingAttachmentInfo blurAttachment {};
-        blurAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        blurAttachment.imageView = frameInfo.renderGraph->getImageView("SsaoBlurImage");
-        blurAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        blurAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        blurAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        blurAttachment.clearValue.color = {{1.0f, 1.0f, 1.0f, 1.0f}};
-
-        VkRenderingInfo blurRenderInfo {};
-        blurRenderInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-        blurRenderInfo.renderArea.offset = {0, 0};
-        blurRenderInfo.renderArea.extent = halfExtent;
-        blurRenderInfo.layerCount = 1;
-        blurRenderInfo.colorAttachmentCount = 1;
-        blurRenderInfo.pColorAttachments = &blurAttachment;
-
-        vkCmdBeginRendering(cmd, &blurRenderInfo);
-
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, blurPipeline);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, blurPipeline);
         vkCmdBindDescriptorSets(cmd,
-                                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                VK_PIPELINE_BIND_POINT_COMPUTE,
                                 blurPipelineLayout,
                                 0,
                                 1,
@@ -222,15 +181,13 @@ namespace Engine {
                                 0,
                                 nullptr);
 
-        vkCmdDraw(cmd, 3, 1, 0, 0);
-
-        vkCmdEndRendering(cmd);
+        vkCmdDispatch(cmd, groupCountX, groupCountY, 1);
 
         VkImageMemoryBarrier2 restoreBarrier = VkUtils::imageBarrier(
             frameInfo.renderGraph->getImage("SsaoImage"),
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT,
-            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
+            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT,
+            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
             {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1});
 
         VkDependencyInfo restoreDepInfo {};
@@ -364,6 +321,7 @@ namespace Engine {
                              .addPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, Config::MAX_FRAMES_IN_FLIGHT * 2)
                              .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, Config::MAX_FRAMES_IN_FLIGHT * 4)
                              .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, Config::MAX_FRAMES_IN_FLIGHT)
+                             .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, Config::MAX_FRAMES_IN_FLIGHT * 2)
                              .build();
 
         std::default_random_engine rndEngine((unsigned)time(nullptr));
@@ -392,23 +350,27 @@ namespace Engine {
 
         ssaoSetLayout =
             DescriptorSetLayout::Builder(device)
-                .addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT) // Depth
+                .addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT) // Depth
                 .addBinding(
-                    1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT) // Normal (from CompactMaterial)
-                .addBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT) // Noise
-                .addBinding(3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT) // Kernel + Matrices
+                    1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT) // Normal (from CompactMaterial)
+                .addBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT) // Noise
+                .addBinding(3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT) // Kernel + Matrices
+                .addBinding(4, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT) // Output
                 .build();
 
         blurSetLayout = DescriptorSetLayout::Builder(device)
                             .addBinding(0,
                                         VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                                        VK_SHADER_STAGE_FRAGMENT_BIT) // SSAO Image
+                                        VK_SHADER_STAGE_COMPUTE_BIT) // SSAO Image
                             .addBinding(1,
                                         VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                                        VK_SHADER_STAGE_FRAGMENT_BIT) // Depth Image
+                                        VK_SHADER_STAGE_COMPUTE_BIT) // Depth Image
                             .addBinding(2,
                                         VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                                        VK_SHADER_STAGE_FRAGMENT_BIT) // UBO
+                                        VK_SHADER_STAGE_COMPUTE_BIT) // UBO
+                            .addBinding(3, 
+                                        VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 
+                                        VK_SHADER_STAGE_COMPUTE_BIT) // Output Blur Image
                             .build();
 
         ssaoDescriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
@@ -426,84 +388,11 @@ namespace Engine {
         pipelineLayoutInfo.pSetLayouts = &bLayout;
         vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &blurPipelineLayout);
 
-        auto vertCode = ShaderUtils::readFile("shaders/fullscreen.vert.spv");
-        auto ssaoFragCode = ShaderUtils::readFile("shaders/ssao.frag.spv");
-        auto blurFragCode = ShaderUtils::readFile("shaders/ssao_blur.frag.spv");
+        auto ssaoCompCode = ShaderUtils::readFile("shaders/ssao.comp.spv");
+        auto blurCompCode = ShaderUtils::readFile("shaders/ssao_blur.comp.spv");
 
-        VkShaderModule vertModule = ShaderUtils::createShaderModule(device.getDevice(), vertCode);
-        VkShaderModule ssaoFragModule = ShaderUtils::createShaderModule(device.getDevice(), ssaoFragCode);
-        VkShaderModule blurFragModule = ShaderUtils::createShaderModule(device.getDevice(), blurFragCode);
-
-        VkPipelineShaderStageCreateInfo shaderStages[2] {};
-        shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        shaderStages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
-        shaderStages[0].module = vertModule;
-        shaderStages[0].pName = "main";
-
-        shaderStages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        shaderStages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-        shaderStages[1].pName = "main";
-
-        VkPipelineVertexInputStateCreateInfo vertexInputInfo {};
-        vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-
-        VkPipelineInputAssemblyStateCreateInfo inputAssembly {};
-        inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-        inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-
-        VkPipelineViewportStateCreateInfo viewportState {};
-        viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-        viewportState.viewportCount = 1;
-        viewportState.scissorCount = 1;
-
-        VkPipelineRasterizationStateCreateInfo rasterizer {};
-        rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-        rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-        rasterizer.cullMode = VK_CULL_MODE_NONE;
-        rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-        rasterizer.lineWidth = 1.0f;
-
-        VkPipelineMultisampleStateCreateInfo multisampling {};
-        multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-        multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-
-        VkPipelineDepthStencilStateCreateInfo depthStencil {};
-        depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-
-        VkPipelineColorBlendAttachmentState colorBlendAttachment {};
-        colorBlendAttachment.colorWriteMask = 0xF;
-        colorBlendAttachment.blendEnable = VK_FALSE;
-
-        VkPipelineColorBlendStateCreateInfo colorBlending {};
-        colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-        colorBlending.attachmentCount = 1;
-        colorBlending.pAttachments = &colorBlendAttachment;
-
-        std::vector<VkDynamicState> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
-        VkPipelineDynamicStateCreateInfo dynamicState {};
-        dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-        dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
-        dynamicState.pDynamicStates = dynamicStates.data();
-
-        VkFormat colorFormat = VK_FORMAT_R8_UNORM;
-        VkPipelineRenderingCreateInfo renderingCreateInfo {};
-        renderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-        renderingCreateInfo.colorAttachmentCount = 1;
-        renderingCreateInfo.pColorAttachmentFormats = &colorFormat;
-
-        VkGraphicsPipelineCreateInfo pipelineInfo {};
-        pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-        pipelineInfo.pNext = &renderingCreateInfo;
-        pipelineInfo.stageCount = 2;
-        pipelineInfo.pStages = shaderStages;
-        pipelineInfo.pVertexInputState = &vertexInputInfo;
-        pipelineInfo.pInputAssemblyState = &inputAssembly;
-        pipelineInfo.pViewportState = &viewportState;
-        pipelineInfo.pRasterizationState = &rasterizer;
-        pipelineInfo.pMultisampleState = &multisampling;
-        pipelineInfo.pDepthStencilState = &depthStencil;
-        pipelineInfo.pColorBlendState = &colorBlending;
-        pipelineInfo.pDynamicState = &dynamicState;
+        VkShaderModule ssaoCompModule = ShaderUtils::createShaderModule(device.getDevice(), ssaoCompCode);
+        VkShaderModule blurCompModule = ShaderUtils::createShaderModule(device.getDevice(), blurCompCode);
 
         struct SpecializationData
         {
@@ -517,20 +406,36 @@ namespace Engine {
         auto specializationInfo =
             VkSpecializationInfo(2, specializationMapEntries.data(), sizeof(specializationData), &specializationData);
 
-        shaderStages[1].module = ssaoFragModule;
-        shaderStages[1].pSpecializationInfo = &specializationInfo;
-        pipelineInfo.layout = ssaoPipelineLayout;
-        vkCreateGraphicsPipelines(
-            device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, nullptr, &ssaoPipeline);
+        VkPipelineShaderStageCreateInfo ssaoComputeStage {};
+        ssaoComputeStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        ssaoComputeStage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+        ssaoComputeStage.module = ssaoCompModule;
+        ssaoComputeStage.pName = "main";
+        ssaoComputeStage.pSpecializationInfo = &specializationInfo;
 
-        shaderStages[1].module = blurFragModule;
-        shaderStages[1].pSpecializationInfo = nullptr;
-        pipelineInfo.layout = blurPipelineLayout;
-        vkCreateGraphicsPipelines(
-            device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, nullptr, &blurPipeline);
+        VkComputePipelineCreateInfo computePipelineInfo {};
+        computePipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+        computePipelineInfo.layout = ssaoPipelineLayout;
+        computePipelineInfo.stage = ssaoComputeStage;
 
-        vkDestroyShaderModule(device.getDevice(), vertModule, nullptr);
-        vkDestroyShaderModule(device.getDevice(), ssaoFragModule, nullptr);
-        vkDestroyShaderModule(device.getDevice(), blurFragModule, nullptr);
+        vkCreateComputePipelines(
+            device.getDevice(), device.getPipelineCache(), 1, &computePipelineInfo, nullptr, &ssaoPipeline);
+
+        VkPipelineShaderStageCreateInfo blurComputeStage {};
+        blurComputeStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        blurComputeStage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+        blurComputeStage.module = blurCompModule;
+        blurComputeStage.pName = "main";
+        
+        VkComputePipelineCreateInfo blurPipelineInfo {};
+        blurPipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+        blurPipelineInfo.layout = blurPipelineLayout;
+        blurPipelineInfo.stage = blurComputeStage;
+
+        vkCreateComputePipelines(
+            device.getDevice(), device.getPipelineCache(), 1, &blurPipelineInfo, nullptr, &blurPipeline);
+
+        vkDestroyShaderModule(device.getDevice(), ssaoCompModule, nullptr);
+        vkDestroyShaderModule(device.getDevice(), blurCompModule, nullptr);
     }
 } // namespace Engine

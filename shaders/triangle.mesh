@@ -1,0 +1,171 @@
+#version 460
+#extension GL_EXT_mesh_shader : require
+#extension GL_KHR_shader_subgroup_ballot : require
+#extension GL_EXT_shader_8bit_storage : require
+
+layout(local_size_x = 128) in;
+layout(triangles, max_vertices = 128, max_primitives = 126) out;
+
+layout(location = 0) flat out uint outInstanceID[];
+layout(location = 1) perprimitiveEXT flat out uint outSyntheticIndex[];
+
+struct PositionData {
+    float x, y, z;
+};
+
+struct ObjectData {
+    mat4 modelMatrix;
+    mat4 normalMatrix;
+    vec4 boundingSphere;
+    uint baseMeshlet;
+    uint meshletCount;
+    uint alphaMode;
+    uint padding1;
+};
+
+struct Meshlet {
+    float center_x;
+    float center_y;
+    float center_z;
+    float radius;
+    uint cone_axis_cutoff;
+    uint vertexOffset;
+    uint indexOffset;
+    uint vertexCount;
+    uint triangleCount;
+};
+
+layout(std430, set = 0, binding = 5) readonly buffer ObjectBuffer { ObjectData objects[]; };
+layout(std430, set = 0, binding = 6) readonly buffer VertexBuffer { PositionData positions[]; };
+layout(std430, set = 0, binding = 8) readonly buffer MeshletBuffer { Meshlet meshlets[]; };
+layout(std430, set = 0, binding = 9) readonly buffer MeshletVertexMap { uint meshletVertices[]; };
+layout(std430, set = 0, binding = 10) readonly buffer MeshletTriangleMap { uint8_t meshletTriangles[]; };
+
+layout(push_constant) uniform PushConsts {
+    mat4 viewProj;
+    vec4 frustumPlanes[6];
+    vec3 cameraPos;
+    uint cullFlags;
+    uint objectCount;
+    uint actualObjectCount;
+    uint cascadeIndex;
+    uint objectCapacity;
+    uint clipPlaneCount;
+    uint isMeshShader;
+} pc;
+
+struct Payload {
+    uint objectID;
+    uint meshletIndices[32];
+};
+
+taskPayloadSharedEXT Payload payload;
+
+shared uint s_triangleIndices[128 + 126 * 3];
+
+void main() {
+    uint objectID = payload.objectID;
+    uint localMeshletIdx = payload.meshletIndices[gl_WorkGroupID.x];
+    
+    ObjectData obj = objects[objectID];
+    uint globalMeshletID = obj.baseMeshlet + localMeshletIdx;
+    Meshlet m = meshlets[globalMeshletID];
+    
+    uint vertexCount = m.vertexCount;
+    uint triangleCount = m.triangleCount;
+
+    uint vertIdx = gl_LocalInvocationID.x;
+    if (vertIdx < vertexCount) {
+        uint globalVertexID = meshletVertices[m.vertexOffset + vertIdx];
+        PositionData pd = positions[globalVertexID];
+        
+        vec4 pos = pc.viewProj * (obj.modelMatrix * vec4(pd.x, pd.y, pd.z, 1.0));
+        gl_MeshVerticesEXT[vertIdx].gl_Position = pos;
+        outInstanceID[vertIdx] = objectID;
+    }
+    
+    // --- Debug Flags ---
+    bool enableFrustumCull = true;
+    bool enableBackfaceCull = true;
+    // -------------------
+
+    uint triIdx = gl_LocalInvocationID.x;
+    bool visible = false;
+    
+    uint v0, v1, v2;
+    if (triIdx < triangleCount) {
+        uint triOffset = m.indexOffset + triIdx * 3u;
+        v0 = uint(meshletTriangles[triOffset + 0u]);
+        v1 = uint(meshletTriangles[triOffset + 1u]);
+        v2 = uint(meshletTriangles[triOffset + 2u]);
+        
+        uint globalV0 = meshletVertices[m.vertexOffset + v0];
+        uint globalV1 = meshletVertices[m.vertexOffset + v1];
+        uint globalV2 = meshletVertices[m.vertexOffset + v2];
+        
+        PositionData pd0 = positions[globalV0];
+        PositionData pd1 = positions[globalV1];
+        PositionData pd2 = positions[globalV2];
+        
+        vec4 p0 = pc.viewProj * (obj.modelMatrix * vec4(pd0.x, pd0.y, pd0.z, 1.0));
+        vec4 p1 = pc.viewProj * (obj.modelMatrix * vec4(pd1.x, pd1.y, pd1.z, 1.0));
+        vec4 p2 = pc.viewProj * (obj.modelMatrix * vec4(pd2.x, pd2.y, pd2.z, 1.0));
+        
+        visible = true;
+
+        if (enableFrustumCull && (p0.w <= 0.0 && p1.w <= 0.0 && p2.w <= 0.0)) {
+            visible = false;
+        }
+
+        if (visible && enableBackfaceCull) {
+            bool doubleSided = (obj.alphaMode & 4u) != 0u;
+            if (p0.w > 0.0 && p1.w > 0.0 && p2.w > 0.0) {
+                vec2 ndc0 = p0.xy / p0.w;
+                vec2 ndc1 = p1.xy / p1.w;
+                vec2 ndc2 = p2.xy / p2.w;
+
+                float area = (ndc1.x - ndc0.x) * (ndc2.y - ndc0.y) - (ndc2.x - ndc0.x) * (ndc1.y - ndc0.y);
+
+                if (!doubleSided && area >= 0.0) {
+                    visible = false;
+                }
+            }
+        }
+
+        if (pc.cullFlags == 0) {
+            visible = true;
+        }
+    }
+    
+    uvec4 ballot = subgroupBallot(visible);
+    uint subgroupCount = subgroupBallotBitCount(ballot);
+    uint subgroupOffset = subgroupBallotExclusiveBitCount(ballot);
+    
+    if (subgroupElect()) {
+        s_triangleIndices[gl_SubgroupID] = subgroupCount;
+    }
+    
+    barrier();
+    
+    uint exclusiveOffset = subgroupOffset;
+    for (uint i = 0; i < gl_SubgroupID; i++) {
+        exclusiveOffset += s_triangleIndices[i];
+    }
+    
+    uint totalSurvivingCount = 0;
+    for (uint i = 0; i < gl_NumSubgroups; i++) {
+        totalSurvivingCount += s_triangleIndices[i];
+    }
+    
+    if (gl_LocalInvocationID.x == 0) {
+        SetMeshOutputsEXT(vertexCount, totalSurvivingCount);
+    }
+    
+    if (visible) {
+        gl_PrimitiveTriangleIndicesEXT[exclusiveOffset] = uvec3(v0, v1, v2);
+        
+        uint syntheticIndex = (objectID << 22u) | ((localMeshletIdx & 0x1FFFu) << 9u) | ((triIdx * 3u) & 0x1FFu);
+        gl_MeshPrimitivesEXT[exclusiveOffset].gl_PrimitiveID = int(exclusiveOffset);
+        outSyntheticIndex[exclusiveOffset] = syntheticIndex;
+    }
+}

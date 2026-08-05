@@ -25,7 +25,6 @@ vec3 ACESFilm(vec3 x) {
     return clamp((x*(a*x+b))/(x*(c*x+d)+e), 0.0, 1.0);
 }
 
-// Helper function to sample from the SSBO like a texture
 /*vec4 sampleSceneColor(vec2 uv) {
     ivec2 coords = ivec2(uv * pc.resolution);
     coords = clamp(coords, ivec2(0), ivec2(pc.resolution) - 1);
@@ -47,15 +46,16 @@ vec4 sampleSceneColor(vec2 uv) {
 }
 
 // Standard FXAA 3.11 Quality Parameters
-const float FXAA_SUBPIX = 0.0;
-const float FXAA_EDGE_THRESHOLD = 0.166;
-const float FXAA_EDGE_THRESHOLD_MIN = 0.0833;
+const float FXAA_SUBPIX = 0.75;
+const float FXAA_EDGE_THRESHOLD = 0.125;
+const float FXAA_EDGE_THRESHOLD_MIN = 0.0312;
 
 const int FXAA_SEARCH_STEPS = 5;
 const float FXAA_SEARCH_OFFSETS[5] = float[](1.0, 1.5, 2.0, 4.0, 12.0);
 
 float fxaaLuma(vec4 color) {
-    return dot(color.rgb, vec3(0.299, 0.587, 0.114));
+    vec3 gammaCol = sqrt(clamp(color.rgb, 0.0, 1.0));
+    return dot(gammaCol, vec3(0.299, 0.587, 0.114));
 }
 
 vec4 applyFXAA(vec2 uv, vec2 rcpFrame) {

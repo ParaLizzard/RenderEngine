@@ -12,6 +12,8 @@ namespace Engine {
     class DescriptorPool;
     class DescriptorSetLayout;
     class Buffer;
+    class CullPassNode;
+    class CsmPassNode;
     struct FrameInfo;
     struct MaterialPushConstants
     {
@@ -19,6 +21,8 @@ namespace Engine {
         glm::mat4 view;
         glm::vec3 cameraPos;
         glm::uint enableSSAO;
+        glm::uint debugMode; // 0 = Standard PBR, 1 = Per-Triangle, 2 = Per-Meshlet
+        float ssaoStrength;
     };
 
     struct WorldData
@@ -40,6 +44,7 @@ namespace Engine {
                          Renderer &renderer,
                          Model &megaBuffer,
                          ResourceHeap &resourceHeap,
+                         CullPassNode &cullPass,
                          RenderGraph &renderGraph);
         ~MaterialPassNode();
 
@@ -77,6 +82,7 @@ namespace Engine {
         Model &megaBuffer;
         Renderer &renderer;
         ResourceHeap &resourceHeap;
+        CullPassNode &cullPass;
         RenderGraph &renderGraph;
 
         VkPipelineLayout pipelineLayout {VK_NULL_HANDLE};

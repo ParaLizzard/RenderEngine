@@ -4,6 +4,7 @@
 #include <vector>
 #include "Scene/Camera.h"
 #include "Scene/GameObject.h"
+#include "System/Input/InputManager.h"
 
 #define SHADOW_MAP_SIZE 2048
 #define SHADOW_MAP_CASCADES 3
@@ -25,6 +26,7 @@ namespace Engine {
         VkExtent2D extent;
         VkCommandBuffer commandBuffer;
         Camera *camera;
+        InputManager *input;
         std::vector<GameObject> *gameObjects;
 
         Device *device = nullptr;
@@ -35,6 +37,10 @@ namespace Engine {
         const JobSystem *jobSystem;
 
         bool enableSSAO = true;
+
+        glm::mat4 cullViewProj;
+        glm::vec3 cullCameraPos;
+        bool cullEnabled = true;
     };
 
     struct SceneUbo

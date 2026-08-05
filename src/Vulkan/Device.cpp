@@ -286,7 +286,7 @@ namespace Engine {
 
         std::set<std::string> requiredExtensions(deviceExtensions.begin(), deviceExtensions.end());
         for (const auto &extension: availableExtensions) {
-            if (extension.extensionName == VK_EXT_MESH_SHADER_EXTENSION_NAME) bMeshShaderSupported = true;
+            if (strcmp(extension.extensionName, VK_EXT_MESH_SHADER_EXTENSION_NAME) == 0) bMeshShaderSupported = true;
             requiredExtensions.erase(extension.extensionName);
         }
 
@@ -362,6 +362,7 @@ namespace Engine {
         vulkan12Features.bufferDeviceAddress = VK_TRUE;
         vulkan12Features.drawIndirectCount = VK_TRUE;
         vulkan12Features.shaderOutputLayer = VK_TRUE;
+        vulkan12Features.storageBuffer8BitAccess = VK_TRUE;
 
         VkPhysicalDeviceMeshShaderFeaturesEXT meshShaderFeatures{};
         meshShaderFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;

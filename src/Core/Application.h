@@ -71,10 +71,10 @@ namespace Engine {
         TransformUpdatePassNode transformPass {device, renderer};
         CullPassNode cullPass {device, renderer, megaBuffer, resourceHeap};
         VisibilityPassNode visPass {device, renderer, megaBuffer, cullPass, resourceHeap};
-        MaterialPassNode materialPass {device, renderer, megaBuffer, resourceHeap, renderGraph};
+        CsmPassNode csmPass {device, renderer, megaBuffer, resourceHeap, cullPass};
+        MaterialPassNode materialPass {device, renderer, megaBuffer, resourceHeap, cullPass, renderGraph};
         SsaoPassNode ssaoPass {device, renderer, megaBuffer, resourceHeap};
         FxaaPassNode fxaaPass {device, renderer, megaBuffer, resourceHeap};
-        CsmPassNode csmPass {device, renderer, megaBuffer, resourceHeap, cullPass};
 
         int currentFrame;
         uint32_t imgIdx;
@@ -86,7 +86,10 @@ namespace Engine {
 
         bool enableSSAO = true;
         bool ssaoKeyPressed = false;
-
-
+        
+        bool freezeCulling = false;
+        bool cullEnabled = true;
+        glm::mat4 frozenViewProj = glm::mat4(1.0f);
+        glm::vec3 frozenCameraPos = glm::vec3(0.0f);
     };
 } // namespace Engine

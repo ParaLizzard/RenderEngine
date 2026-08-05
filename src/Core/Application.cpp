@@ -1,5 +1,9 @@
 #include "Core/Application.h"
 
+#include <chrono>
+#include <iostream>
+#include <vulkan/vulkan.h>
+
 #include <stb_image.h>
 
 #include "AssetSystem/IBL.h"
@@ -31,6 +35,7 @@ namespace Engine {
         info.renderer = &renderer;
         info.megaBuffer = &megaBuffer;
         info.renderGraph = &renderGraph;
+        info.input = &inputManager;
 
         camera.setViewTarget(glm::vec3{0.0f, 0.0f, -5.0f}, glm::vec3{0.0f, 0.0f, 0.0f});
 
@@ -67,6 +72,18 @@ namespace Engine {
                 std::cout << "SSAO: " << (enableSSAO ? "ON" : "OFF") << "\n";
             }
 
+            if (inputManager.IsKeyJustPressed(KeyCode::F4)) {
+                freezeCulling = !freezeCulling;
+                if (freezeCulling) {
+                    frozenViewProj = camera.getProjection() * camera.getView();
+                    frozenCameraPos = camera.getPosition();
+                }
+            }
+
+            if (inputManager.IsKeyJustPressed(KeyCode::F5)) {
+                cullEnabled = !cullEnabled;
+                std::cout << "Culling: " << (cullEnabled ? "ON" : "OFF") << "\n";
+            }
 
             auto currentTime = static_cast<float>(window.getTime());
             float deltaTime = currentTime - lastTime;
@@ -94,15 +111,17 @@ namespace Engine {
                     megaBuffer.getMeshletTrianglesBuffer()
                 );
                 
-                transformPass.markSceneDirty();
-                cullPass.markSceneDirty();
-                csmPass.markSceneDirty();
+                renderGraph.markSceneDirty();
+                sceneGraphDirty = true;
                 
                 std::cout << "Successfully streamed in async model!" << std::endl;
             }
 
             cameraController.moveInPlaneXZ(inputManager, deltaTime, cameraObject);
             camera.setViewYXZ(cameraObject->transform.translation, cameraObject->transform.rotation);
+
+            float aspect = renderer.getAspectRatio();
+            camera.setPerspectiveProjection(glm::radians(30.0f), aspect, 0.1f, 100.0f);
 
             updateSceneGraph();
 
@@ -117,9 +136,6 @@ namespace Engine {
             resourceHeap.update(currentFrame);
 
             info.camera = &camera;
-
-            float aspect = renderer.getAspectRatio();
-            camera.setPerspectiveProjection(glm::radians(30.0f), aspect, 0.1f, 100.0f);
 
             SceneUbo uboData{};
             uboData.cameraPosition = glm::vec4(cameraObject->transform.translation, 1.0f);
@@ -143,6 +159,11 @@ namespace Engine {
             info.gameObjects = &sceneManager.objects();
             info.jobSystem = &jobSystem;
             info.enableSSAO = enableSSAO;
+            info.input = &inputManager;
+            
+            info.cullViewProj = freezeCulling ? frozenViewProj : (camera.getProjection() * camera.getView());
+            info.cullCameraPos = freezeCulling ? frozenCameraPos : camera.getPosition();
+            info.cullEnabled = cullEnabled;
 
             renderGraph.execute(cmd, info);
             renderGraph.transitionToPresent(cmd, "SwapChainImage");
@@ -210,7 +231,7 @@ namespace Engine {
             megaBuffer.getMeshletVerticesBuffer(),
             megaBuffer.getMeshletTrianglesBuffer()
         );
-        resourceHeap.setObjectBuffer(transformPass.getGlobalObjectBuffer());
+        resourceHeap.setObjectBuffer(transformPass.getGlobalObjectBuffers());
 
         ibl = std::make_unique<IBL>(device, skyBox, resourceHeap, megaBuffer, *localCubeMeshNode);
 
@@ -269,20 +290,15 @@ namespace Engine {
                                                VK_PIPELINE_STAGE_2_HOST_BIT,
                                                VK_ACCESS_2_HOST_WRITE_BIT);
 
-            renderGraph.registerPhysicalBuffer("CullCompactedIndirectCommands",
-                                               cullPass.getCompactedIndirectBuffer(currentFrame),
-                                               Config::MAX_SCENE_OBJECTS * sizeof(VkDrawIndexedIndirectCommand),
-                                               VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-                                               VK_ACCESS_2_SHADER_WRITE_BIT);
+            renderGraph.registerPhysicalBuffer("CompactedIndexBuffer",
+                                   cullPass.getCompactedIndexBuffer(currentFrame),
+                                   Config::MAX_SCENE_OBJECTS * Config::MAX_TRIANGLES * 3 * sizeof(uint32_t),
+                                   VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                                   VK_ACCESS_2_SHADER_WRITE_BIT);
 
-            renderGraph.registerPhysicalBuffer("CullDrawCount",
-                                               cullPass.getDrawCountBuffer(currentFrame),
-                                               sizeof(uint32_t),
-                                               VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-                                               VK_ACCESS_2_SHADER_WRITE_BIT);
-            renderGraph.registerPhysicalBuffer("CullObjectData",
-                                               cullPass.getGpuObjectBuffer(currentFrame),
-                                               Config::MAX_SCENE_OBJECTS * sizeof(ObjectData),
+            renderGraph.registerPhysicalBuffer("SingleIndirectCommand",
+                                               cullPass.getSingleIndirectCommandBuffer(currentFrame),
+                                               sizeof(VkDrawIndirectCommand),
                                                VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                                                VK_ACCESS_2_SHADER_WRITE_BIT);
 
@@ -323,9 +339,7 @@ namespace Engine {
                                               VK_IMAGE_LAYOUT_UNDEFINED);
 
             renderGraph.addPass(&transformPass);
-            if (!device.isMeshShaderSupported()) {
-                renderGraph.addPass(&cullPass);
-            }
+            renderGraph.addPass(&cullPass);
             renderGraph.addPass(&csmPass);
             renderGraph.addPass(&visPass);
             renderGraph.addPass(&materialPass);
@@ -343,14 +357,14 @@ namespace Engine {
         renderGraph.updateBufferHandle("MaterialSSBO",
                                        resourceHeap.getMaterialBufferInfo(currentFrame).buffer,
                                        resourceHeap.getMaterialBufferSize());
-        renderGraph.updateBufferHandle("CullCompactedIndirectCommands",
-                                       cullPass.getCompactedIndexBuffer(currentFrame),
-                                       Config::MAX_SCENE_OBJECTS * Config::MAX_TRIANGLES * 3 * sizeof(uint32_t));
 
-        renderGraph.updateBufferHandle(
-            "CullDrawCount",
-            cullPass.getDrawCountBuffer(currentFrame),
-            sizeof(uint32_t));
+        renderGraph.updateBufferHandle("CompactedIndexBuffer",
+                               cullPass.getCompactedIndexBuffer(currentFrame),
+                               Config::MAX_SCENE_OBJECTS * Config::MAX_TRIANGLES * 3 * sizeof(uint32_t));
+
+        renderGraph.updateBufferHandle("SingleIndirectCommand",
+                                       cullPass.getSingleIndirectCommandBuffer(currentFrame),
+                                       sizeof(VkDrawIndirectCommand));
 
         VkDeviceSize normalBufferSize =
             static_cast<VkDeviceSize>(currentExtent.width) * currentExtent.height * sizeof(uint32_t);

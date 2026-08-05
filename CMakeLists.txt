@@ -169,6 +169,7 @@ set(THREADING_SOURCES
         src/Threading/JobSystem.h
 )
 
+
 set(VULKAN_SOURCES
         src/Vulkan/Device.cpp
         src/Vulkan/Device.h
@@ -206,6 +207,8 @@ set(PASSES_SOURCES
         src/Renderer/Passes/MaterialPassNode.h
         src/Renderer/Passes/CsmPassNode.cpp
         src/Renderer/Passes/CsmPassNode.h
+        src/Renderer/Passes/TransformUpdatePassNode.cpp
+        src/Renderer/Passes/TransformUpdatePassNode.h
 )
 
 set(SCENE_SOURCES

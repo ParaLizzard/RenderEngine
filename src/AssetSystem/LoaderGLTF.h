@@ -20,16 +20,28 @@
 namespace Engine {
     class JobSystem;
     class Device;
+
+    enum class TextureType {
+        Albedo,
+        Normal,
+        MetallicRoughness,
+        Emissive,
+        Occlusion
+    };
+
     struct ParsedImage
     {
         std::vector<unsigned char> data;
         uint32_t width = 0;
         uint32_t height = 0;
         bool isValid = false;
+        TextureType type = TextureType::Albedo;
         bool isSRGB = false;
         bool isKTX2 = false;
         void *ktxTexPtr = nullptr;
     };
+
+
 
     struct ParsedPrimitive
     {

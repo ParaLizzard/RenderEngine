@@ -8,6 +8,8 @@ struct ObjectData {
     vec4 boundingSphere;
     uint baseMeshlet;
     uint meshletCount;
+    uint alphaMode;
+    uint padding1;
 };
 
 layout(std430, set = 0, binding = 5) readonly buffer ObjectBuffer {
@@ -30,18 +32,25 @@ layout(push_constant) uniform PushConsts {
     mat4 viewProj;
     vec4 frustumPlanes[6];
     vec3 cameraPos;
+    uint cullFlags;
     uint objectCount; // total Meshlets
     uint actualObjectCount; // real objects
-    uint cascadeIndex;
+    float projM11;
     uint objectCapacity;
     uint clipPlaneCount;
 } push;
+
+const float SUBPIXEL_THRESHOLD = 0.0005;
 
 void main() {
     uint objectID = gl_GlobalInvocationID.x;
     if (objectID >= push.actualObjectCount) return;
 
     ObjectData obj = objects[objectID];
+
+    if (obj.meshletCount == 0 || (obj.alphaMode & 3u) == 2) {
+        return;
+    }
 
     // 1. Calculate World Space Sphere
     vec4 sphere = obj.boundingSphere;
@@ -55,35 +64,43 @@ void main() {
     float maxScale = sqrt(max(max(sqX, sqY), sqZ));
     float worldRadius = sphere.w * maxScale;
 
+    // --- Debug Flags ---
+    bool enableFrustumCull = true;
+    bool enableContributionCull = true;
+    // -------------------
+
     // 2. Frustum Culling
     bool visible = true;
-    for (uint i = 0u; i < push.clipPlaneCount; i++) {
-        if (dot(push.frustumPlanes[i].xyz, worldCenter) + push.frustumPlanes[i].w < -worldRadius) {
-            visible = false;
-            break;
-        }
-    }
-
-    // 3. Contribution Culling
-    if (visible) {
-        vec4 clipCenter = push.viewProj * vec4(worldCenter, 1.0);
-        if (clipCenter.w > 0.0) {
-            float projectedRadiusNDC = (worldRadius * abs(push.viewProj[1][1])) / clipCenter.w;
-            const float MIN_NDC_RADIUS = 0.001; 
-            if (projectedRadiusNDC < MIN_NDC_RADIUS) {
+    if (enableFrustumCull) {
+        for (uint i = 0u; i < push.clipPlaneCount; i++) {
+            if (dot(push.frustumPlanes[i].xyz, worldCenter) + push.frustumPlanes[i].w < -worldRadius) {
                 visible = false;
+                break;
             }
         }
     }
 
-    // 4. Output to Visible Object List if it survives
+    // 3. Contribution Culling
+    if (visible && enableContributionCull) {
+        vec3 camToCenter = worldCenter - push.cameraPos;
+        float dist = length(camToCenter);
+        if (dist > worldRadius) {
+            float projRadius = (worldRadius / dist) * abs(push.projM11);
+            if (projRadius < SUBPIXEL_THRESHOLD) {
+                visible = false;
+            }
+        }
+    }
+    
+    if (push.cullFlags == 0) {
+        visible = true;
+    }
+
     if (visible) {
-        // Increment the dispatchX count, which serves as the length of our visible object array
         uint slot = atomicAdd(dispatchX, 1);
         visibleObjects[slot] = objectID;
     }
 
-    // Thread 0 ensures the other dimensions of the indirect dispatch command are set
     if (gl_GlobalInvocationID.x == 0) {
         dispatchY = 1;
         dispatchZ = 1;

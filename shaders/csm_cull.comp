@@ -10,6 +10,10 @@ struct ObjectData {
     mat4 modelMatrix;
     mat4 normalMatrix;
     vec4 boundingSphere;
+    uint baseMeshlet;
+    uint meshletCount;
+    uint alphaMode;
+    uint padding1;
 };
 
 struct VkDrawIndexedIndirectCommand {
@@ -20,24 +24,25 @@ struct VkDrawIndexedIndirectCommand {
     uint firstInstance;
 };
 
-// Binding 0: The objects
-layout(std430, set = 0, binding = 0) readonly buffer ObjectBuffer {
+// Set 0: ResourceHeap
+layout(std430, set = 0, binding = 5) readonly buffer ObjectBuffer {
     ObjectData objects[];
 };
 
-layout(std430, set = 0, binding = 1) readonly buffer BlueprintBuffer {
+// Set 1: CSM Storage
+layout(std430, set = 1, binding = 0) readonly buffer BlueprintBuffer {
     VkDrawIndexedIndirectCommand blueprints[];
 };
 
-layout(std430, set = 0, binding = 2) buffer DrawCountBuffer {
+layout(std430, set = 1, binding = 1) buffer DrawCountBuffer {
     uint drawCounts[3];
 };
 
-layout(std430, set = 0, binding = 3) buffer CompactedIndirectBuffer {
+layout(std430, set = 1, binding = 2) buffer CompactedIndirectBuffer {
     VkDrawIndexedIndirectCommand compactedCommands[];
 };
 
-layout(std430, set = 0, binding = 4) readonly buffer CascadeDataBuffer {
+layout(std430, set = 1, binding = 3) readonly buffer CascadeDataBuffer {
     mat4  cascadeViewProj[3];
     vec4  cascadePlanes[18];
 };
@@ -49,18 +54,19 @@ layout(push_constant) uniform PushConsts {
 
 void main() {
     uint gID = gl_GlobalInvocationID.x;
-
-    if (gID == 0) {
-        drawCounts[0] = 0;
-        drawCounts[1] = 0;
-        drawCounts[2] = 0;
-    }
-
     if (gID >= push.objectCount)
         return;
 
-    vec4 sphere = objects[gID].boundingSphere;
-    mat4 model  = objects[gID].modelMatrix;
+    VkDrawIndexedIndirectCommand blueprint = blueprints[gID];
+    uint objectID = blueprint.firstInstance;
+
+    ObjectData obj = objects[objectID];
+
+    // Skip transparent objects (AlphaMode::Blend = 2)
+    if (obj.alphaMode == 2) return;
+
+    vec4 sphere = obj.boundingSphere;
+    mat4 model  = obj.modelMatrix;
 
     vec3 worldCenter = (model * vec4(sphere.xyz, 1.0)).xyz;
 
@@ -71,7 +77,6 @@ void main() {
     float worldRadius = sphere.w * maxScale;
 
     uint cascadeMask = 0u;
-    uint visibleCascadeCount = 0u;
 
     for (uint c = 0u; c < 3u; c++) {
         bool visible = true;
@@ -89,7 +94,7 @@ void main() {
             vec4 clipCenter = vp * vec4(worldCenter, 1.0);
             if (clipCenter.w > 0.0) {
                 float projectedRadiusNDC = (worldRadius * abs(vp[1][1])) / clipCenter.w;
-                float MIN_NDC_RADIUS = 0.001 * pow(4.0, float(c));
+                float MIN_NDC_RADIUS = 0.0005 * pow(4.0, float(c));
                 if (projectedRadiusNDC < MIN_NDC_RADIUS) {
                     visible = false;
                 }
@@ -98,7 +103,6 @@ void main() {
 
         if (visible) {
             cascadeMask |= (1u << c);
-            visibleCascadeCount++;
         }
     }
 
@@ -112,22 +116,24 @@ void main() {
 
         uint waveBase;
         if (subgroupElect()) {
-            waveBase = atomicAdd(drawCounts[c], waveCount);
+            if (waveCount > 0u) {
+                waveBase = atomicAdd(drawCounts[c], waveCount);
+            }
         }
         waveBase = subgroupBroadcastFirst(waveBase);
 
         if (visibleInCascade) {
-            VkDrawIndexedIndirectCommand cmd = blueprints[gID];
+            VkDrawIndexedIndirectCommand cmd = blueprint;
             cmd.instanceCount = 1;
-            cmd.firstInstance = gID;
+            cmd.firstInstance = objectID;
             compactedCommands[c * push.objectCapacity + waveBase + offset] = cmd;
         }
         #else
         if (visibleInCascade) {
             uint slot = atomicAdd(drawCounts[c], 1u);
-            VkDrawIndexedIndirectCommand cmd = blueprints[gID];
+            VkDrawIndexedIndirectCommand cmd = blueprint;
             cmd.instanceCount = 1;
-            cmd.firstInstance = gID;
+            cmd.firstInstance = objectID;
             compactedCommands[c * push.objectCapacity + slot] = cmd;
         }
         #endif

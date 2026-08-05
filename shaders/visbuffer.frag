@@ -1,12 +1,11 @@
 #version 460
 
-
 layout(location = 0) flat in uint inInstanceID;
 layout(location = 0) out uvec2 outVisBuffer;
 
-void main() {
-    uint instanceID = inInstanceID;
-    uint primitiveID = uint(gl_PrimitiveID);
+layout(set = 1, binding = 3) readonly buffer CompactedIndexBuffer { uint syntheticIndices[]; };
 
-    outVisBuffer = uvec2(instanceID+1, primitiveID);
+void main() {
+    uint syntheticIndex = syntheticIndices[gl_PrimitiveID * 3u];
+    outVisBuffer = uvec2(inInstanceID + 1u, syntheticIndex);
 }

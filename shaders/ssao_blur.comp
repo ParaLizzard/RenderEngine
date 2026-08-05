@@ -1,4 +1,6 @@
-#version 450
+#version 460
+
+layout (local_size_x = 16, local_size_y = 16) in;
 
 layout (binding = 0) uniform sampler2D samplerSSAO;
 layout (binding = 1) uniform sampler2D samplerDepth;
@@ -13,20 +15,34 @@ layout (binding = 2) uniform UBO
     float farPlane;
 } ubo;
 
-layout (location = 0) in vec2 inUV;
+layout (binding = 3, r8) uniform writeonly image2D outBlurSsao;
 
-layout (location = 0) out float outFragColor;
-
-vec3 reconstructViewPos(vec2 uv, float depth)
-{
-    vec4 ndc = vec4(uv * 2.0 - 1.0, depth, 1.0);
-    vec4 viewPos = ubo.invProjection * ndc;
-    return viewPos.xyz / viewPos.w;
+vec3 reconstructViewPos(vec2 uv, float depth) {
+    vec2 ndc = uv * 2.0 - 1.0;
+    float w = ubo.invProjection[2][3] * depth + ubo.invProjection[3][3];
+    vec3 viewPos;
+    viewPos.x = ubo.invProjection[0][0] * ndc.x + ubo.invProjection[2][0] * depth + ubo.invProjection[3][0];
+    viewPos.y = ubo.invProjection[1][1] * ndc.y + ubo.invProjection[2][1] * depth + ubo.invProjection[3][1];
+    viewPos.z = ubo.invProjection[2][2] * depth + ubo.invProjection[3][2];
+    return viewPos / w;
 }
 
 void main()
 {
+    ivec2 blurDim = imageSize(outBlurSsao);
+    ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);
+    
+    if (pixelCoords.x >= blurDim.x || pixelCoords.y >= blurDim.y) return;
+
+    vec2 inUV = (vec2(pixelCoords) + 0.5) / vec2(blurDim);
+
     float centerRawDepth = texture(samplerDepth, inUV).r;
+    
+    if (centerRawDepth == 1.0) {
+        imageStore(outBlurSsao, pixelCoords, vec4(1.0));
+        return;
+    }
+    
     float centerDepth = reconstructViewPos(inUV, centerRawDepth).z;
     
     vec2 texelSize = 1.0 / vec2(textureSize(samplerSSAO, 0));
@@ -47,7 +63,8 @@ void main()
             float spatialWeight = kernel[x + blurRange] * kernel[y + blurRange];
 
             float depthDiff = centerDepth - sampleDepth;
-            const float sigmaDepth = 0.1;
+            // Scale sigma based on depth to prevent a sharp cutoff line on the ground plane
+            float sigmaDepth = 0.1 + abs(centerDepth) * 0.05;
             float rangeWeight = exp(-(depthDiff * depthDiff) / (2.0 * sigmaDepth * sigmaDepth));
 
             float weight = spatialWeight * rangeWeight;
@@ -57,5 +74,6 @@ void main()
         }
     }
     
-    outFragColor = weightSum > 0.0001 ? result / weightSum : texture(samplerSSAO, inUV).r;
+    float finalColor = weightSum > 0.0001 ? result / weightSum : texture(samplerSSAO, inUV).r;
+    imageStore(outBlurSsao, pixelCoords, vec4(finalColor));
 }

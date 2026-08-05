@@ -1,8 +1,8 @@
-
-
 #include "Renderer/Passes/VisibilityPassNode.h"
 #include "Renderer/RenderGraph.h"
 #include "Renderer/ShaderUtils.h"
+#include "Renderer/Passes/CullPassNode.h"
+#include "Core/EngineConfig.h"
 
 namespace Engine {
     VisibilityPassNode::VisibilityPassNode(Device &device,
@@ -10,18 +10,31 @@ namespace Engine {
                                            Model &megaBuffer,
                                            CullPassNode &cullPass,
                                            ResourceHeap &resourceHeap):
-        device(device), megaBuffer(megaBuffer), renderer(renderer), cullPass(cullPass), resourceHeap(resourceHeap)
+        device(device), renderer(renderer), megaBuffer(megaBuffer), cullPass(cullPass), resourceHeap(resourceHeap)
     {
         createPipelineLayout();
         createPipeline();
+        
+        if (device.isMeshShaderSupported()) {
+            pfn_vkCmdDrawMeshTasksEXT = (PFN_vkCmdDrawMeshTasksEXT)vkGetInstanceProcAddr(device.getInstance(), "vkCmdDrawMeshTasksEXT");
+            pfn_vkCmdDrawMeshTasksIndirectEXT = (PFN_vkCmdDrawMeshTasksIndirectEXT)vkGetInstanceProcAddr(device.getInstance(), "vkCmdDrawMeshTasksIndirectEXT");
+            if (!pfn_vkCmdDrawMeshTasksEXT || !pfn_vkCmdDrawMeshTasksIndirectEXT) {
+                throw std::runtime_error("Failed to load mesh shader extension functions");
+            }
+            createMeshPipeline();
+        }
     }
 
     VisibilityPassNode::~VisibilityPassNode()
     {
+        if (meshPipeline != VK_NULL_HANDLE)
+            vkDestroyPipeline(device.getDevice(), meshPipeline, nullptr);
         if (pipeline != VK_NULL_HANDLE)
             vkDestroyPipeline(device.getDevice(), pipeline, nullptr);
         if (pipelineLayout != VK_NULL_HANDLE)
             vkDestroyPipelineLayout(device.getDevice(), pipelineLayout, nullptr);
+        if (meshPipelineLayout != VK_NULL_HANDLE)
+            vkDestroyPipelineLayout(device.getDevice(), meshPipelineLayout, nullptr);
     }
 
     void VisibilityPassNode::setup(RenderGraphBuilder &renderGraph)
@@ -32,12 +45,13 @@ namespace Engine {
                                          VK_FORMAT_R32G32_UINT,
                                          currentExtent);
 
-        renderGraph.readBuffer("CullCompactedIndirectCommands",
+        renderGraph.readBuffer("CompactedIndexBuffer",
+                               VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT,
+                               VK_ACCESS_2_SHADER_READ_BIT);
+
+        renderGraph.readBuffer("SingleIndirectCommand",
                                VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT,
                                VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
-
-        renderGraph.readBuffer(
-            "CullDrawCount", VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
 
         renderGraph.writeImage("VisBuffer",
                                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
@@ -58,7 +72,30 @@ namespace Engine {
         glm::mat4 projection = frameInfo.camera->getProjection();
         glm::mat4 view = frameInfo.camera->getView();
         glm::mat4 clipMatrix = glm::mat4(1.0f);
-        glm::mat4 viewProjection = clipMatrix * projection * view;
+        VisibilityPushConstants pushConsts{};
+        pushConsts.viewProjection = clipMatrix * projection * view;
+        pushConsts.cameraPos = frameInfo.cullCameraPos;
+        
+        glm::mat4 tvp = glm::transpose(frameInfo.cullViewProj);
+        pushConsts.frustumPlanes[0] = tvp[3] + tvp[0]; // Left
+        pushConsts.frustumPlanes[1] = tvp[3] - tvp[0]; // Right
+        pushConsts.frustumPlanes[2] = tvp[3] + tvp[1]; // Bottom
+        pushConsts.frustumPlanes[3] = tvp[3] - tvp[1]; // Top
+        pushConsts.frustumPlanes[4] = tvp[2];          // Near
+        pushConsts.frustumPlanes[5] = tvp[3] - tvp[2]; // Far
+
+        for (int i = 0; i < 6; i++) {
+            float len = glm::length(glm::vec3(pushConsts.frustumPlanes[i]));
+            pushConsts.frustumPlanes[i] /= len;
+        }
+
+        pushConsts.objectCount       = megaBuffer.getMeshletCount();
+        pushConsts.actualObjectCount = static_cast<uint32_t>(frameInfo.gameObjects->size());
+        pushConsts.projM11           = projection[1][1];
+        pushConsts.objectCapacity    = Config::MAX_SCENE_OBJECTS;
+        pushConsts.clipPlaneCount    = 6;
+        pushConsts.isMeshShader = device.isMeshShaderSupported() ? 1 : 0;
+        pushConsts.cullFlags = frameInfo.cullEnabled ? 1 : 0;
 
         VkRenderingAttachmentInfo colorAttachment {};
         colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -101,25 +138,42 @@ namespace Engine {
         scissor.extent = frameInfo.extent;
         vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        if (device.isMeshShaderSupported()) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipeline);
 
-        VkDescriptorSet sets[] = {resourceHeap.getDescriptorSet(currentFrame), cullPass.getObjectDescriptorSet(currentFrame)};
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 2, sets, 0, nullptr);
+            VkDescriptorSet sets[] = {resourceHeap.getDescriptorSet(currentFrame), cullPass.getObjectDescriptorSet(currentFrame)};
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipelineLayout, 0, 2, sets, 0, nullptr);
 
-        vkCmdPushConstants(cmd,
-                           pipelineLayout,
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0,
-                           sizeof(glm::mat4),
-                           &viewProjection);
-        megaBuffer.bindPositionOnly(cmd);
+            vkCmdPushConstants(cmd,
+                               meshPipelineLayout,
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_TASK_BIT_EXT,
+                               0,
+                               sizeof(VisibilityPushConstants),
+                               &pushConsts);
 
+            if (pushConsts.actualObjectCount > 0) {
+                pfn_vkCmdDrawMeshTasksIndirectEXT(cmd, cullPass.getTaskDispatchCommandBuffer(currentFrame), 0, 1, sizeof(VkDispatchIndirectCommand));
+            }
 
-        vkCmdDrawIndirect(cmd,
-                          cullPass.getSingleIndirectCommandBuffer(currentFrame),
-                          0,
-                          1,
-                          sizeof(VkDrawIndirectCommand));
+        } else {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+
+            VkDescriptorSet sets[] = {resourceHeap.getDescriptorSet(currentFrame), cullPass.getObjectDescriptorSet(currentFrame)};
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 2, sets, 0, nullptr);
+
+            vkCmdPushConstants(cmd,
+                               pipelineLayout,
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_TASK_BIT_EXT,
+                               0,
+                               sizeof(VisibilityPushConstants),
+                               &pushConsts);
+
+            vkCmdDrawIndirect(cmd,
+                              cullPass.getSingleIndirectCommandBuffer(currentFrame),
+                              0,
+                              1,
+                              sizeof(VkDrawIndirectCommand));
+        }
 
         vkCmdEndRendering(cmd);
     }
@@ -132,7 +186,7 @@ namespace Engine {
     void VisibilityPassNode::createPipelineLayout()
     {
         VkPushConstantRange pushConstantRange {};
-        pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+        pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_TASK_BIT_EXT;
         pushConstantRange.offset = 0;
         pushConstantRange.size = sizeof(VisibilityPushConstants);
 
@@ -167,23 +221,12 @@ namespace Engine {
         shaderStages[1].module = fragShaderModule;
         shaderStages[1].pName = "main";
 
-        VkVertexInputBindingDescription binding {};
-        binding.binding = 0;
-        binding.stride = sizeof(Model::VertexPosition);
-        binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-        VkVertexInputAttributeDescription attribute {};
-        attribute.binding = 0;
-        attribute.location = 0;
-        attribute.format = VK_FORMAT_R32G32B32_SFLOAT;
-        attribute.offset = 0;
-
         VkPipelineVertexInputStateCreateInfo vertexInputInfo {};
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-        vertexInputInfo.vertexBindingDescriptionCount = 1;
-        vertexInputInfo.pVertexBindingDescriptions = &binding;
-        vertexInputInfo.vertexAttributeDescriptionCount = 1;
-        vertexInputInfo.pVertexAttributeDescriptions = &attribute;
+        vertexInputInfo.vertexBindingDescriptionCount = 0;
+        vertexInputInfo.pVertexBindingDescriptions = nullptr;
+        vertexInputInfo.vertexAttributeDescriptionCount = 0;
+        vertexInputInfo.pVertexAttributeDescriptions = nullptr;
 
         VkPipelineInputAssemblyStateCreateInfo inputAssembly {};
         inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -254,4 +297,113 @@ namespace Engine {
         vkDestroyShaderModule(device.getDevice(), vertShaderModule, nullptr);
         vkDestroyShaderModule(device.getDevice(), fragShaderModule, nullptr);
     }
+
+    void VisibilityPassNode::createMeshPipeline()
+    {
+        VkPushConstantRange pushConstantRange {};
+        pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_TASK_BIT_EXT;
+        pushConstantRange.offset = 0;
+        pushConstantRange.size = sizeof(VisibilityPushConstants);
+
+        VkDescriptorSetLayout layouts[] = {resourceHeap.getDescriptorSetLayout(), cullPass.getObjectSetLayout()};
+
+        VkPipelineLayoutCreateInfo pipelineLayoutInfo {};
+        pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        pipelineLayoutInfo.pushConstantRangeCount = 1;
+        pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
+        pipelineLayoutInfo.setLayoutCount = 2;
+        pipelineLayoutInfo.pSetLayouts = layouts;
+
+        vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &meshPipelineLayout);
+
+        auto taskCode = ShaderUtils::readFile("shaders/meshlet.task.spv");
+        auto meshCode = ShaderUtils::readFile("shaders/triangle.mesh.spv");
+        auto fragCode = ShaderUtils::readFile("shaders/visbuffer_mesh.frag.spv");
+
+        VkShaderModule taskShaderModule = ShaderUtils::createShaderModule(device.getDevice(), taskCode);
+        VkShaderModule meshShaderModule = ShaderUtils::createShaderModule(device.getDevice(), meshCode);
+        VkShaderModule fragShaderModule = ShaderUtils::createShaderModule(device.getDevice(), fragCode);
+
+        VkPipelineShaderStageCreateInfo shaderStages[3] {};
+        shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        shaderStages[0].stage = VK_SHADER_STAGE_TASK_BIT_EXT;
+        shaderStages[0].module = taskShaderModule;
+        shaderStages[0].pName = "main";
+
+        shaderStages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        shaderStages[1].stage = VK_SHADER_STAGE_MESH_BIT_EXT;
+        shaderStages[1].module = meshShaderModule;
+        shaderStages[1].pName = "main";
+
+        shaderStages[2].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        shaderStages[2].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+        shaderStages[2].module = fragShaderModule;
+        shaderStages[2].pName = "main";
+
+        VkPipelineViewportStateCreateInfo viewportState {};
+        viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+        viewportState.viewportCount = 1;
+        viewportState.scissorCount = 1;
+
+        VkPipelineRasterizationStateCreateInfo rasterizer {};
+        rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+        rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+        rasterizer.lineWidth = 1.0f;
+        rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+        rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+
+        VkPipelineMultisampleStateCreateInfo multisampling {};
+        multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+        multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+        VkPipelineDepthStencilStateCreateInfo depthStencil {};
+        depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+        depthStencil.depthTestEnable = VK_TRUE;
+        depthStencil.depthWriteEnable = VK_TRUE;
+        depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+
+        VkPipelineColorBlendAttachmentState colorBlendAttachment {};
+        colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT;
+        colorBlendAttachment.blendEnable = VK_FALSE;
+
+        VkPipelineColorBlendStateCreateInfo colorBlending {};
+        colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+        colorBlending.attachmentCount = 1;
+        colorBlending.pAttachments = &colorBlendAttachment;
+
+        std::vector<VkDynamicState> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+        VkPipelineDynamicStateCreateInfo dynamicState {};
+        dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+        dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+        dynamicState.pDynamicStates = dynamicStates.data();
+
+        VkFormat visBufferFormat = VK_FORMAT_R32G32_UINT;
+        VkPipelineRenderingCreateInfo renderingCreateInfo {};
+        renderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+        renderingCreateInfo.colorAttachmentCount = 1;
+        renderingCreateInfo.pColorAttachmentFormats = &visBufferFormat;
+        renderingCreateInfo.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
+
+        VkGraphicsPipelineCreateInfo pipelineInfo {};
+        pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+        pipelineInfo.pNext = &renderingCreateInfo;
+        pipelineInfo.stageCount = 3;
+        pipelineInfo.pStages = shaderStages;
+        pipelineInfo.pViewportState = &viewportState;
+        pipelineInfo.pRasterizationState = &rasterizer;
+        pipelineInfo.pMultisampleState = &multisampling;
+        pipelineInfo.pDepthStencilState = &depthStencil;
+        pipelineInfo.pColorBlendState = &colorBlending;
+        pipelineInfo.pDynamicState = &dynamicState;
+        pipelineInfo.layout = meshPipelineLayout;
+
+        vkCreateGraphicsPipelines(
+            device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, VK_NULL_HANDLE, &meshPipeline);
+
+        vkDestroyShaderModule(device.getDevice(), taskShaderModule, nullptr);
+        vkDestroyShaderModule(device.getDevice(), meshShaderModule, nullptr);
+        vkDestroyShaderModule(device.getDevice(), fragShaderModule, nullptr);
+    }
+
 } // namespace Engine
+

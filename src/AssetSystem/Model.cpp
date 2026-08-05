@@ -1,7 +1,6 @@
 #include "AssetSystem/Model.h"
 
-#include "../../cmake-build-debug/_deps/ktx-src/lib/astc-encoder/Source/astcenc_vecmathlib_avx2_8.h"
-#include "../../cmake-build-release/_deps/fastgltf-src/include/fastgltf/types.hpp"
+
 #include "Core/EngineConfig.h"
 #include "Vulkan/Buffer.h"
 #include "Vulkan/Device.h"
@@ -80,6 +79,8 @@ namespace Engine {
                                        const std::vector<VertexAttribute> &attributes,
                                        const std::vector<uint32_t> &indices)
     {
+
+
         SubMesh subMesh {};
         subMesh.indexCount = indices.size();
         subMesh.firstIndex = totalAllocatedIndices + cpuIndices.size();
@@ -107,11 +108,11 @@ namespace Engine {
 
         finalMeshlets.resize(totalMeshlets);
         
-        subMesh.baseMeshlet = cpuMeshlets.size();
+        subMesh.baseMeshlet = totalAllocatedMeshlets + cpuMeshlets.size();
         subMesh.meshletCount = totalMeshlets;
         
-        uint32_t meshletVerticesOffset = cpuMeshletVertices.size();
-        uint32_t meshletTrianglesOffset = cpuMeshletTriangles.size();
+        uint32_t meshletVerticesOffset = totalAllocatedMeshletVertices + cpuMeshletVertices.size();
+        uint32_t meshletTrianglesOffset = totalAllocatedMeshletTriangles + cpuMeshletTriangles.size();
 
         for (auto& m : finalMeshlets) {
             meshopt_Bounds bounds = meshopt_computeMeshletBounds(
@@ -121,20 +122,27 @@ namespace Engine {
                 &positions[0].position.x,
                 positions.size(),
                 sizeof(VertexPosition)
-                );
+            );
 
             Meshlet meshlet {};
-            meshlet.center = glm::vec3(bounds.center[0], bounds.center[1], bounds.center[2]);
-            meshlet.radius = bounds.radius;
+            meshlet.center_x = bounds.center[0];
+            meshlet.center_y = bounds.center[1];
+            meshlet.center_z = bounds.center[2];
+            meshlet.radius   = bounds.radius;
 
-            meshlet.cone_axis[0] = bounds.cone_axis_s8[0];
-            meshlet.cone_axis[1] = bounds.cone_axis_s8[1];
-            meshlet.cone_axis[2] = bounds.cone_axis_s8[2];
-            meshlet.cone_cutoff = bounds.cone_cutoff_s8;
+            uint8_t c0 = static_cast<uint8_t>(bounds.cone_axis_s8[0]);
+            uint8_t c1 = static_cast<uint8_t>(bounds.cone_axis_s8[1]);
+            uint8_t c2 = static_cast<uint8_t>(bounds.cone_axis_s8[2]);
+            uint8_t c3 = static_cast<uint8_t>(bounds.cone_cutoff_s8);
 
-            meshlet.vertexOffset = m.vertex_offset + meshletVerticesOffset;
-            meshlet.indexOffset = m.triangle_offset + meshletTrianglesOffset;
-            meshlet.vertexCount = m.vertex_count;
+            meshlet.cone_axis_cutoff = static_cast<uint32_t>(c0) |
+                                      (static_cast<uint32_t>(c1) << 8) |
+                                      (static_cast<uint32_t>(c2) << 16) |
+                                      (static_cast<uint32_t>(c3) << 24);
+
+            meshlet.vertexOffset  = static_cast<uint32_t>(totalAllocatedMeshletVertices + cpuMeshletVertices.size());
+            meshlet.indexOffset   = static_cast<uint32_t>(totalAllocatedMeshletTriangles + cpuMeshletTriangles.size());
+            meshlet.vertexCount   = m.vertex_count;
             meshlet.triangleCount = m.triangle_count;
 
             cpuMeshlets.push_back(meshlet);
@@ -158,6 +166,15 @@ namespace Engine {
     {
         if (cpuPositions.empty() || cpuIndices.empty())
             return;
+
+        vkDeviceWaitIdle(device.getDevice());
+
+        std::cout << "[DEBUG] Model::uploadToGPU(): cpuPositions=" << cpuPositions.size()
+                  << ", cpuMeshlets=" << cpuMeshlets.size()
+                  << ", cpuMeshletVerts=" << cpuMeshletVertices.size()
+                  << ", cpuMeshletTris=" << cpuMeshletTriangles.size()
+                  << ", totalAllocatedVertices=" << totalAllocatedVertices
+                  << ", totalAllocatedMeshlets=" << totalAllocatedMeshlets << std::endl;
 
         VkDeviceSize newPosSize = cpuPositions.size() * sizeof(VertexPosition);
         VkDeviceSize newAttrSize = cpuAttributes.size() * sizeof(VertexAttribute);
@@ -245,6 +262,8 @@ namespace Engine {
         totalAllocatedVertices += cpuPositions.size();
         totalAllocatedIndices += cpuIndices.size();
         totalAllocatedMeshlets += cpuMeshlets.size();
+        totalAllocatedMeshletVertices += cpuMeshletVertices.size();
+        totalAllocatedMeshletTriangles += cpuMeshletTriangles.size();
 
         cpuPositions.clear(); cpuPositions.shrink_to_fit();
         cpuAttributes.clear(); cpuAttributes.shrink_to_fit();

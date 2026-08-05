@@ -8,7 +8,7 @@ namespace Engine {
     std::future<ParsedGLTF> LoaderGLTF::loadAsync(JobSystem &jobSystem, const std::filesystem::path &filePath)
     {
         return jobSystem.enqueue([&jobSystem, filePath]() {
-            ParsedGLTF result {};
+            ParsedGLTF result{};
 
             if (!std::filesystem::exists(filePath)) {
                 std::cerr << "LoaderGLTF: File not found: " << filePath << '\n';
@@ -25,13 +25,27 @@ namespace Engine {
                 extractNodesAndMeshes(asset, result);
 
                 result.success = true;
-            } catch (const JobSystemStoppedException &) {
-            } catch (const std::exception &e) {
+            } catch (const JobSystemStoppedException &) {} catch (const std::exception &e) {
                 std::cerr << "LoaderGLTF: Async load failed: " << e.what() << '\n';
             }
 
             return result;
         });
+    }
+
+    VkFormat getVulkanFormat(TextureType type, bool isSRGB) {
+        switch (type) {
+        case TextureType::Normal:
+            return VK_FORMAT_BC5_UNORM_BLOCK;
+        case TextureType::Occlusion:
+            return VK_FORMAT_BC4_UNORM_BLOCK;
+        case TextureType::Albedo:
+        case TextureType::Emissive:
+            return isSRGB ? VK_FORMAT_BC7_SRGB_BLOCK : VK_FORMAT_BC7_UNORM_BLOCK;
+        case TextureType::MetallicRoughness:
+        default:
+            return VK_FORMAT_BC7_UNORM_BLOCK;
+        }
     }
 
     void LoaderGLTF::decodeImages(JobSystem &jobSystem,
@@ -51,7 +65,7 @@ namespace Engine {
                     size_t rawSize = 0;
                     std::vector<uint8_t> fileBuffer;
 
-                    std::visit(fastgltf::visitor {
+                    std::visit(fastgltf::visitor{
                                    [&](fastgltf::sources::URI &uriSource) {
                                        std::string path = (assetDir / uriSource.uri.path()).string();
                                        std::ifstream file(path, std::ios::binary | std::ios::ate);
@@ -71,7 +85,7 @@ namespace Engine {
                                        auto &bufferView = asset.bufferViews[viewSource.bufferViewIndex];
                                        auto &buffer = asset.buffers[bufferView.bufferIndex];
 
-                                       std::visit(fastgltf::visitor {
+                                       std::visit(fastgltf::visitor{
                                                       [&](fastgltf::sources::Array &arraySource) {
                                                           rawData = reinterpret_cast<const uint8_t *>(
                                                               arraySource.bytes.data() + bufferView.byteOffset);
@@ -87,12 +101,10 @@ namespace Engine {
                                                               byteViewSource.bytes.data() + bufferView.byteOffset);
                                                           rawSize = bufferView.byteLength;
                                                       },
-                                                      [&](auto &) {
-                                                      }},
+                                                      [&](auto &) {}},
                                                   buffer.data);
                                    },
-                                   [&](auto &) {
-                                   }},
+                                   [&](auto &) {}},
                                gltfImage.data);
 
                     if (rawData && rawSize > 0) {
@@ -109,21 +121,43 @@ namespace Engine {
                             parsedImg.isKTX2 = true;
 
                             ktxTexture *ktxTex = nullptr;
-                            if (ktxTexture_CreateFromMemory(
-                                    rawData, rawSize, KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &ktxTex) == KTX_SUCCESS) {
+                            if (ktxTexture_CreateFromMemory(rawData,
+                                                            rawSize,
+                                                            KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT,
+                                                            &ktxTex) == KTX_SUCCESS) {
                                 if (ktxTexture_NeedsTranscoding(ktxTex)) {
                                     ktxTexture2 *k2 = reinterpret_cast<ktxTexture2 *>(ktxTex);
-                                    ktxTexture2_TranscodeBasis(k2, KTX_TTF_BC7_RGBA, 0);
+                                    ktx_transcode_fmt_e targetFmt = KTX_TTF_BC7_RGBA;
+
+                                    switch (parsedImg.type) {
+                                    case TextureType::Normal:
+                                        targetFmt = KTX_TTF_BC5_RG;
+                                        break;
+                                    case TextureType::Occlusion:
+                                        targetFmt = KTX_TTF_BC4_R;
+                                        break;
+                                    case TextureType::Albedo:
+                                    case TextureType::Emissive:
+                                    case TextureType::MetallicRoughness:
+                                    default:
+                                        targetFmt = KTX_TTF_BC7_RGBA;
+                                        break;
+                                    }
+
+                                    ktxTexture2_TranscodeBasis(k2, targetFmt, 0);
                                 }
                                 parsedImg.ktxTexPtr = ktxTex;
                                 parsedImg.isValid = true;
-                            } else {
-                                parsedImg.isValid = false;
                             }
                         } else {
                             int width, height, channels;
                             stbi_uc *pixels = stbi_load_from_memory(
-                                rawData, static_cast<int>(rawSize), &width, &height, &channels, STBI_rgb_alpha);
+                                rawData,
+                                static_cast<int>(rawSize),
+                                &width,
+                                &height,
+                                &channels,
+                                STBI_rgb_alpha);
                             if (pixels) {
                                 parsedImg.width = static_cast<uint32_t>(width);
                                 parsedImg.height = static_cast<uint32_t>(height);
@@ -152,33 +186,33 @@ namespace Engine {
 
     void LoaderGLTF::extractMaterials(fastgltf::Asset &asset, ParsedGLTF &outData)
     {
-        auto getTexIndex = [&](const auto &texInfo, bool isSRGB = false) -> uint32_t {
+        auto getTexIndex = [&](const auto &texInfo, TextureType type, bool isSRGB = false) -> uint32_t {
             if (texInfo.has_value()) {
                 auto &texture = asset.textures[texInfo->textureIndex];
+                uint32_t imgIdx = texture.basisuImageIndex.value_or(
+                    texture.imageIndex.value_or(ResourceHeap::INVALID_HANDLE));
 
-                if (texture.basisuImageIndex.has_value()) {
-                    uint32_t imgIdx = static_cast<uint32_t>(texture.basisuImageIndex.value());
-                    if (isSRGB)
+                if (imgIdx != ResourceHeap::INVALID_HANDLE && imgIdx < outData.images.size()) {
+                    outData.images[imgIdx].type = type;
+                    if (isSRGB) {
                         outData.images[imgIdx].isSRGB = true;
-                    return imgIdx;
-                } else if (texture.imageIndex.has_value()) {
-                    uint32_t imgIdx = static_cast<uint32_t>(texture.imageIndex.value());
-                    if (isSRGB)
-                        outData.images[imgIdx].isSRGB = true;
-                    return imgIdx;
+                    }
                 }
+                return imgIdx;
             }
             return ResourceHeap::INVALID_HANDLE;
         };
 
         for (auto &mat: asset.materials) {
-            ResourceHeap::MaterialData cpuMat {};
+            ResourceHeap::MaterialData cpuMat{};
 
-            cpuMat.albedoIndex = getTexIndex(mat.pbrData.baseColorTexture, true);
-            cpuMat.normalIndex = getTexIndex(mat.normalTexture, false);
-            cpuMat.roughnessMetallicIndex = getTexIndex(mat.pbrData.metallicRoughnessTexture, false);
-            cpuMat.emissiveIndex = getTexIndex(mat.emissiveTexture, true);
-            cpuMat.occlusionIndex = getTexIndex(mat.occlusionTexture, false);
+            cpuMat.albedoIndex = getTexIndex(mat.pbrData.baseColorTexture, TextureType::Albedo, true);
+            cpuMat.normalIndex = getTexIndex(mat.normalTexture, TextureType::Normal, false);
+            cpuMat.roughnessMetallicIndex = getTexIndex(mat.pbrData.metallicRoughnessTexture,
+                                                        TextureType::MetallicRoughness,
+                                                        false);
+            cpuMat.emissiveIndex = getTexIndex(mat.emissiveTexture, TextureType::Emissive, true);
+            cpuMat.occlusionIndex = getTexIndex(mat.occlusionTexture, TextureType::Occlusion, false);
 
             cpuMat.albedoFactor = glm::vec4(mat.pbrData.baseColorFactor[0],
                                             mat.pbrData.baseColorFactor[1],
@@ -214,26 +248,31 @@ namespace Engine {
 
             parsedNode.childrenIndices.assign(gltfNode.children.begin(), gltfNode.children.end());
 
-            std::visit(fastgltf::visitor {[&](const fastgltf::math::fmat4x4 &matrix) {
-                                              glm::mat4 bakedMatrix;
-                                              memcpy(&bakedMatrix, matrix.data(), sizeof(glm::mat4));
-                                              glm::vec3 skew;
-                                              glm::vec4 perspective;
-                                              glm::decompose(bakedMatrix,
-                                                             parsedNode.transform.scale,
-                                                             parsedNode.transform.rotation,
-                                                             parsedNode.transform.translation,
-                                                             skew,
-                                                             perspective);
-                                          },
-                                          [&](const fastgltf::TRS &trs) {
-                                              parsedNode.transform.translation = glm::vec3(
-                                                  trs.translation[0], -trs.translation[1], trs.translation[2]);
-                                              parsedNode.transform.rotation = glm::quat(
-                                                  trs.rotation[3], -trs.rotation[0], trs.rotation[1], -trs.rotation[2]);
-                                              parsedNode.transform.scale =
-                                                  glm::vec3(trs.scale[0], trs.scale[1], trs.scale[2]);
-                                          }},
+            std::visit(fastgltf::visitor{[&](const fastgltf::math::fmat4x4 &matrix) {
+                                             glm::mat4 bakedMatrix;
+                                             memcpy(&bakedMatrix, matrix.data(), sizeof(glm::mat4));
+                                             glm::vec3 skew;
+                                             glm::vec4 perspective;
+                                             glm::decompose(bakedMatrix,
+                                                            parsedNode.transform.scale,
+                                                            parsedNode.transform.rotation,
+                                                            parsedNode.transform.translation,
+                                                            skew,
+                                                            perspective);
+                                         },
+                                         [&](const fastgltf::TRS &trs) {
+                                             parsedNode.transform.translation = glm::vec3(
+                                                 trs.translation[0],
+                                                 -trs.translation[1],
+                                                 trs.translation[2]);
+                                             parsedNode.transform.rotation = glm::quat(
+                                                 trs.rotation[3],
+                                                 -trs.rotation[0],
+                                                 trs.rotation[1],
+                                                 -trs.rotation[2]);
+                                             parsedNode.transform.scale =
+                                                 glm::vec3(trs.scale[0], trs.scale[1], trs.scale[2]);
+                                         }},
                        gltfNode.transform);
 
             if (gltfNode.meshIndex.has_value()) {
@@ -244,7 +283,7 @@ namespace Engine {
                     if (positionIt == prim.attributes.end() || !prim.indicesAccessor.has_value())
                         continue;
 
-                    ParsedPrimitive parsedPrim {};
+                    ParsedPrimitive parsedPrim{};
                     parsedPrim.localMaterialIndex =
                         prim.materialIndex.has_value() ? static_cast<uint32_t>(prim.materialIndex.value()) + 1 : 0;
 
@@ -254,7 +293,9 @@ namespace Engine {
 
                     // --- BASE VERTEX DATA (Positions & Defaults) ---
                     fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(
-                        asset, posAccessor, [&](fastgltf::math::fvec3 p, std::size_t idx) {
+                        asset,
+                        posAccessor,
+                        [&](fastgltf::math::fvec3 p, std::size_t idx) {
                             parsedPrim.positions[idx].position = glm::vec3(p.x(), -p.y(), p.z());
                             parsedPrim.attributes[idx].color = glm::vec3(1.0f);
                             parsedPrim.attributes[idx].normal = glm::vec3(0.0f, 1.0f, 0.0f);
@@ -311,9 +352,12 @@ namespace Engine {
                     parsedPrim.indices.resize(indexAccessor.count);
 
                     fastgltf::iterateAccessorWithIndex<uint32_t>(
-                        asset, indexAccessor, [&](uint32_t idxValue, std::size_t idx) {
+                        asset,
+                        indexAccessor,
+                        [&](uint32_t idxValue, std::size_t idx) {
                             parsedPrim.indices[idx] = idxValue;
                         });
+
 
                     for (size_t i = 0; i < parsedPrim.indices.size(); i += 3) {
                         std::swap(parsedPrim.indices[i + 1], parsedPrim.indices[i + 2]);
@@ -349,10 +393,10 @@ namespace Engine {
             if (parsedImg.isKTX2) {
                 tex.fromKTXPtr(parsedImg.ktxTexPtr, &device, resourceHeap, parsedImg.isSRGB);
             } else {
-                // Fallback for standard uncompressed PNG/JPGs
+                VkFormat fmt = parsedImg.isSRGB ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
                 tex.fromBuffer(parsedImg.data.data(),
                                parsedImg.data.size(),
-                               parsedImg.isSRGB ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM,
+                               fmt,
                                parsedImg.width,
                                parsedImg.height,
                                &device,
@@ -368,7 +412,7 @@ namespace Engine {
         std::vector<uint32_t> materialIndexToGlobalID;
         materialIndexToGlobalID.reserve(parsedData.materials.size() + 1);
 
-        ResourceHeap::MaterialData defaultMat {};
+        ResourceHeap::MaterialData defaultMat{};
         defaultMat.albedoIndex = WHITE_SLOT;
         defaultMat.normalIndex = FLAT_NORMAL_SLOT;
         defaultMat.roughnessMetallicIndex = WHITE_SLOT;
@@ -456,7 +500,7 @@ namespace Engine {
                     } else {
                         GameObject child = GameObject::createGameObject();
 
-                        child.transform = TransformComponent {};
+                        child.transform = TransformComponent{};
 
                         child.subMesh = megaBuffer.registerMesh(positions, attributes, prim.indices);
                         child.alphaMode = mode;

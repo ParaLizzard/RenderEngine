@@ -6,16 +6,19 @@
 #include "Renderer/RenderPassNode.h"
 #include "Renderer/Renderer.h"
 #include "Vulkan/ResourceHeap.h"
+#include <glm/glm.hpp>
 
 namespace Engine {
+    class GameObject;
     struct ComputePushConstants
     {
         glm::mat4 viewProj;
         glm::vec4 frustumPlanes[6];
         glm::vec3 cameraPos;
+        uint32_t cullFlags;
         uint32_t objectCount;
         uint32_t actualObjectCount;
-        uint32_t cascadeIndex;
+        float projM11;
         uint32_t objectCapacity;
         uint32_t clipPlaneCount;
     };
@@ -62,14 +65,35 @@ namespace Engine {
         {
             return compactedIndexBuffers[frameIdx]->getBuffer();
         }
-        [[nodiscard]] VkBuffer getSingleIndirectCommandBuffer(uint32_t frameIdx) const
+        [[nodiscard]] VkBuffer getSingleIndirectCommandBuffer(uint32_t currentFrame) const
         {
-            return singleIndirectCommandBuffers[frameIdx]->getBuffer();
+            return singleIndirectCommandBuffers[currentFrame]->getBuffer();
+        }
+
+
+        [[nodiscard]] void* getSingleIndirectCommandMapped(uint32_t frameIdx) const
+        {
+            return singleIndirectCommandBuffers[frameIdx]->getMappedMemory();
+        }
+        [[nodiscard]] void* getGpuDispatchCommandMapped(uint32_t frameIdx) const
+        {
+            return gpuDispatchCommandBuffers[frameIdx]->getMappedMemory();
+        }
+        [[nodiscard]] VkBuffer getTaskDispatchCommandBuffer(uint32_t frameIdx) const
+        {
+            return taskDispatchCommandBuffers[frameIdx]->getBuffer();
         }
         [[nodiscard]] uint32_t getMaxObjectCount() const
         {
             return Config::MAX_SCENE_OBJECTS;
         }
+        [[nodiscard]] uint32_t getActualObjectCount() const
+        {
+            return static_cast<uint32_t>(indirectCommandsArray.size());
+        }
+
+        [[nodiscard]] const glm::mat4& getActiveCullViewProj() const { return activeCullViewProj; }
+        [[nodiscard]] const glm::vec3& getActiveCullCameraPos() const { return activeCullCameraPos; }
 
     private:
         void createPipeline();
@@ -80,7 +104,10 @@ namespace Engine {
         ResourceHeap &resourceHeap;
 
         VkPipeline objectCullPipeline {VK_NULL_HANDLE};
+        VkPipeline taskSubmitPipeline {VK_NULL_HANDLE};
+
         VkPipeline meshletCullPipeline {VK_NULL_HANDLE};
+        VkPipeline triangleCullPipeline {VK_NULL_HANDLE};
         VkPipelineLayout computePipelineLayout {VK_NULL_HANDLE};
 
         VkDescriptorSetLayout objectSetLayout {VK_NULL_HANDLE};
@@ -100,8 +127,18 @@ namespace Engine {
 
         std::vector<std::unique_ptr<Buffer>> gpuDispatchCommandBuffers;
         std::vector<std::unique_ptr<Buffer>> gpuVisibleObjectBuffers;
+        
+        
+        std::vector<std::unique_ptr<Buffer>> triangleDispatchCommandBuffers;
+        std::vector<std::unique_ptr<Buffer>> visibleMeshletBuffers;
+
+        std::vector<std::unique_ptr<Buffer>> taskWorkgroupBuffers;
+        std::vector<std::unique_ptr<Buffer>> taskDispatchCommandBuffers;
 
         bool sceneDirty = true;
         int framesToUpdate = 0;
+
+        glm::mat4 activeCullViewProj{1.0f};
+        glm::vec3 activeCullCameraPos{0.0f};
     };
 } // namespace Engine

@@ -1,5 +1,7 @@
 #version 460
 
+layout (local_size_x = 16, local_size_y = 16) in;
+
 layout (binding = 0) uniform sampler2D samplerDepth;
 
 struct CompactMaterial {
@@ -28,15 +30,16 @@ layout (binding = 3) uniform UBO
     float farPlane;
 } ubo;
 
-layout (location = 0) in vec2 inUV;
-layout (location = 0) out float outFragColor;
+layout (binding = 4, r8) uniform writeonly image2D outSsao;
 
-vec3 reconstructViewPos(vec2 uv, float depth)
-{
-    vec4 ndc = vec4(uv * 2.0 - 1.0, depth, 1.0);
-
-    vec4 viewPos = ubo.invProjection * ndc;
-    return viewPos.xyz / viewPos.w;
+vec3 reconstructViewPos(vec2 uv, float depth) {
+    vec2 ndc = uv * 2.0 - 1.0;
+    float w = ubo.invProjection[2][3] * depth + ubo.invProjection[3][3];
+    vec3 viewPos;
+    viewPos.x = ubo.invProjection[0][0] * ndc.x + ubo.invProjection[2][0] * depth + ubo.invProjection[3][0];
+    viewPos.y = ubo.invProjection[1][1] * ndc.y + ubo.invProjection[2][1] * depth + ubo.invProjection[3][1];
+    viewPos.z = ubo.invProjection[2][2] * depth + ubo.invProjection[3][2];
+    return viewPos / w;
 }
 
 vec3 decodeOctNormal(uint packedNormal) {
@@ -50,22 +53,34 @@ vec3 decodeOctNormal(uint packedNormal) {
 
 void main()
 {
+    ivec2 ssaoDim = imageSize(outSsao);
+    ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);
+    
+    if (pixelCoords.x >= ssaoDim.x || pixelCoords.y >= ssaoDim.y) return;
+
+    vec2 inUV = (vec2(pixelCoords) + 0.5) / vec2(ssaoDim);
+
     float depth = texture(samplerDepth, inUV).r;
+    
+    if (depth == 1.0) {
+        imageStore(outSsao, pixelCoords, vec4(1.0));
+        return;
+    }
+
     vec3 fragPos = reconstructViewPos(inUV, depth);
 
-    ivec2 texDim = textureSize(samplerDepth, 0);
-    ivec2 pixelCoords = ivec2(inUV * vec2(texDim));
-    uint pixelIndex = pixelCoords.y * texDim.x + pixelCoords.x;
+    ivec2 depthDim = textureSize(samplerDepth, 0);
+    ivec2 fullResCoords = ivec2(inUV * vec2(depthDim));
+    uint pixelIndex = fullResCoords.y * depthDim.x + fullResCoords.x;
 
     uint packedNormal = packedNormals[pixelIndex];
-
     vec3 worldNormal = decodeOctNormal(packedNormal);
 
     vec3 normal = mat3(ubo.view) * worldNormal;
     normal = normalize(normal);
 
     ivec2 noiseDim = textureSize(ssaoNoise, 0);
-    vec2 targetDim = vec2(texDim.x / 2.0, texDim.y / 2.0);
+    vec2 targetDim = vec2(ssaoDim);
     vec2 noiseScale = targetDim / vec2(noiseDim);
     vec3 randomVec = texture(ssaoNoise, inUV * noiseScale).xyz;
 
@@ -83,11 +98,10 @@ void main()
         samplePos = fragPos + samplePos * SSAO_RADIUS;
 
         vec4 offset;
-        offset.x = samplePos.x * ubo.projection[0][0];
-        offset.y = samplePos.y * ubo.projection[1][1];
+        offset.x = samplePos.x * ubo.projection[0][0] + samplePos.z * ubo.projection[2][0] + ubo.projection[3][0];
+        offset.y = samplePos.y * ubo.projection[1][1] + samplePos.z * ubo.projection[2][1] + ubo.projection[3][1];
         offset.z = samplePos.z * ubo.projection[2][2] + ubo.projection[3][2];
-        offset.w = samplePos.z * ubo.projection[2][3];
-
+        offset.w = samplePos.z * ubo.projection[2][3] + ubo.projection[3][3];
         offset.xyz /= offset.w;
         offset.xy = offset.xy * 0.5f + 0.5f;
 
@@ -102,5 +116,5 @@ void main()
     }
 
     float occlusionRatio = validSamples > 0.1f ? (occlusion / validSamples) : 0.0f;
-    outFragColor = 1.0f - occlusionRatio;
+    imageStore(outSsao, pixelCoords, vec4(1.0f - occlusionRatio));
 }

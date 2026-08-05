@@ -22,19 +22,22 @@ namespace Engine {
             uint32_t meshletCount = 0;
         };
 
+#pragma pack(push, 4)
         struct Meshlet {
-            glm::vec3 center;
+            float center_x;
+            float center_y;
+            float center_z;
             float radius;
 
-            // Quantized normal cone
-            signed char cone_axis[3];
-            signed char cone_cutoff;
+            uint32_t cone_axis_cutoff;
 
-            glm::uint vertexOffset;
-            glm::uint indexOffset;
-            glm::uint vertexCount;
-            glm::uint triangleCount;
+            uint32_t vertexOffset;
+            uint32_t indexOffset;
+            uint32_t vertexCount;
+            uint32_t triangleCount;
         };
+#pragma pack(pop)
+
 
         struct VertexPosition
         {
@@ -104,6 +107,8 @@ namespace Engine {
         uint32_t totalAllocatedVertices = 0;
         uint32_t totalAllocatedIndices = 0;
         uint32_t totalAllocatedMeshlets = 0;
+        uint32_t totalAllocatedMeshletVertices = 0;
+        uint32_t totalAllocatedMeshletTriangles = 0;
 
         // CPU staging arrays
         std::vector<VertexPosition> cpuPositions;

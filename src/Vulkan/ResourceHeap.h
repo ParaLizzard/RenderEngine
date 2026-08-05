@@ -58,6 +58,8 @@ namespace Engine {
             uint32_t padding[2];
         };
 
+
+
         ResourceHeap(Device &device, uint32_t maxTextures = 4096);
         ~ResourceHeap();
 
@@ -120,7 +122,12 @@ namespace Engine {
                                 std::shared_ptr<Buffer> meshletVerticesBuf,
                                 std::shared_ptr<Buffer> meshletTrianglesBuf);
                                 
-        void setObjectBuffer(std::shared_ptr<Buffer> objectBuf);
+        void setObjectBuffer(const std::vector<std::shared_ptr<Buffer>> &objectBufs);
+
+        [[nodiscard]] std::shared_ptr<Buffer> getObjectBuffer(uint32_t frameIdx) const
+        {
+            return globalObjectBuffers[frameIdx];
+        }
 
     private:
         uint32_t fallbackWhiteSlot = 0;
@@ -144,7 +151,7 @@ namespace Engine {
 
         std::vector<std::unique_ptr<Buffer>> materialBuffers;
         
-        std::shared_ptr<Buffer> globalObjectBuffer;
+        std::vector<std::shared_ptr<Buffer>> globalObjectBuffers;
         std::shared_ptr<Buffer> globalPositionBuffer;
         std::shared_ptr<Buffer> globalAttributeBuffer;
         std::shared_ptr<Buffer> globalIndexBuffer;

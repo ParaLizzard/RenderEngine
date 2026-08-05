@@ -7,37 +7,19 @@
 #include "Vulkan/VkUtils.h"
 
 namespace Engine {
-    CsmPassNode::CsmPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap, CullPassNode &cullPass):device(device),renderer(renderer), megaBuffer(megaBuffer),resourceHeap(resourceHeap),cullPass(cullPass)
+    CsmPassNode::CsmPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap, CullPassNode &cullPass)
+        : device(device), renderer(renderer), megaBuffer(megaBuffer), resourceHeap(resourceHeap), cullPass(cullPass)
     {
         objectDescriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
 
-        // --- Descriptor set layout: 5 bindings (0-4) ---
-        std::array<VkDescriptorSetLayoutBinding, 5> ssboBindings {};
-        ssboBindings[0].binding = 0;
-        ssboBindings[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        ssboBindings[0].descriptorCount = 1;
-        ssboBindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
-
-        ssboBindings[1].binding = 1;
-        ssboBindings[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        ssboBindings[1].descriptorCount = 1;
-        ssboBindings[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-        ssboBindings[2].binding = 2;
-        ssboBindings[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        ssboBindings[2].descriptorCount = 1;
-        ssboBindings[2].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-        ssboBindings[3].binding = 3;
-        ssboBindings[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        ssboBindings[3].descriptorCount = 1;
-        ssboBindings[3].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-        // Binding 4: Cascade data SSBO (compute only)
-        ssboBindings[4].binding = 4;
-        ssboBindings[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        ssboBindings[4].descriptorCount = 1;
-        ssboBindings[4].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+        // --- Descriptor set layout: 4 SSBO bindings (0-3) for CSM storage ---
+        std::array<VkDescriptorSetLayoutBinding, 4> ssboBindings {};
+        for (uint32_t b = 0; b < 4; b++) {
+            ssboBindings[b].binding = b;
+            ssboBindings[b].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            ssboBindings[b].descriptorCount = 1;
+            ssboBindings[b].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+        }
 
         VkDescriptorSetLayoutCreateInfo layoutInfo {};
         layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -45,10 +27,10 @@ namespace Engine {
         layoutInfo.pBindings = ssboBindings.data();
         vkCreateDescriptorSetLayout(device.getDevice(), &layoutInfo, nullptr, &objectSetLayout);
 
-        // --- Descriptor pool: 5 storage buffers per frame ---
+        // --- Descriptor pool ---
         std::array<VkDescriptorPoolSize, 1> poolSizes {};
         poolSizes[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        poolSizes[0].descriptorCount = Config::MAX_FRAMES_IN_FLIGHT * 5;
+        poolSizes[0].descriptorCount = Config::MAX_FRAMES_IN_FLIGHT * 4;
 
         VkDescriptorPoolCreateInfo poolInfo {};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -96,63 +78,6 @@ namespace Engine {
             allocInfo.descriptorSetCount = 1;
             allocInfo.pSetLayouts = &objectSetLayout;
             vkAllocateDescriptorSets(device.getDevice(), &allocInfo, &objectDescriptorSets[i]);
-
-            VkDescriptorBufferInfo bufferInfo {};
-            bufferInfo.buffer = cullPass.getGpuObjectBuffer(i);
-            bufferInfo.offset = 0;
-            bufferInfo.range = VK_WHOLE_SIZE;
-
-            VkDescriptorBufferInfo blueprintInfo {};
-            blueprintInfo.buffer = cullPass.getGpuIndirectCommandBuffer(i);
-            blueprintInfo.offset = 0;
-            blueprintInfo.range = VK_WHOLE_SIZE;
-
-            VkDescriptorBufferInfo countInfo = gpuDrawCountBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
-            VkDescriptorBufferInfo compactedInfo =
-                gpuCompactedIndirectCommandBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
-            VkDescriptorBufferInfo cascadeInfo = cascadeDataBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
-
-            std::array<VkWriteDescriptorSet, 5> descriptorWrites {};
-            descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWrites[0].dstSet = objectDescriptorSets[i];
-            descriptorWrites[0].dstBinding = 0;
-            descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            descriptorWrites[0].descriptorCount = 1;
-            descriptorWrites[0].pBufferInfo = &bufferInfo;
-
-            descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWrites[1].dstSet = objectDescriptorSets[i];
-            descriptorWrites[1].dstBinding = 1;
-            descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            descriptorWrites[1].descriptorCount = 1;
-            descriptorWrites[1].pBufferInfo = &blueprintInfo;
-
-            descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWrites[2].dstSet = objectDescriptorSets[i];
-            descriptorWrites[2].dstBinding = 2;
-            descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            descriptorWrites[2].descriptorCount = 1;
-            descriptorWrites[2].pBufferInfo = &countInfo;
-
-            descriptorWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWrites[3].dstSet = objectDescriptorSets[i];
-            descriptorWrites[3].dstBinding = 3;
-            descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            descriptorWrites[3].descriptorCount = 1;
-            descriptorWrites[3].pBufferInfo = &compactedInfo;
-
-            descriptorWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWrites[4].dstSet = objectDescriptorSets[i];
-            descriptorWrites[4].dstBinding = 4;
-            descriptorWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            descriptorWrites[4].descriptorCount = 1;
-            descriptorWrites[4].pBufferInfo = &cascadeInfo;
-
-            vkUpdateDescriptorSets(device.getDevice(),
-                                   static_cast<uint32_t>(descriptorWrites.size()),
-                                   descriptorWrites.data(),
-                                   0,
-                                   nullptr);
         }
         createPipelineLayout();
         createPipeline();
@@ -185,23 +110,77 @@ namespace Engine {
             mapExtent,
             SHADOW_MAP_CASCADES,
             VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
-            );
+        );
 
         renderGraph.writeImage(
             "CsmImage",
             VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
             VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
             VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT
-            );
+        );
+    }
+
+    void CsmPassNode::updateDescriptors()
+    {
+        for (uint32_t i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
+            VkDescriptorBufferInfo blueprintInfo {};
+            blueprintInfo.buffer = cullPass.getGpuIndirectCommandBuffer(i);
+            blueprintInfo.offset = 0;
+            blueprintInfo.range = VK_WHOLE_SIZE;
+
+            VkDescriptorBufferInfo countInfo = gpuDrawCountBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
+            VkDescriptorBufferInfo compactedInfo = gpuCompactedIndirectCommandBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
+            VkDescriptorBufferInfo cascadeInfo = cascadeDataBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
+
+            std::array<VkWriteDescriptorSet, 4> descriptorWrites {};
+
+            descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrites[0].dstSet = objectDescriptorSets[i];
+            descriptorWrites[0].dstBinding = 0;
+            descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            descriptorWrites[0].descriptorCount = 1;
+            descriptorWrites[0].pBufferInfo = &blueprintInfo;
+
+            descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrites[1].dstSet = objectDescriptorSets[i];
+            descriptorWrites[1].dstBinding = 1;
+            descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            descriptorWrites[1].descriptorCount = 1;
+            descriptorWrites[1].pBufferInfo = &countInfo;
+
+            descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrites[2].dstSet = objectDescriptorSets[i];
+            descriptorWrites[2].dstBinding = 2;
+            descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            descriptorWrites[2].descriptorCount = 1;
+            descriptorWrites[2].pBufferInfo = &compactedInfo;
+
+            descriptorWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrites[3].dstSet = objectDescriptorSets[i];
+            descriptorWrites[3].dstBinding = 3;
+            descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            descriptorWrites[3].descriptorCount = 1;
+            descriptorWrites[3].pBufferInfo = &cascadeInfo;
+
+            vkUpdateDescriptorSets(device.getDevice(),
+                                   static_cast<uint32_t>(descriptorWrites.size()),
+                                   descriptorWrites.data(),
+                                   0,
+                                   nullptr);
+        }
+        descriptorsUpdated = true;
     }
 
     void CsmPassNode::execute(VkCommandBuffer &cmd, FrameInfo &frameInfo)
     {
+        if (!descriptorsUpdated) {
+            updateDescriptors();
+        }
+
         uint32_t currentFrame = renderer.getFrameIndex();
-        uint32_t objectCount = cullPass.getMaxObjectCount();
+        uint32_t objectCount = cullPass.getActualObjectCount();
 
         if (objectCount > 0) {
-
             CascadeGpuData cascadeData {};
             for (uint32_t c = 0; c < SHADOW_MAP_CASCADES; c++) {
                 cascadeData.viewProj[c] = cascadeViewProjs[c];
@@ -223,33 +202,35 @@ namespace Engine {
             cascadeDataBuffers[currentFrame]->writeToBuffer(&cascadeData, sizeof(CascadeGpuData), 0);
             cascadeDataBuffers[currentFrame]->flush(VK_WHOLE_SIZE, 0);
 
-            VkBufferMemoryBarrier2 barriers[1];
+            vkCmdFillBuffer(cmd, gpuDrawCountBuffers[currentFrame]->getBuffer(), 0, VK_WHOLE_SIZE, 0);
+
+            VkBufferMemoryBarrier2 barriers[2];
             barriers[0] = VkUtils::bufferBarrier(
                 cascadeDataBuffers[currentFrame]->getBuffer(), 0, VK_WHOLE_SIZE,
                 VK_PIPELINE_STAGE_2_HOST_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_HOST_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT,
                 VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
 
+            barriers[1] = VkUtils::bufferBarrier(
+                gpuDrawCountBuffers[currentFrame]->getBuffer(), 0, VK_WHOLE_SIZE,
+                VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT);
+
             VkDependencyInfo depInfo {};
             depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-            depInfo.bufferMemoryBarrierCount = 1;
+            depInfo.bufferMemoryBarrierCount = 2;
             depInfo.pBufferMemoryBarriers = barriers;
             vkCmdPipelineBarrier2(cmd, &depInfo);
 
+            VkDescriptorSet bindlessSet = resourceHeap.getDescriptorSet(currentFrame);
+            VkDescriptorSet computeSets[] = {bindlessSet, objectDescriptorSets[currentFrame]};
+
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
-            vkCmdBindDescriptorSets(cmd,
-                                    VK_PIPELINE_BIND_POINT_COMPUTE,
-                                    computePipelineLayout,
-                                    0,
-                                    1,
-                                    &objectDescriptorSets[currentFrame],
-                                    0,
-                                    nullptr);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipelineLayout, 0, 2, computeSets, 0, nullptr);
 
             CsmCullPushConstants compPc {};
             compPc.objectCount = objectCount;
             compPc.objectCapacity = Config::MAX_SCENE_OBJECTS;
-            vkCmdPushConstants(
-                cmd, computePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(CsmCullPushConstants), &compPc);
+            vkCmdPushConstants(cmd, computePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(CsmCullPushConstants), &compPc);
 
             uint32_t groupCountX = (objectCount + 63) / 64;
             vkCmdDispatch(cmd, groupCountX, 1, 1);
@@ -359,19 +340,18 @@ namespace Engine {
         }
     }
 
-
     void CsmPassNode::createPipelineLayout()
     {
         VkDescriptorSetLayout bindlessLayout = resourceHeap.getDescriptorSetLayout();
         VkDescriptorSetLayout layouts[] = {bindlessLayout, objectSetLayout};
 
-        VkPipelineLayoutCreateInfo pipelineLayoutInfo {};
-        pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         VkPushConstantRange graphicsPushConstant {};
         graphicsPushConstant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
         graphicsPushConstant.offset = 0;
         graphicsPushConstant.size = sizeof(uint32_t); // cascadeIndex
 
+        VkPipelineLayoutCreateInfo pipelineLayoutInfo {};
+        pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         pipelineLayoutInfo.pushConstantRangeCount = 1;
         pipelineLayoutInfo.pPushConstantRanges = &graphicsPushConstant;
         pipelineLayoutInfo.setLayoutCount = 2;
@@ -386,8 +366,8 @@ namespace Engine {
 
         VkPipelineLayoutCreateInfo pipelineLayoutComputeInfo {};
         pipelineLayoutComputeInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutComputeInfo.setLayoutCount = 1;
-        pipelineLayoutComputeInfo.pSetLayouts = &objectSetLayout;
+        pipelineLayoutComputeInfo.setLayoutCount = 2;
+        pipelineLayoutComputeInfo.pSetLayouts = layouts;
         pipelineLayoutComputeInfo.pushConstantRangeCount = 1;
         pipelineLayoutComputeInfo.pPushConstantRanges = &pushConstantRangeCompute;
 
@@ -396,8 +376,6 @@ namespace Engine {
 
     void CsmPassNode::createPipeline()
     {
-        // depth only
-
         auto vertCode = ShaderUtils::readFile("shaders/shadow.vert.spv");
         auto compCode = ShaderUtils::readFile("shaders/csm_cull.comp.spv");
 
@@ -415,8 +393,6 @@ namespace Engine {
         computeStageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
         computeStageInfo.module = compModule;
         computeStageInfo.pName = "main";
-
-
 
         VkVertexInputBindingDescription binding {};
         binding.binding = 0;
@@ -588,10 +564,10 @@ namespace Engine {
             if (std::abs(lightDir.y) > 0.999f) {
                 up = glm::vec3(0.0f, 0.0f, 1.0f);
             }
-            float zMultiplier = 40.0f;
+            float zMultiplier = 100.0f;
 
-            float nearPlane = 0.01f;
-            float farPlane  = zMultiplier + radius * 1.5f;
+            float nearPlane = 0.0f;
+            float farPlane  = zMultiplier + radius * 2.0f;
 
             glm::mat4 lightViewMatrix = glm::lookAt(frustumCenter + lightDir * zMultiplier, frustumCenter, up);
             glm::mat4 lightOrthoMatrix = glm::orthoZO(minExtents.x, maxExtents.x, minExtents.y, maxExtents.y, nearPlane, farPlane);
@@ -613,9 +589,5 @@ namespace Engine {
 
             lastSplitDist = splitDist;
         }
-
-
-
-
     }
 } // namespace Engine

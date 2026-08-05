@@ -222,103 +222,112 @@ namespace Engine {
     }
 
     void Texture2D::fromBuffer(void *buffer,
-                               VkDeviceSize bufferSize,
-                               VkFormat format,
-                               uint32_t texWidth,
-                               uint32_t texHeight,
-                               Device *device,
-                               ResourceHeap &resourceHeap,
-                               VkFilter filter,
-                               VkImageUsageFlags imageUsageFlags,
-                               VkImageLayout imageLayout)
-    {
-        assert(buffer);
+                           VkDeviceSize bufferSize,
+                           VkFormat format,
+                           uint32_t texWidth,
+                           uint32_t texHeight,
+                           Device *device,
+                           ResourceHeap &resourceHeap,
+                           VkFilter filter,
+                           VkImageUsageFlags imageUsageFlags,
+                           VkImageLayout imageLayout)
+{
+    assert(buffer);
 
-        this->device = device;
+    this->device = device;
 
-        stbi_uc *pixels = nullptr;
-        VkDeviceSize imageSize = 0;
+    stbi_uc *pixels = nullptr;
+    VkDeviceSize imageSize = 0;
 
-        if (texWidth == 0 || texHeight == 0) {
-            int imgWidth, imgHeight, imgChannels;
-            pixels = stbi_load_from_memory(reinterpret_cast<const stbi_uc *>(buffer),
-                                           static_cast<int>(bufferSize),
-                                           &imgWidth,
-                                           &imgHeight,
-                                           &imgChannels,
-                                           STBI_rgb_alpha);
+    if (texWidth == 0 || texHeight == 0) {
+        int imgWidth, imgHeight, imgChannels;
+        pixels = stbi_load_from_memory(reinterpret_cast<const stbi_uc *>(buffer),
+                                       static_cast<int>(bufferSize),
+                                       &imgWidth,
+                                       &imgHeight,
+                                       &imgChannels,
+                                       STBI_rgb_alpha);
 
-            if (!pixels) {
-                throw std::runtime_error("Texture: Failed to decode image from memory!");
-            }
-
-            this->width = static_cast<uint32_t>(imgWidth);
-            this->height = static_cast<uint32_t>(imgHeight);
-            imageSize = this->width * this->height * 4;
-        } else {
-            this->width = texWidth;
-            this->height = texHeight;
-            imageSize = bufferSize;
-            pixels = reinterpret_cast<stbi_uc *>(buffer);
+        if (!pixels) {
+            throw std::runtime_error("Texture: Failed to decode image from memory!");
         }
 
+        this->width = static_cast<uint32_t>(imgWidth);
+        this->height = static_cast<uint32_t>(imgHeight);
+        imageSize = this->width * this->height * 4;
+    } else {
+        this->width = texWidth;
+        this->height = texHeight;
+        imageSize = bufferSize;
+        pixels = reinterpret_cast<stbi_uc *>(buffer);
+    }
+
+    // Check if the format is Block Compressed (BC1 - BC7)
+    const bool isBlockCompressed = (format >= VK_FORMAT_BC1_RGB_UNORM_BLOCK && format <= VK_FORMAT_BC7_SRGB_BLOCK);
+
+    // BC formats cannot be blitted with vkCmdBlitImage on GPU hardware
+    if (isBlockCompressed) {
+        mipLevels = 1;
+    } else {
         mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
+    }
 
-        Buffer stgBuffer {*device, imageSize, 1, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, {}, 0};
-        stgBuffer.writeToBuffer(pixels, imageSize, 0);
-        stgBuffer.flush(imageSize, 0);
+    Buffer stgBuffer {*device, imageSize, 1, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, {}, 0};
+    stgBuffer.writeToBuffer(pixels, imageSize, 0);
+    stgBuffer.flush(imageSize, 0);
 
-        if (texWidth == 0 || texHeight == 0) {
-            stbi_image_free(pixels);
-        }
+    if (texWidth == 0 || texHeight == 0) {
+        stbi_image_free(pixels);
+    }
 
-        VkImageCreateInfo imageCreateInfo {
-            .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-            .imageType = VK_IMAGE_TYPE_2D,
-            .format = format,
-            .extent = {width, height, 1},
-            .mipLevels = mipLevels,
-            .arrayLayers = 1,
-            .samples = VK_SAMPLE_COUNT_1_BIT,
-            .tiling = VK_IMAGE_TILING_OPTIMAL,
-            .usage = imageUsageFlags | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
+    VkImageCreateInfo imageCreateInfo {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = format,
+        .extent = {width, height, 1},
+        .mipLevels = mipLevels,
+        .arrayLayers = 1,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = imageUsageFlags | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
 
-        VmaAllocationCreateInfo allocInfo {};
-        allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+    VmaAllocationCreateInfo allocInfo {};
+    allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-        VkResult imageResult =
-            vmaCreateImage(device->getAllocator(), &imageCreateInfo, &allocInfo, &image, &allocation, {});
-        if (imageResult != VK_SUCCESS) {
-            throw std::runtime_error("Failed to allocate texture image");
-        }
+    VkResult imageResult =
+        vmaCreateImage(device->getAllocator(), &imageCreateInfo, &allocInfo, &image, &allocation, {});
+    if (imageResult != VK_SUCCESS) {
+        throw std::runtime_error("Failed to allocate texture image");
+    }
 
-        VkCommandBuffer commandBuffer = device->beginSingleTimeCommands();
+    VkCommandBuffer commandBuffer = device->beginSingleTimeCommands();
 
-        VkImageSubresourceRange subresourceRange {};
-        subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        subresourceRange.baseMipLevel = 0;
-        subresourceRange.levelCount = mipLevels;
-        subresourceRange.baseArrayLayer = 0;
-        subresourceRange.layerCount = 1;
+    VkImageSubresourceRange subresourceRange {};
+    subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    subresourceRange.baseMipLevel = 0;
+    subresourceRange.levelCount = mipLevels;
+    subresourceRange.baseArrayLayer = 0;
+    subresourceRange.layerCount = 1;
 
-        transitionImageLayout(
-            commandBuffer, image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, subresourceRange);
+    transitionImageLayout(
+        commandBuffer, image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, subresourceRange);
 
-        VkBufferImageCopy bufferCopyRegion {};
-        bufferCopyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        bufferCopyRegion.imageSubresource.mipLevel = 0;
-        bufferCopyRegion.imageSubresource.baseArrayLayer = 0;
-        bufferCopyRegion.imageSubresource.layerCount = 1;
-        bufferCopyRegion.imageExtent.width = width;
-        bufferCopyRegion.imageExtent.height = height;
-        bufferCopyRegion.imageExtent.depth = 1;
-        bufferCopyRegion.bufferOffset = 0;
+    VkBufferImageCopy bufferCopyRegion {};
+    bufferCopyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    bufferCopyRegion.imageSubresource.mipLevel = 0;
+    bufferCopyRegion.imageSubresource.baseArrayLayer = 0;
+    bufferCopyRegion.imageSubresource.layerCount = 1;
+    bufferCopyRegion.imageExtent.width = width;
+    bufferCopyRegion.imageExtent.height = height;
+    bufferCopyRegion.imageExtent.depth = 1;
+    bufferCopyRegion.bufferOffset = 0;
 
-        vkCmdCopyBufferToImage(
-            commandBuffer, stgBuffer.getBuffer(), image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &bufferCopyRegion);
+    vkCmdCopyBufferToImage(
+        commandBuffer, stgBuffer.getBuffer(), image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &bufferCopyRegion);
 
+    if (!isBlockCompressed && mipLevels > 1) {
         int32_t mipWidth = width;
         int32_t mipHeight = height;
 
@@ -382,167 +391,206 @@ namespace Engine {
         depInfo.imageMemoryBarrierCount = 1;
         depInfo.pImageMemoryBarriers = &barrier;
         vkCmdPipelineBarrier2(commandBuffer, &depInfo);
+    } else {
+        // Direct transition to shader read layout for Block Compressed / single mip images
+        VkImageMemoryBarrier2 barrier = VkUtils::imageBarrier(
+            image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, imageLayout,
+            VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT,
+            {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1});
 
-        this->imageLayout = imageLayout;
-
-        device->endSingleTimeCommands(commandBuffer);
-
-        VkImageViewCreateInfo viewInfo {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-        viewInfo.image = image;
-        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        viewInfo.format = format;
-        viewInfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, mipLevels, 0, 1};
-
-        if (vkCreateImageView(device->getDevice(), &viewInfo, nullptr, &view) != VK_SUCCESS) {
-            throw std::runtime_error("Texture: failed to create texture image view!");
-        }
-
-        VkSamplerCreateInfo samplerInfo {VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
-        samplerInfo.magFilter = filter;
-        samplerInfo.minFilter = filter;
-        samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerInfo.minLod = 0.0f;
-        samplerInfo.maxLod = static_cast<float>(mipLevels);
-        samplerInfo.mipLodBias = 0.0f;
-
-        samplerInfo.anisotropyEnable = VK_TRUE;
-        samplerInfo.maxAnisotropy = device->getMaxAnisotropy();
-
-        if (vkCreateSampler(device->getDevice(), &samplerInfo, nullptr, &sampler) != VK_SUCCESS) {
-            throw std::runtime_error("Texture: failed to create texture sampler!");
-        }
-
-        updateDescriptor();
-
-        this->heapHandle = resourceHeap.registerTexture(this->descriptor);
+        VkDependencyInfo depInfo {VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+        depInfo.imageMemoryBarrierCount = 1;
+        depInfo.pImageMemoryBarriers = &barrier;
+        vkCmdPipelineBarrier2(commandBuffer, &depInfo);
     }
+
+    this->imageLayout = imageLayout;
+
+    device->endSingleTimeCommands(commandBuffer);
+
+    VkImageViewCreateInfo viewInfo {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+    viewInfo.image = image;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = format;
+    viewInfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, mipLevels, 0, 1};
+
+    if (vkCreateImageView(device->getDevice(), &viewInfo, nullptr, &view) != VK_SUCCESS) {
+        throw std::runtime_error("Texture: failed to create texture image view!");
+    }
+
+    VkSamplerCreateInfo samplerInfo {VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+    samplerInfo.magFilter = filter;
+    samplerInfo.minFilter = filter;
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.minLod = 0.0f;
+    samplerInfo.maxLod = static_cast<float>(mipLevels);
+    samplerInfo.mipLodBias = 0.0f;
+
+    samplerInfo.anisotropyEnable = VK_TRUE;
+    samplerInfo.maxAnisotropy = device->getMaxAnisotropy();
+
+    if (vkCreateSampler(device->getDevice(), &samplerInfo, nullptr, &sampler) != VK_SUCCESS) {
+        throw std::runtime_error("Texture: failed to create texture sampler!");
+    }
+
+    updateDescriptor();
+
+    this->heapHandle = resourceHeap.registerTexture(this->descriptor);
+}
 
     void Texture2D::fromKTXPtr(void *ktxTexPtr,
-                               Device *device,
-                               ResourceHeap &resourceHeap,
-                               bool isSRGB,
-                               VkFilter filter,
-                               VkImageUsageFlags imageUsageFlags,
-                               VkImageLayout imageLayout)
-    {
-        if (!ktxTexPtr)
-            throw std::runtime_error("Texture: KTX Pointer is null");
-        
-        ktxTexture *ktxTexture = reinterpret_cast<::ktxTexture *>(ktxTexPtr);
+                           Device *device,
+                           ResourceHeap &resourceHeap,
+                           bool isSRGB,
+                           VkFilter filter,
+                           VkImageUsageFlags imageUsageFlags,
+                           VkImageLayout imageLayout)
+{
+    if (!ktxTexPtr)
+        throw std::runtime_error("Texture: KTX Pointer is null");
 
-        this->device = device;
-        width = ktxTexture->baseWidth;
-        height = ktxTexture->baseHeight;
-        mipLevels = ktxTexture->numLevels;
+    ktxTexture *ktxTexture = reinterpret_cast<::ktxTexture *>(ktxTexPtr);
 
-        VkFormat format = ktxTexture_GetVkFormat(ktxTexture);
+    this->device = device;
+    width = ktxTexture->baseWidth;
+    height = ktxTexture->baseHeight;
+    mipLevels = ktxTexture->numLevels;
 
-        if (isSRGB) {
-            if (format == VK_FORMAT_BC7_UNORM_BLOCK)
+    VkFormat format = ktxTexture_GetVkFormat(ktxTexture);
+
+    if (isSRGB) {
+        switch (format) {
+            case VK_FORMAT_BC7_UNORM_BLOCK:
                 format = VK_FORMAT_BC7_SRGB_BLOCK;
-            else if (format == VK_FORMAT_R8G8B8A8_UNORM)
-                format = VK_FORMAT_R8G8B8A8_SRGB;
-            else if (format == VK_FORMAT_BC3_UNORM_BLOCK)
+                break;
+            case VK_FORMAT_BC1_RGB_UNORM_BLOCK:
+                format = VK_FORMAT_BC1_RGB_SRGB_BLOCK;
+                break;
+            case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
+                format = VK_FORMAT_BC1_RGBA_SRGB_BLOCK;
+                break;
+            case VK_FORMAT_BC2_UNORM_BLOCK:
+                format = VK_FORMAT_BC2_SRGB_BLOCK;
+                break;
+            case VK_FORMAT_BC3_UNORM_BLOCK:
                 format = VK_FORMAT_BC3_SRGB_BLOCK;
-            else if (format == VK_FORMAT_ASTC_4x4_UNORM_BLOCK)
+                break;
+            case VK_FORMAT_R8G8B8A8_UNORM:
+                format = VK_FORMAT_R8G8B8A8_SRGB;
+                break;
+            case VK_FORMAT_ASTC_4x4_UNORM_BLOCK:
                 format = VK_FORMAT_ASTC_4x4_SRGB_BLOCK;
+                break;
+            default:
+                break;
         }
-
-        ktx_uint8_t *ktxTextureData = ktxTexture_GetData(ktxTexture);
-        ktx_size_t ktxTextureSize = ktxTexture_GetDataSize(ktxTexture);
-
-        Buffer stgBuffer {
-            *device, ktxTextureSize, 1, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, {}, 0};
-        stgBuffer.writeToBuffer(ktxTextureData, ktxTextureSize, 0);
-        stgBuffer.flush(ktxTextureSize, 0);
-
-        std::vector<VkBufferImageCopy> bufferCopyRegions;
-        for (uint32_t i = 0; i < mipLevels; i++) {
-            ktx_size_t offset;
-            ktxTexture_GetImageOffset(ktxTexture, i, 0, 0, &offset);
-
-            VkBufferImageCopy bufferCopyRegion = {};
-            bufferCopyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            bufferCopyRegion.imageSubresource.mipLevel = i;
-            bufferCopyRegion.imageSubresource.baseArrayLayer = 0;
-            bufferCopyRegion.imageSubresource.layerCount = 1;
-            bufferCopyRegion.imageExtent.width = std::max(1u, ktxTexture->baseWidth >> i);
-            bufferCopyRegion.imageExtent.height = std::max(1u, ktxTexture->baseHeight >> i);
-            bufferCopyRegion.imageExtent.depth = 1;
-            bufferCopyRegion.bufferOffset = offset;
-            bufferCopyRegions.push_back(bufferCopyRegion);
-        }
-
-        VkImageCreateInfo imageCreateInfo {.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-                                           .imageType = VK_IMAGE_TYPE_2D,
-                                           .format = format,
-                                           .extent = {width, height, 1},
-                                           .mipLevels = mipLevels,
-                                           .arrayLayers = 1,
-                                           .samples = VK_SAMPLE_COUNT_1_BIT,
-                                           .tiling = VK_IMAGE_TILING_OPTIMAL,
-                                           .usage = imageUsageFlags | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-                                           .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-                                           .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
-
-        VmaAllocationCreateInfo allocInfo {};
-        allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-
-        if (vmaCreateImage(device->getAllocator(), &imageCreateInfo, &allocInfo, &image, &allocation, {}) !=
-            VK_SUCCESS) {
-            throw std::runtime_error("Failed to allocate KTX texture image");
-        }
-
-        VkCommandBuffer copyCmd = device->beginSingleTimeCommands();
-        VkImageSubresourceRange subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, mipLevels, 0, 1};
-
-        transitionImageLayout(
-            copyCmd, image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, subresourceRange);
-        vkCmdCopyBufferToImage(copyCmd,
-                               stgBuffer.getBuffer(),
-                               image,
-                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                               static_cast<uint32_t>(bufferCopyRegions.size()),
-                               bufferCopyRegions.data());
-
-        this->imageLayout = imageLayout;
-        transitionImageLayout(copyCmd, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, imageLayout, subresourceRange);
-
-        device->endSingleTimeCommands(copyCmd);
-
-        // Clean up the CPU texture memory now that it's on the GPU
-        ktxTexture_Destroy(ktxTexture);
-
-        // Create View and Sampler
-        VkImageViewCreateInfo viewCreateInfo {.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-                                              .image = image,
-                                              .viewType = VK_IMAGE_VIEW_TYPE_2D,
-                                              .format = format,
-                                              .subresourceRange = subresourceRange};
-        vkCreateImageView(device->getDevice(), &viewCreateInfo, nullptr, &view);
-
-        VkSamplerCreateInfo samplerCreateInfo {.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-                                               .magFilter = filter,
-                                               .minFilter = filter,
-                                               .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
-                                               .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-                                               .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-                                               .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-                                               .mipLodBias = 0.0f,
-                                               .anisotropyEnable = VK_TRUE,
-                                               .maxAnisotropy = device->getMaxAnisotropy(),
-                                               .compareOp = VK_COMPARE_OP_NEVER,
-                                               .minLod = 0.0f,
-                                               .maxLod = (float)mipLevels,
-                                               .borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE};
-        vkCreateSampler(device->getDevice(), &samplerCreateInfo, nullptr, &sampler);
-
-        updateDescriptor();
-        this->heapHandle = resourceHeap.registerTexture(this->descriptor);
     }
+
+    ktx_uint8_t *ktxTextureData = ktxTexture_GetData(ktxTexture);
+    ktx_size_t ktxTextureSize = ktxTexture_GetDataSize(ktxTexture);
+
+    Buffer stgBuffer {
+        *device, ktxTextureSize, 1, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, {}, 0};
+    stgBuffer.writeToBuffer(ktxTextureData, ktxTextureSize, 0);
+    stgBuffer.flush(ktxTextureSize, 0);
+
+    std::vector<VkBufferImageCopy> bufferCopyRegions;
+    for (uint32_t i = 0; i < mipLevels; i++) {
+        ktx_size_t offset;
+        ktxTexture_GetImageOffset(ktxTexture, i, 0, 0, &offset);
+
+        VkBufferImageCopy bufferCopyRegion = {};
+        bufferCopyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        bufferCopyRegion.imageSubresource.mipLevel = i;
+        bufferCopyRegion.imageSubresource.baseArrayLayer = 0;
+        bufferCopyRegion.imageSubresource.layerCount = 1;
+        bufferCopyRegion.imageExtent.width = std::max(1u, ktxTexture->baseWidth >> i);
+        bufferCopyRegion.imageExtent.height = std::max(1u, ktxTexture->baseHeight >> i);
+        bufferCopyRegion.imageExtent.depth = 1;
+        bufferCopyRegion.bufferOffset = offset;
+        bufferCopyRegions.push_back(bufferCopyRegion);
+    }
+
+    // Allocate GPU-only Vulkan image via VMA
+    VkImageCreateInfo imageCreateInfo {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = format,
+        .extent = {width, height, 1},
+        .mipLevels = mipLevels,
+        .arrayLayers = 1,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = imageUsageFlags | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
+    };
+
+    VmaAllocationCreateInfo allocInfo {};
+    allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+    if (vmaCreateImage(device->getAllocator(), &imageCreateInfo, &allocInfo, &image, &allocation, {}) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to allocate KTX texture image");
+    }
+
+    VkCommandBuffer copyCmd = device->beginSingleTimeCommands();
+    VkImageSubresourceRange subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, mipLevels, 0, 1};
+
+    transitionImageLayout(
+        copyCmd, image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, subresourceRange);
+
+    vkCmdCopyBufferToImage(copyCmd,
+                           stgBuffer.getBuffer(),
+                           image,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                           static_cast<uint32_t>(bufferCopyRegions.size()),
+                           bufferCopyRegions.data());
+
+    this->imageLayout = imageLayout;
+    transitionImageLayout(copyCmd, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, imageLayout, subresourceRange);
+
+    device->endSingleTimeCommands(copyCmd);
+
+    ktxTexture_Destroy(ktxTexture);
+
+    VkImageViewCreateInfo viewCreateInfo {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = format,
+        .subresourceRange = subresourceRange
+    };
+    if (vkCreateImageView(device->getDevice(), &viewCreateInfo, nullptr, &view) != VK_SUCCESS) {
+        throw std::runtime_error("Texture: Failed to create image view for KTX texture");
+    }
+
+    VkSamplerCreateInfo samplerCreateInfo {
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = filter,
+        .minFilter = filter,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .mipLodBias = 0.0f,
+        .anisotropyEnable = VK_TRUE,
+        .maxAnisotropy = device->getMaxAnisotropy(),
+        .compareOp = VK_COMPARE_OP_NEVER,
+        .minLod = 0.0f,
+        .maxLod = static_cast<float>(mipLevels),
+        .borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE
+    };
+    if (vkCreateSampler(device->getDevice(), &samplerCreateInfo, nullptr, &sampler) != VK_SUCCESS) {
+        throw std::runtime_error("Texture: Failed to create sampler for KTX texture");
+    }
+
+    updateDescriptor();
+    this->heapHandle = resourceHeap.registerTexture(this->descriptor);
+}
 
     void Texture2D::createDefaultTexture(
         Device *device, uint8_t r, uint8_t g, uint8_t b, uint8_t a, ResourceHeap &resourceHeap)

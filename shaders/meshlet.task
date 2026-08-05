@@ -1,0 +1,187 @@
+#version 460
+#extension GL_EXT_mesh_shader : require
+#extension GL_KHR_shader_subgroup_ballot : require
+
+layout(local_size_x = 32) in;
+
+struct ObjectData {
+    mat4 modelMatrix;
+    mat4 normalMatrix;
+    vec4 boundingSphere;
+    uint baseMeshlet;
+    uint meshletCount;
+    uint alphaMode;
+    uint padding1;
+};
+
+struct Meshlet {
+    float center_x;
+    float center_y;
+    float center_z;
+    float radius;
+    uint cone_axis_cutoff;
+    uint vertexOffset;
+    uint indexOffset;
+    uint vertexCount;
+    uint triangleCount;
+};
+
+layout(std430, set = 0, binding = 5) readonly buffer ObjectBuffer {
+    ObjectData objects[];
+};
+
+layout(std430, set = 0, binding = 8) readonly buffer MeshletBuffer {
+    Meshlet meshlets[];
+};
+
+struct TaskWorkgroup {
+    uint objectID;
+    uint baseMeshletIndex;
+};
+
+layout(std430, set = 1, binding = 6) readonly buffer TaskWorkgroupBuffer {
+    TaskWorkgroup taskWorkgroups[];
+};
+
+layout(push_constant) uniform PushConsts {
+    mat4 viewProj;
+    vec4 frustumPlanes[6];
+    vec3 cameraPos;
+    uint cullFlags;
+    uint objectCount;
+    uint actualObjectCount;
+    float projM11;
+    uint objectCapacity;
+    uint clipPlaneCount;
+    uint isMeshShader;
+} push;
+
+const float SUBPIXEL_THRESHOLD = 0.0005;
+
+struct Payload {
+    uint objectID;
+    uint meshletIndices[32];
+};
+
+taskPayloadSharedEXT Payload payload;
+
+shared uint s_meshletCount[32]; // Max 32 subgroups if subgroup size is 1
+
+void main() {
+    uint ti = gl_LocalInvocationID.x;
+    uint wg = gl_WorkGroupID.x;
+    
+    TaskWorkgroup twg = taskWorkgroups[wg];
+    uint objectID = twg.objectID;
+    uint localMeshletIdx = twg.baseMeshletIndex + ti;
+    
+    ObjectData obj = objects[objectID];
+    
+    float sqX = dot(obj.modelMatrix[0].xyz, obj.modelMatrix[0].xyz);
+    float sqY = dot(obj.modelMatrix[1].xyz, obj.modelMatrix[1].xyz);
+    float sqZ = dot(obj.modelMatrix[2].xyz, obj.modelMatrix[2].xyz);
+    float maxScale = sqrt(max(max(sqX, sqY), sqZ));
+    
+
+    // --- Debug Flags ---
+    bool enableFrustumCull = true;
+    bool enableContributionCull = true;
+    bool enableConeCull = true;
+    // -------------------
+
+    // 2. Meshlet Culling
+    bool visible = false;
+    
+    if (localMeshletIdx < obj.meshletCount) {
+        uint globalMeshletID = obj.baseMeshlet + localMeshletIdx;
+        Meshlet m = meshlets[globalMeshletID];
+        
+        vec3 localCenter = vec3(m.center_x, m.center_y, m.center_z);
+        vec3 worldCenter = (obj.modelMatrix * vec4(localCenter, 1.0)).xyz;
+        float worldRadius = m.radius * maxScale;
+        
+        visible = true;
+        if (enableFrustumCull) {
+            for (uint p = 0u; p < push.clipPlaneCount; p++) {
+                if (dot(push.frustumPlanes[p].xyz, worldCenter) + push.frustumPlanes[p].w < -worldRadius) {
+                    visible = false;
+                    break;
+                }
+            }
+        }
+        
+        if (visible && enableContributionCull) {
+            vec3 camToCenter = worldCenter - push.cameraPos;
+            float dist = length(camToCenter);
+            if (dist > worldRadius) {
+                float projRadius = (worldRadius / dist) * abs(push.projM11);
+                if (projRadius < SUBPIXEL_THRESHOLD) {
+                    visible = false;
+                }
+            }
+        }
+        
+        if (push.cullFlags == 0) {
+            visible = true;
+        }
+
+        if (visible && enableConeCull) {
+            vec4 cone = unpackSnorm4x8(m.cone_axis_cutoff);
+            vec3 cone_axis_local = cone.xyz;
+            float cone_cutoff = cone.w;
+            
+            bool doubleSided = (obj.alphaMode & 4u) != 0u;
+
+            if (!doubleSided && cone_cutoff < 0.99) {
+                vec3 cone_axis_world = normalize(mat3(obj.normalMatrix) * cone_axis_local);
+
+                vec3 camToCenter = worldCenter - push.cameraPos;
+                float distSq = dot(camToCenter, camToCenter);
+                if (distSq > worldRadius * worldRadius) {
+                    float dist2 = sqrt(distSq);
+                    vec3 dir_to_center = camToCenter / dist2;
+
+                    float sin_subtended = clamp(worldRadius / dist2, 0.0, 1.0);
+                    float cos_subtended = sqrt(1.0 - sin_subtended * sin_subtended);
+                    float cone_sin = sqrt(max(0.0, 1.0 - cone_cutoff * cone_cutoff));
+                    float max_dot = cone_cutoff * cos_subtended + cone_sin * sin_subtended;
+
+                    if (dot(cone_axis_world, dir_to_center) >= max_dot) {
+                        visible = false;
+                    }
+                }
+            }
+        }
+    }
+    
+    uvec4 ballot = subgroupBallot(visible);
+    uint subgroupCount = subgroupBallotBitCount(ballot);
+    uint subgroupOffset = subgroupBallotExclusiveBitCount(ballot);
+    
+    if (subgroupElect()) {
+        s_meshletCount[gl_SubgroupID] = subgroupCount;
+    }
+    
+    barrier();
+    
+    uint exclusiveOffset = subgroupOffset;
+    for (uint i = 0; i < gl_SubgroupID; i++) {
+        exclusiveOffset += s_meshletCount[i];
+    }
+    
+    uint totalSurvivingCount = 0;
+    for (uint i = 0; i < gl_NumSubgroups; i++) {
+        totalSurvivingCount += s_meshletCount[i];
+    }
+    
+    if (visible) {
+        payload.meshletIndices[exclusiveOffset] = localMeshletIdx;
+    }
+    
+    barrier();
+    
+    if (gl_LocalInvocationID.x == 0) {
+        payload.objectID = objectID;
+        EmitMeshTasksEXT(totalSurvivingCount, 1, 1);
+    }
+}

@@ -1,0 +1,60 @@
+#version 460
+
+layout(local_size_x = 256) in;
+
+struct ObjectData {
+    mat4 modelMatrix;
+    mat4 normalMatrix;
+    vec4 boundingSphere;
+    uint baseMeshlet;
+    uint meshletCount;
+    uint alphaMode;
+    uint padding1;
+};
+
+layout(std430, set = 0, binding = 5) readonly buffer ObjectBuffer {
+    ObjectData objects[];
+};
+
+layout(std430, set = 1, binding = 0) readonly buffer DispatchCommandBuffer {
+    uint visibleObjectCount;
+    uint dispatchY;
+    uint dispatchZ;
+};
+
+layout(std430, set = 1, binding = 1) readonly buffer VisibleObjectBuffer {
+    uint visibleObjects[];
+};
+
+struct TaskWorkgroup {
+    uint objectID;
+    uint baseMeshletIndex;
+};
+layout(std430, set = 1, binding = 6) writeonly buffer TaskWorkgroupBuffer {
+    TaskWorkgroup taskWorkgroups[];
+};
+
+layout(std430, set = 1, binding = 7) buffer TaskDispatchCommandBuffer {
+    uint taskDispatchX;
+    uint taskDispatchY;
+    uint taskDispatchZ;
+};
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx >= visibleObjectCount) return;
+
+    uint objectID = visibleObjects[idx];
+    ObjectData obj = objects[objectID];
+
+    uint meshletCount = obj.meshletCount;
+
+    uint taskWgCount = (meshletCount + 31u) / 32u;
+    
+    uint taskBase = atomicAdd(taskDispatchX, taskWgCount);
+    
+    for (uint i = 0; i < taskWgCount; i++) {
+        taskWorkgroups[taskBase + i].objectID = objectID;
+        taskWorkgroups[taskBase + i].baseMeshletIndex = i * 32u;
+    }
+}

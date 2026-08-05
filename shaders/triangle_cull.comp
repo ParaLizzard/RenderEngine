@@ -1,0 +1,175 @@
+#version 460
+
+#extension GL_KHR_shader_subgroup_arithmetic : enable
+#extension GL_KHR_shader_subgroup_basic : enable
+#extension GL_KHR_shader_subgroup_ballot : enable
+#extension GL_EXT_shader_8bit_storage : require
+
+layout(local_size_x_id = 0, local_size_x = 128) in;
+
+struct PositionData {
+    float x, y, z;
+};
+
+struct Meshlet {
+    float center_x;
+    float center_y;
+    float center_z;
+    float radius;
+    uint cone_axis_cutoff;
+    uint vertexOffset;
+    uint indexOffset;
+    uint vertexCount;
+    uint triangleCount;
+};
+
+struct ObjectData {
+    mat4 modelMatrix;
+    mat4 normalMatrix;
+    vec4 boundingSphere;
+    uint baseMeshlet;
+    uint meshletCount;
+    uint alphaMode;
+    uint padding1;
+};
+
+layout(std430, set = 0, binding = 5) readonly buffer ObjectBuffer { ObjectData objects[]; };
+layout(std430, set = 0, binding = 6) readonly buffer VertexBuffer { PositionData positions[]; };
+layout(std430, set = 0, binding = 8) readonly buffer MeshletBuffer { Meshlet meshlets[]; };
+layout(std430, set = 0, binding = 9) readonly buffer MeshletVertexMap { uint meshletVertices[]; };
+layout(std430, set = 0, binding = 10) readonly buffer MeshletTriangleMap { uint8_t meshletTriangles[]; };
+
+layout(std430, set = 1, binding = 4) readonly buffer VisibleMeshletBuffer {
+    uvec2 visibleMeshlets[]; // x = objectID, y = localMeshletID
+};
+
+layout(std430, set = 1, binding = 5) buffer TriangleDispatchCommandBuffer {
+    uint dispatchX;
+    uint dispatchY;
+    uint dispatchZ;
+};
+
+layout(std430, set = 1, binding = 2) buffer SingleIndirectCommandBuffer {
+    uint vertexCount;
+    uint instanceCount;
+    uint firstVertex;
+    uint firstInstance;
+};
+
+layout(std430, set = 1, binding = 3) buffer CompactedIndexBuffer {
+    uint syntheticIndices[];
+};
+
+layout(push_constant) uniform PushConsts {
+    mat4 viewProj;
+    vec4 frustumPlanes[6];
+    vec3 cameraPos;
+    uint cullFlags;
+    uint objectCount;
+    uint actualObjectCount;
+    uint cascadeIndex;
+    uint objectCapacity;
+    uint clipPlaneCount;
+} push;
+
+void main() {
+    uint workgroupID = gl_WorkGroupID.x;
+    if (workgroupID >= dispatchX) return;
+
+    uvec2 meshletInfo = visibleMeshlets[workgroupID];
+    uint objectID = meshletInfo.x;
+    uint localMeshletID = meshletInfo.y;
+
+    ObjectData obj = objects[objectID];
+    uint globalMeshletID = obj.baseMeshlet + localMeshletID;
+    Meshlet m = meshlets[globalMeshletID];
+
+    uint triIdx = gl_LocalInvocationID.x;
+    bool isValid = triIdx < m.triangleCount;
+    bool visible = false;
+
+    if (isValid) {
+        uint triOffset = m.indexOffset + triIdx * 3u;
+        uint localByte0 = uint(meshletTriangles[triOffset + 0u]);
+        uint localByte1 = uint(meshletTriangles[triOffset + 1u]);
+        uint localByte2 = uint(meshletTriangles[triOffset + 2u]);
+
+        uint globalVert0 = meshletVertices[m.vertexOffset + localByte0];
+        uint globalVert1 = meshletVertices[m.vertexOffset + localByte1];
+        uint globalVert2 = meshletVertices[m.vertexOffset + localByte2];
+
+        PositionData pd0 = positions[globalVert0];
+        PositionData pd1 = positions[globalVert1];
+        PositionData pd2 = positions[globalVert2];
+
+        vec4 p0 = push.viewProj * (obj.modelMatrix * vec4(pd0.x, pd0.y, pd0.z, 1.0));
+        vec4 p1 = push.viewProj * (obj.modelMatrix * vec4(pd1.x, pd1.y, pd1.z, 1.0));
+        vec4 p2 = push.viewProj * (obj.modelMatrix * vec4(pd2.x, pd2.y, pd2.z, 1.0));
+
+        // --- Debug Flags ---
+        bool enableFrustumCull = true;
+        bool enableBackfaceCull = true;
+        // -------------------
+
+        visible = true;
+
+        if (enableFrustumCull && (p0.w <= 0.0 && p1.w <= 0.0 && p2.w <= 0.0)) {
+            visible = false;
+        }
+
+        if (visible && enableBackfaceCull) {
+            bool doubleSided = (obj.alphaMode & 4u) != 0u;
+            if (p0.w > 0.0 && p1.w > 0.0 && p2.w > 0.0) {
+                vec2 ndc0 = p0.xy / p0.w;
+                vec2 ndc1 = p1.xy / p1.w;
+                vec2 ndc2 = p2.xy / p2.w;
+
+                float area = (ndc1.x - ndc0.x) * (ndc2.y - ndc0.y) - (ndc2.x - ndc0.x) * (ndc1.y - ndc0.y);
+
+                if (!doubleSided && area >= 0.0) {
+                    visible = false;
+                }
+            }
+        }
+    }
+
+    uint visibleFlag = visible ? 1u : 0u;
+    uint indexCount = visibleFlag * 3u;
+
+    #ifdef GL_KHR_shader_subgroup_arithmetic
+    uint waveIndexCount = subgroupAdd(indexCount);
+    uint offset = subgroupExclusiveAdd(indexCount);
+
+    uint waveBase = 0u;
+    if (subgroupElect()) {
+        if (waveIndexCount > 0u) {
+            waveBase = atomicAdd(vertexCount, waveIndexCount);
+        }
+    }
+    waveBase = subgroupBroadcast(waveBase, subgroupBallotFindLSB(subgroupBallot(true)));
+
+    if (visible) {
+        uint baseIdx = waveBase + offset;
+        
+        uint syn0 = (objectID << 22u) | ((localMeshletID & 0x1FFFu) << 9u) | ((triIdx * 3u + 0u) & 0x1FFu);
+        uint syn1 = (objectID << 22u) | ((localMeshletID & 0x1FFFu) << 9u) | ((triIdx * 3u + 1u) & 0x1FFu);
+        uint syn2 = (objectID << 22u) | ((localMeshletID & 0x1FFFu) << 9u) | ((triIdx * 3u + 2u) & 0x1FFu);
+
+        syntheticIndices[baseIdx + 0u] = syn0;
+        syntheticIndices[baseIdx + 1u] = syn1;
+        syntheticIndices[baseIdx + 2u] = syn2;
+    }
+    #else
+    if (visible) {
+        uint baseIdx = atomicAdd(vertexCount, 3u);
+        
+        uint syn0 = (objectID << 22u) | ((localMeshletID & 0x1FFFu) << 9u) | ((triIdx * 3u + 0u) & 0x1FFu);
+        uint syn1 = (objectID << 22u) | ((localMeshletID & 0x1FFFu) << 9u) | ((triIdx * 3u + 1u) & 0x1FFu);
+        uint syn2 = (objectID << 22u) | ((localMeshletID & 0x1FFFu) << 9u) | ((triIdx * 3u + 2u) & 0x1FFu);
+
+        syntheticIndices[baseIdx + 0u] = syn0;
+        syntheticIndices[baseIdx + 1u] = syn1;
+        syntheticIndices[baseIdx + 2u] = syn2;
+    }
+    #endif
+}

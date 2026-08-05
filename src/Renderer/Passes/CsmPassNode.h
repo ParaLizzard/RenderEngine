@@ -14,25 +14,25 @@ namespace Engine {
         CsmPassNode &operator=(const CsmPassNode &) = delete;
 
         void setup(RenderGraphBuilder &renderGraph) override;
-        void execute(VkCommandBuffer&cmd, FrameInfo &frameInfo) override;
+        void execute(VkCommandBuffer &cmd, FrameInfo &frameInfo) override;
 
         void resolve(RenderGraph &graph, const FrameInfo &frameInfo) override;
 
         void markSceneDirty() override
         {
-
+            descriptorsUpdated = false;
         }
 
         void updateCascades(SceneUbo &sceneUbo, FrameInfo &frameInfo);
+        [[nodiscard]] VkImageView getCsmArrayView() const { return csmArrayView; }
 
     private:
 
         struct CsmCullPushConstants
         {
-            glm::uint objectCount;
-            glm::uint objectCapacity;
+            uint32_t objectCount;
+            uint32_t objectCapacity;
         };
-
 
         struct CascadeGpuData
         {
@@ -42,6 +42,7 @@ namespace Engine {
 
         void createPipelineLayout();
         void createPipeline();
+        void updateDescriptors();
 
         Device &device;
         Renderer &renderer;
@@ -61,13 +62,14 @@ namespace Engine {
 
         std::vector<std::unique_ptr<Buffer>> gpuCompactedIndirectCommandBuffers;
         std::vector<std::unique_ptr<Buffer>> gpuDrawCountBuffers;
-
         std::vector<std::unique_ptr<Buffer>> cascadeDataBuffers;
 
         glm::mat4 cascadeViewProjs[SHADOW_MAP_CASCADES];
-        
+
         VkImage csmImageCache = VK_NULL_HANDLE;
         VkImageView csmArrayView = VK_NULL_HANDLE;
+
+        bool descriptorsUpdated = false;
     };
 
 } // namespace Engine

@@ -24,6 +24,8 @@ struct ObjectData {
     vec4 boundingSphere;
     uint baseMeshlet;
     uint meshletCount;
+    uint alphaMode;
+    uint padding1;
 };
 
 layout(std430, set = 0, binding = 5) readonly buffer ObjectBuffer {
@@ -33,8 +35,6 @@ layout(std430, set = 0, binding = 5) readonly buffer ObjectBuffer {
 layout(std430, set = 0, binding = 8) readonly buffer MeshletBuffer {
     Meshlet meshlets[];
 };
-
-// --- CullPass Local Buffers (set = 1) ---
 
 layout(std430, set = 1, binding = 1) readonly buffer VisibleObjectBuffer {
     uint visibleObjects[];
@@ -51,126 +51,139 @@ layout(std430, set = 1, binding = 3) buffer CompactedIndexBuffer {
     uint syntheticIndices[];
 };
 
+layout(std430, set = 1, binding = 4) writeonly buffer VisibleMeshletBuffer {
+    uvec2 visibleMeshlets[];
+};
+
+layout(std430, set = 1, binding = 5) buffer TriangleDispatchCommandBuffer {
+    uint dispatchX;
+    uint dispatchY;
+    uint dispatchZ;
+};
+
 layout(push_constant) uniform PushConsts {
     mat4 viewProj;
     vec4 frustumPlanes[6];
     vec3 cameraPos;
-    uint objectCount; // total Meshlets
-    uint actualObjectCount; // real objects
-    uint cascadeIndex;
+    uint cullFlags;
+    uint objectCount;
+    uint actualObjectCount;
+    float projM11;
     uint objectCapacity;
     uint clipPlaneCount;
 } push;
 
-shared uint sharedIndexCount[gl_WorkGroupSize.x];
-shared uint workgroupBase;
+const float SUBPIXEL_THRESHOLD = 0.0005;
 
 void main() {
-    // 1 Workgroup = 1 Visible Object
     uint visibleObjectIndex = gl_WorkGroupID.x;
+    if (visibleObjectIndex >= push.actualObjectCount) return;
+
     uint objectID = visibleObjects[visibleObjectIndex];
     ObjectData obj = objects[objectID];
 
-    // Precalculate scales that are identical for all meshlets in this object
     float sqX = dot(obj.modelMatrix[0].xyz, obj.modelMatrix[0].xyz);
     float sqY = dot(obj.modelMatrix[1].xyz, obj.modelMatrix[1].xyz);
     float sqZ = dot(obj.modelMatrix[2].xyz, obj.modelMatrix[2].xyz);
     float maxScale = sqrt(max(max(sqX, sqY), sqZ));
-    
-    // Each thread processes one meshlet of this object
+
+    // --- Debug Flags ---
+    bool enableFrustumCull = true;
+    bool enableContributionCull = true;
+    bool enableConeCull = true;
+    // -------------------
+
     for (uint i = gl_LocalInvocationID.x; i < obj.meshletCount; i += gl_WorkGroupSize.x) {
-        uint meshletID = obj.baseMeshlet + i;
-        Meshlet m = meshlets[meshletID];
+        bool isValid = true;
+        
+        bool visible = false;
+        Meshlet m;
+        
+        if (isValid) {
+            uint meshletID = obj.baseMeshlet + i;
+            m = meshlets[meshletID];
 
-        // 1. Calculate World Space Sphere for the Meshlet
-        vec3 localCenter = vec3(m.center_x, m.center_y, m.center_z);
-        vec3 worldCenter = (obj.modelMatrix * vec4(localCenter, 1.0)).xyz;
-        float worldRadius = m.radius * maxScale;
+            vec3 localCenter = vec3(m.center_x, m.center_y, m.center_z);
+            vec3 worldCenter = (obj.modelMatrix * vec4(localCenter, 1.0)).xyz;
+            float worldRadius = m.radius * maxScale;
 
-        // 2. Frustum Culling
-        bool visible = true;
-        for (uint p = 0u; p < push.clipPlaneCount; p++) {
-            if (dot(push.frustumPlanes[p].xyz, worldCenter) + push.frustumPlanes[p].w < -worldRadius) {
-                visible = false;
-                break;
+            visible = true;
+            if (enableFrustumCull) {
+                for (uint p = 0u; p < push.clipPlaneCount; p++) {
+                    if (dot(push.frustumPlanes[p].xyz, worldCenter) + push.frustumPlanes[p].w < -worldRadius) {
+                        visible = false;
+                        break;
+                    }
+                }
             }
-        }
 
-        // 3. Contribution Culling
-        if (visible) {
-            vec4 clipCenter = push.viewProj * vec4(worldCenter, 1.0);
-            if (clipCenter.w > 0.0) {
-                float projectedRadiusNDC = (worldRadius * abs(push.viewProj[1][1])) / clipCenter.w;
-                const float MIN_NDC_RADIUS = 0.001; 
-                if (projectedRadiusNDC < MIN_NDC_RADIUS) {
-                    visible = false;
+            if (visible && enableContributionCull) {
+                vec3 camToCenter = worldCenter - push.cameraPos;
+                float dist = length(camToCenter);
+                if (dist > worldRadius) {
+                    float projRadius = (worldRadius / dist) * abs(push.projM11);
+                    if (projRadius < SUBPIXEL_THRESHOLD) {
+                        visible = false;
+                    }
+                }
+            }
+                
+            if (push.cullFlags == 0) {
+                visible = true;
+            }
+
+            if (visible && enableConeCull) {
+                vec4 cone = unpackSnorm4x8(m.cone_axis_cutoff);
+                vec3 cone_axis_local = cone.xyz;
+                float cone_cutoff = cone.w;
+                
+                bool doubleSided = (obj.alphaMode & 4u) != 0u;
+
+                if (!doubleSided && cone_cutoff < 0.99) {
+                    vec3 cone_axis_world = normalize(mat3(obj.normalMatrix) * cone_axis_local);
+
+                    vec3 camera_to_center = worldCenter - push.cameraPos;
+                    float distSq = dot(camera_to_center, camera_to_center);
+
+                    if (distSq > worldRadius * worldRadius) {
+                        float dist = sqrt(distSq);
+                        vec3 dir_to_center = camera_to_center / dist;
+
+                        float sin_subtended = clamp(worldRadius / dist, 0.0, 1.0);
+                        float cos_subtended = sqrt(1.0 - sin_subtended * sin_subtended);
+                        float cone_sin = sqrt(max(0.0, 1.0 - cone_cutoff * cone_cutoff));
+                        float max_dot = cone_cutoff * cos_subtended + cone_sin * sin_subtended;
+
+                        if (dot(cone_axis_world, dir_to_center) >= max_dot) {
+                            visible = false;
+                        }
+                    }
                 }
             }
         }
 
-        // 4. Normal Cone Culling (Dequantization)
-        if (visible) {
-            vec4 cone = unpackSnorm4x8(m.cone_axis_cutoff); 
-            vec3 cone_axis_local = cone.xyz;
-            float cone_cutoff = cone.w;
-
-            vec3 cone_axis_world = normalize(mat3(obj.normalMatrix) * cone_axis_local);
-            vec3 view_dir = normalize(worldCenter - push.cameraPos);
-            
-            if (dot(cone_axis_world, view_dir) >= cone_cutoff) {
-                visible = false;
-            }
-        }
-
-        // 5. Subgroup-Optimized Block Allocation
-        uint indexCount = visible ? (m.triangleCount * 3) : 0;
-        
         #ifdef GL_KHR_shader_subgroup_arithmetic
-        uint waveIndexCount = subgroupAdd(indexCount);
-        uint offset = subgroupExclusiveAdd(indexCount);
-        uint waveBase;
+        uint visibleFlag = visible ? 1u : 0u;
+        uint waveVisibleCount = subgroupAdd(visibleFlag);
+        uint waveVisibleOffset = subgroupExclusiveAdd(visibleFlag);
         
+        uint waveVisibleBase = 0u;
         if (subgroupElect()) {
-            waveBase = atomicAdd(vertexCount, waveIndexCount);
-        }
-        waveBase = subgroupBroadcastFirst(waveBase);
-        
-        uint baseSlot = waveBase + offset;
-        
-        #else
-        uint lID = gl_LocalInvocationID.x;
-        sharedIndexCount[lID] = indexCount;
-        barrier();
-
-        uint offset = 0u;
-        for (uint j = 0u; j < lID; j++) {
-            offset += sharedIndexCount[j];
-        }
-
-        uint waveIndexCount = 0u;
-        for (uint j = 0u; j < gl_WorkGroupSize.x; j++) {
-            waveIndexCount += sharedIndexCount[j];
-        }
-        barrier();
-
-        if (lID == 0u) {
-            workgroupBase = atomicAdd(vertexCount, waveIndexCount);
-        }
-        barrier();
-        
-        uint baseSlot = workgroupBase + offset;
-        #endif
-
-        // 6. Write Synthetic Indices
-        if (visible) {
-            for (uint j = 0; j < indexCount; j++) {
-                uint syntheticIndex = (meshletID << 10) | j;
-                syntheticIndices[baseSlot + j] = syntheticIndex;
+            if (waveVisibleCount > 0u) {
+                waveVisibleBase = atomicAdd(dispatchX, waveVisibleCount);
             }
-            
-            instanceCount = 1;
-            firstVertex = 0;
-            firstInstance = 0;
         }
+        waveVisibleBase = subgroupBroadcast(waveVisibleBase, subgroupBallotFindLSB(subgroupBallot(true)));
+        
+        if (visible) {
+            uint localIdx = waveVisibleBase + waveVisibleOffset;
+            visibleMeshlets[localIdx] = uvec2(objectID, i);
+        }
+        #else
+        if (visible) {
+            uint localIdx = atomicAdd(dispatchX, 1u);
+            visibleMeshlets[localIdx] = uvec2(objectID, i);
+        }
+        #endif
     }
 }

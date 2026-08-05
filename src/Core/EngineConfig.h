@@ -11,8 +11,11 @@ namespace Engine::Config {
 
     // Meshlet configs
     inline constexpr std::uint32_t MAX_VERTICES = 64;
-    inline constexpr std::uint32_t MAX_TRIANGLES = 126;
+    inline constexpr std::uint32_t MAX_TRIANGLES = 124;
     inline constexpr float CONE_WEIGHT = 0.5;
+
+    // SSAO configs
+    inline constexpr float SSAO_STRENGTH = 1.2f;
 
 
 } // namespace Engine::Config

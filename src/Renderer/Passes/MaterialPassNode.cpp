@@ -9,16 +9,16 @@
 #include "Renderer/Renderer.h"
 #include "Vulkan/ResourceHeap.h"
 #include "Renderer/ShaderUtils.h"
-#include "AssetSystem/Model.h"
+#include "Renderer/Passes/CullPassNode.h"
 
 namespace Engine {
-    MaterialPassNode::MaterialPassNode(
-        Device &device,
-        Renderer &renderer,
-        Model &megaBuffer,
-        ResourceHeap &resourceHeap,
-        RenderGraph &renderGraph):
-        device(device), renderer(renderer), megaBuffer(megaBuffer), resourceHeap(resourceHeap), renderGraph(renderGraph)
+    MaterialPassNode::MaterialPassNode(Device &device,
+                     Renderer &renderer,
+                     Model &megaBuffer,
+                     ResourceHeap &resourceHeap,
+                     CullPassNode &cullPass,
+                     RenderGraph &renderGraph):
+        device(device), megaBuffer(megaBuffer), renderer(renderer), resourceHeap(resourceHeap), cullPass(cullPass), renderGraph(renderGraph)
     {
         globalPool = DescriptorPool::Builder(device)
                      .setMaxSets(Config::MAX_FRAMES_IN_FLIGHT)
@@ -28,9 +28,8 @@ namespace Engine {
                      .setPoolFlags(VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT)
                      .build();
 
+
         globalSetLayout = DescriptorSetLayout::Builder(device)
-                          // Object Metadata Lookup Buffer (was 2, now we'll keep the numbers as they were for now, or match the shader)
-                          // Wait, the shader uses set=1, binding=... Let's just remove 0, 1, 7, 8
                           .addBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
                           .addBinding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
                           .addBinding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
@@ -41,6 +40,7 @@ namespace Engine {
                           .addBinding(11, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
                           .addBinding(12, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
                           .addBinding(13, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
+                          .addBinding(14, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
                           .build();
 
         VkSamplerCreateInfo samplerInfo{};
@@ -51,6 +51,8 @@ namespace Engine {
         samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        samplerInfo.anisotropyEnable = VK_TRUE;
+        samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
         samplerInfo.maxAnisotropy = device.getMaxAnisotropy();
         samplerInfo.pNext = VK_NULL_HANDLE;
         if (vkCreateSampler(device.getDevice(), &samplerInfo, nullptr, &sampler) != VK_SUCCESS) {
@@ -65,6 +67,8 @@ namespace Engine {
         nearestSamplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         nearestSamplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         nearestSamplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        nearestSamplerInfo.anisotropyEnable = VK_TRUE;
+        nearestSamplerInfo.maxLod = VK_LOD_CLAMP_NONE;
         nearestSamplerInfo.maxAnisotropy = device.getMaxAnisotropy();
         nearestSamplerInfo.pNext = VK_NULL_HANDLE;
         if (vkCreateSampler(device.getDevice(), &nearestSamplerInfo, nullptr, &nearestSampler) != VK_SUCCESS) {
@@ -167,7 +171,10 @@ namespace Engine {
 
     void MaterialPassNode::setup(RenderGraphBuilder &renderGraph)
     {
-        renderGraph.readBuffer("CullObjectData", VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+
+        renderGraph.readBuffer("CompactedIndexBuffer",
+                               VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                               VK_ACCESS_2_SHADER_READ_BIT);
         renderGraph.readImage("VisBuffer",
                               VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
                               VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
@@ -178,7 +185,7 @@ namespace Engine {
                               VK_ACCESS_2_SHADER_READ_BIT);
         VkExtent2D currentExtent = renderer.getSwapChain().getSwapChainExtent();
         VkExtent2D halfExtent = {currentExtent.width / 2, currentExtent.height / 2};
-        renderGraph.createTransientImage("SsaoBlurImage", VK_FORMAT_R8_UNORM, halfExtent);
+        renderGraph.createTransientImage("SsaoBlurImage", VK_FORMAT_R8_UNORM, halfExtent, 1, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT);
 
         renderGraph.readImage("DepthImage",
                               VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
@@ -214,18 +221,18 @@ namespace Engine {
 
         if (meshInfoDirty) {
             cachedMeshInfos.clear();
-            cachedMeshInfos.reserve(frameInfo.gameObjects->size());
+            cachedMeshInfos.resize(frameInfo.gameObjects->size());
 
-            for (const auto &obj: *frameInfo.gameObjects) {
-                if (obj.subMesh.indexCount == 0)
-                    continue;
-                if (obj.alphaMode == AlphaMode::Blend)
-                    continue;
+            for (size_t i = 0; i < frameInfo.gameObjects->size(); i++) {
+                const auto &obj = (*frameInfo.gameObjects)[i];
+                if (obj.subMesh.indexCount == 0) continue;
+                if (obj.alphaMode == AlphaMode::Blend) continue;
 
                 GPUMeshInfo info{};
                 info.firstIndex = obj.subMesh.firstIndex;
                 info.vertexOffset = obj.subMesh.vertexOffset;
-                cachedMeshInfos.push_back(info);
+
+                cachedMeshInfos[i] = info;
             }
             meshInfoDirty = false;
             framesToUpdate = Config::MAX_FRAMES_IN_FLIGHT;
@@ -253,11 +260,28 @@ namespace Engine {
         glm::mat4 clipMatrix = glm::mat4(1.0f);
         glm::mat4 viewProjection = clipMatrix * projection * view;
 
+        static uint32_t currentDebugMode = 0;
+
+        if (frameInfo.input->IsKeyJustPressed(KeyCode::F1)) {
+            currentDebugMode = (currentDebugMode == 1) ? 0 : 1;
+        }
+        if (frameInfo.input->IsKeyJustPressed(KeyCode::F2)) {
+            currentDebugMode = (currentDebugMode == 2) ? 0 : 2;
+        }
+        if (frameInfo.input->IsKeyJustPressed(KeyCode::F3)) {
+            currentDebugMode = (currentDebugMode == 3) ? 0 : 3;
+        }
+        if (frameInfo.input->IsKeyJustPressed(KeyCode::F6)) {
+            currentDebugMode = (currentDebugMode == 4) ? 0 : 4;
+        }
+
         MaterialPushConstants pc{};
         pc.viewProj = viewProjection;
         pc.view = view;
-        pc.cameraPos = frameInfo.camera->getPosition();;
+        pc.cameraPos = frameInfo.camera->getPosition();
         pc.enableSSAO = frameInfo.enableSSAO ? 1 : 0;
+        pc.debugMode = currentDebugMode;
+        pc.ssaoStrength = Config::SSAO_STRENGTH;
 
         vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(MaterialPushConstants), &pc);
 
@@ -343,6 +367,10 @@ namespace Engine {
         VkDescriptorBufferInfo normalBufferInfo = packedNormalBuffers[currentFrame]->descriptorInfo(VK_WHOLE_SIZE, 0);
         VkDescriptorBufferInfo radianceBufferInfo = packedRadianceBuffers[currentFrame]->descriptorInfo(VK_WHOLE_SIZE, 0);
         VkDescriptorBufferInfo positionBufferInfo = worldPositionBuffers[currentFrame]->descriptorInfo(VK_WHOLE_SIZE, 0);
+        VkDescriptorBufferInfo compactedBufferInfo{};
+        compactedBufferInfo.buffer = cullPass.getCompactedIndexBuffer(currentFrame);
+        compactedBufferInfo.offset = 0;
+        compactedBufferInfo.range = VK_WHOLE_SIZE;
         DescriptorWriter(*globalSetLayout, *globalPool)
             .writeBuffer(2, &meshBufferInfo)
             .writeImage(3, &visBufferInfo)
@@ -354,6 +382,7 @@ namespace Engine {
             .writeBuffer(11, &radianceBufferInfo)
             .writeImage(12, &csmInfo)
             .writeImage(13, &csmHardwareInfo)
+            .writeBuffer(14, &compactedBufferInfo)
             .overwrite(descriptorSets[currentFrame]);
     }
 

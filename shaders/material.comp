@@ -3,6 +3,7 @@
 #extension GL_KHR_shader_subgroup_basic : enable
 #extension GL_KHR_shader_subgroup_vote : enable
 #extension GL_KHR_shader_subgroup_ballot : enable
+#extension GL_EXT_shader_8bit_storage : require
 
 const float PI = 3.141592;
 const vec3 Fdielectric = vec3(0.04);
@@ -77,6 +78,23 @@ layout(set = 0, binding = 11) readonly buffer IndexBuffer {
     uint indices[];
 } indexBuffer;
 
+struct Meshlet {
+    float center_x;
+    float center_y;
+    float center_z;
+    float radius;
+    uint cone_axis_cutoff;
+    uint vertexOffset;
+    uint indexOffset;
+    uint vertexCount;
+    uint triangleCount;
+};
+
+layout(std430, set = 0, binding = 8) readonly buffer MeshletBuffer { Meshlet meshlets[]; };
+layout(std430, set = 0, binding = 9) readonly buffer MeshletVertexMap { uint meshletVertices[]; };
+layout(std430, set = 0, binding = 10) readonly buffer MeshletTriangleMap { uint8_t meshletTriangles[]; };
+
+
 struct Mesh {
     uint firstIndex;
     int vertexOffset;
@@ -129,6 +147,10 @@ struct ObjectData {
     mat4 modelMatrix;
     mat4 normalMatrix;
     vec4 boundingSphere;
+    uint baseMeshlet;
+    uint meshletCount;
+    uint alphaMode;
+    uint padding1;
 };
 
 layout(set = 0, binding = 5) readonly buffer ObjectBuffer {
@@ -140,7 +162,17 @@ layout(push_constant) uniform PushConstants {
     mat4 view;
     vec3 cameraPos;
     uint enableSSAO;
+    uint debugMode;
+    float ssaoStrength;
 } pc;
+
+vec3 hashColor(uint id) {
+    uint h = id * 747796405u + 2891336453u;
+    h = (h ^ (h >> 16u)) * 277803737u;
+    h = (h ^ (h >> 16u)) * 277803737u;
+    h = h ^ (h >> 16u);
+    return vec3(float(h & 255u) / 255.0, float((h >> 8u) & 255u) / 255.0, float((h >> 16u) & 255u) / 255.0);
+}
 
 uint encodeOctNormal(vec3 n) {
     n /= (abs(n.x) + abs(n.y) + abs(n.z));
@@ -242,20 +274,28 @@ void main() {
     uvec2 primKey = uvec2(instanceID, primitiveID);
     bool isUniformPrimitive = subgroupAllEqual(primKey);
 
-    Mesh mesh = meshBuffer.meshes[instanceID];
     mat4 modelMatrix = objectBuffer.objects[instanceID].modelMatrix;
     mat4 MVP = pc.viewProj * modelMatrix;
     mat3 normalMatrix = mat3(objectBuffer.objects[instanceID].normalMatrix);
 
-    uint globalIndexOffset = mesh.firstIndex + primitiveID * 3u;
-    uint idx0 = indexBuffer.indices[globalIndexOffset];
-    uint idx1 = indexBuffer.indices[globalIndexOffset + 1u];
-    uint idx2 = indexBuffer.indices[globalIndexOffset + 2u];
+    uint syntheticIndex = primitiveID;
+    uint localMeshletID      = (syntheticIndex >> 9u) & 0x1FFFu;
+    uint triangleIndexOffset = syntheticIndex & 0x1FFu;
 
-    uint vOffset = uint(mesh.vertexOffset);
-    PositionData pd0 = vertexBuffer.positions[vOffset + idx0];
-    PositionData pd1 = vertexBuffer.positions[vOffset + idx1];
-    PositionData pd2 = vertexBuffer.positions[vOffset + idx2];
+    uint meshletID = objectBuffer.objects[instanceID].baseMeshlet + localMeshletID;
+    Meshlet m = meshlets[meshletID];
+
+    uint localTriByte0 = uint(meshletTriangles[m.indexOffset + triangleIndexOffset + 0u]);
+    uint localTriByte1 = uint(meshletTriangles[m.indexOffset + triangleIndexOffset + 1u]);
+    uint localTriByte2 = uint(meshletTriangles[m.indexOffset + triangleIndexOffset + 2u]);
+
+    uint idx0 = meshletVertices[m.vertexOffset + localTriByte0];
+    uint idx1 = meshletVertices[m.vertexOffset + localTriByte1];
+    uint idx2 = meshletVertices[m.vertexOffset + localTriByte2];
+
+    PositionData pd0 = vertexBuffer.positions[idx0];
+    PositionData pd1 = vertexBuffer.positions[idx1];
+    PositionData pd2 = vertexBuffer.positions[idx2];
 
     vec3 p0 = (modelMatrix * vec4(pd0.x, pd0.y, pd0.z, 1.0)).xyz;
     vec3 p1 = (modelMatrix * vec4(pd1.x, pd1.y, pd1.z, 1.0)).xyz;
@@ -313,9 +353,9 @@ void main() {
 
     vec3 worldPos = bary.x * p0 + bary.y * p1 + bary.z * p2;
 
-    VertexAttribute a0 = attributeBuffer.attributes[vOffset + idx0];
-    VertexAttribute a1 = attributeBuffer.attributes[vOffset + idx1];
-    VertexAttribute a2 = attributeBuffer.attributes[vOffset + idx2];
+    VertexAttribute a0 = attributeBuffer.attributes[idx0];
+    VertexAttribute a1 = attributeBuffer.attributes[idx1];
+    VertexAttribute a2 = attributeBuffer.attributes[idx2];
 
     vec3 n0 = normalMatrix * vec3(a0.normalX, a0.normalY, a0.normalZ);
     vec4 t0 = vec4(normalMatrix * vec3(a0.tangentX, a0.tangentY, a0.tangentZ), a0.tangentW);
@@ -354,7 +394,7 @@ void main() {
         materialAO = textureGrad(bindlessTextures[mat.occlusionIndex], texCoord, ddx_uv, ddy_uv).r;
     } else {
         uvec4 activeLanes = subgroupBallot(true);
-        for (int iter = 0; iter < 32; ++iter) {
+        for (int iter = 0; iter < 64; ++iter) {
             if (activeLanes == uvec4(0)) break;
 
             uint firstActiveLane = subgroupBallotFindLSB(activeLanes);
@@ -502,6 +542,17 @@ void main() {
     vec3 ambientLight = (kD_ambient * diffuse_ambient + specular_ambient) * combinedAO;
 
     vec3 finalRadiance = directLight + ambientLight;
+
+    if (pc.debugMode == 1u) {
+        finalRadiance = hashColor(primitiveID);
+    } else if (pc.debugMode == 2u) {
+        finalRadiance = hashColor(meshletID);
+    } else if (pc.debugMode == 3u) {
+        uint objID = primitiveID >> 22u;
+        finalRadiance = hashColor(objID);
+    } else if (pc.debugMode == 4u) {
+        finalRadiance = vec3(combinedAO);
+    }
 
     uint packedNormal = encodeOctNormal(worldNormal);
     uint packedRadiance = encodeRadiance(finalRadiance);
