@@ -51,6 +51,7 @@ namespace Engine {
         samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        //samplerInfo.mipLodBias = -0.75f;
         samplerInfo.anisotropyEnable = VK_TRUE;
         samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
         samplerInfo.maxAnisotropy = device.getMaxAnisotropy();

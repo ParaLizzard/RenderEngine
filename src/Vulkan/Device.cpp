@@ -342,6 +342,17 @@ namespace Engine {
             queueCreateInfos.push_back(queueCreateInfo);
         }
 
+        std::vector<const char*> enabledExtensions;
+        for (const char* ext : deviceExtensions) {
+            if (strcmp(ext, VK_EXT_MESH_SHADER_EXTENSION_NAME) == 0) {
+                if (bMeshShaderSupported) {
+                    enabledExtensions.push_back(ext);
+                }
+            } else {
+                enabledExtensions.push_back(ext);
+            }
+        }
+
         VkPhysicalDeviceVulkan13Features vulkan13Features {};
         vulkan13Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
         vulkan13Features.synchronization2 = VK_TRUE;
@@ -366,19 +377,22 @@ namespace Engine {
 
         VkPhysicalDeviceMeshShaderFeaturesEXT meshShaderFeatures{};
         meshShaderFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
-        meshShaderFeatures.pNext = &vulkan12Features;
-        if (bMeshShaderSupported) {
-            meshShaderFeatures.meshShader = VK_TRUE;
-            meshShaderFeatures.taskShader = VK_TRUE;
-        }
 
         VkPhysicalDeviceFeatures2 deviceFeatures2 {};
         deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-        deviceFeatures2.pNext = &meshShaderFeatures;
         deviceFeatures2.features = {.geometryShader = VK_TRUE,
                                     .multiDrawIndirect = VK_TRUE,
                                     .drawIndirectFirstInstance = VK_TRUE,
                                     .samplerAnisotropy = VK_TRUE};
+
+        if (bMeshShaderSupported) {
+            meshShaderFeatures.meshShader = VK_TRUE;
+            meshShaderFeatures.taskShader = VK_TRUE;
+            meshShaderFeatures.pNext = &vulkan12Features;
+            deviceFeatures2.pNext = &meshShaderFeatures;
+        } else {
+            deviceFeatures2.pNext = &vulkan12Features;
+        }
 
         VkDeviceCreateInfo createInfo {};
         createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -386,8 +400,8 @@ namespace Engine {
         createInfo.pQueueCreateInfos = queueCreateInfos.data();
         createInfo.pEnabledFeatures = nullptr;
         createInfo.pNext = &deviceFeatures2;
-        createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
-        createInfo.ppEnabledExtensionNames = deviceExtensions.data();
+        createInfo.enabledExtensionCount = static_cast<uint32_t>(enabledExtensions.size());
+        createInfo.ppEnabledExtensionNames = enabledExtensions.data();
 
         createInfo.enabledLayerCount = 0;
         createInfo.ppEnabledLayerNames = nullptr;
