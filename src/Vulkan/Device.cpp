@@ -378,6 +378,11 @@ namespace Engine {
         VkPhysicalDeviceMeshShaderFeaturesEXT meshShaderFeatures{};
         meshShaderFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
 
+        VkPhysicalDeviceVulkan11Features vulkan11Features {};
+        vulkan11Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+        vulkan11Features.multiview = VK_TRUE;
+        vulkan11Features.pNext = &vulkan12Features;
+
         VkPhysicalDeviceFeatures2 deviceFeatures2 {};
         deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
         deviceFeatures2.features = {.geometryShader = VK_TRUE,
@@ -388,10 +393,10 @@ namespace Engine {
         if (bMeshShaderSupported) {
             meshShaderFeatures.meshShader = VK_TRUE;
             meshShaderFeatures.taskShader = VK_TRUE;
-            meshShaderFeatures.pNext = &vulkan12Features;
+            meshShaderFeatures.pNext = &vulkan11Features;
             deviceFeatures2.pNext = &meshShaderFeatures;
         } else {
-            deviceFeatures2.pNext = &vulkan12Features;
+            deviceFeatures2.pNext = &vulkan11Features;
         }
 
         VkDeviceCreateInfo createInfo {};

@@ -12,7 +12,6 @@ namespace Engine {
     {
         objectDescriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
 
-        // --- Descriptor set layout: 4 SSBO bindings (0-3) for CSM storage ---
         std::array<VkDescriptorSetLayoutBinding, 4> ssboBindings {};
         for (uint32_t b = 0; b < 4; b++) {
             ssboBindings[b].binding = b;
@@ -27,7 +26,6 @@ namespace Engine {
         layoutInfo.pBindings = ssboBindings.data();
         vkCreateDescriptorSetLayout(device.getDevice(), &layoutInfo, nullptr, &objectSetLayout);
 
-        // --- Descriptor pool ---
         std::array<VkDescriptorPoolSize, 1> poolSizes {};
         poolSizes[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         poolSizes[0].descriptorCount = Config::MAX_FRAMES_IN_FLIGHT * 4;
@@ -265,6 +263,7 @@ namespace Engine {
         renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
         renderingInfo.renderArea.offset = {0, 0};
         renderingInfo.renderArea.extent = {SHADOW_MAP_SIZE, SHADOW_MAP_SIZE};
+        renderingInfo.viewMask = (1u << SHADOW_MAP_CASCADES) - 1u;
         renderingInfo.layerCount = SHADOW_MAP_CASCADES;
         renderingInfo.colorAttachmentCount = 0;
         renderingInfo.pDepthAttachment = &depthAttachment;
@@ -294,21 +293,15 @@ namespace Engine {
         megaBuffer.bindPositionOnly(cmd);
 
         if (objectCount > 0) {
-            for (uint32_t c = 0; c < SHADOW_MAP_CASCADES; c++) {
-                uint32_t cascadeIndex = c;
-                vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uint32_t), &cascadeIndex);
-
-                VkDeviceSize commandOffset = c * Config::MAX_SCENE_OBJECTS * sizeof(VkDrawIndexedIndirectCommand);
-                VkDeviceSize countOffset = c * sizeof(uint32_t);
-
-                vkCmdDrawIndexedIndirectCount(cmd,
-                                              gpuCompactedIndirectCommandBuffers[currentFrame]->getBuffer(),
-                                              commandOffset,
-                                              gpuDrawCountBuffers[currentFrame]->getBuffer(),
-                                              countOffset,
-                                              objectCount,
-                                              sizeof(VkDrawIndexedIndirectCommand));
-            }
+            VkDeviceSize commandOffset = 0;
+            VkDeviceSize countOffset = 0;
+            vkCmdDrawIndexedIndirectCount(cmd,
+                                          gpuCompactedIndirectCommandBuffers[currentFrame]->getBuffer(),
+                                          commandOffset,
+                                          gpuDrawCountBuffers[currentFrame]->getBuffer(),
+                                          countOffset,
+                                          objectCount,
+                                          sizeof(VkDrawIndexedIndirectCommand));
         }
 
         vkCmdEndRendering(cmd);
@@ -345,15 +338,11 @@ namespace Engine {
         VkDescriptorSetLayout bindlessLayout = resourceHeap.getDescriptorSetLayout();
         VkDescriptorSetLayout layouts[] = {bindlessLayout, objectSetLayout};
 
-        VkPushConstantRange graphicsPushConstant {};
-        graphicsPushConstant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-        graphicsPushConstant.offset = 0;
-        graphicsPushConstant.size = sizeof(uint32_t); // cascadeIndex
-
+        // No graphics push constants needed; using multiview gl_ViewIndex instead
         VkPipelineLayoutCreateInfo pipelineLayoutInfo {};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInfo.pushConstantRangeCount = 1;
-        pipelineLayoutInfo.pPushConstantRanges = &graphicsPushConstant;
+        pipelineLayoutInfo.pushConstantRangeCount = 0;
+        pipelineLayoutInfo.pPushConstantRanges = nullptr;
         pipelineLayoutInfo.setLayoutCount = 2;
         pipelineLayoutInfo.pSetLayouts = layouts;
 
@@ -459,6 +448,7 @@ namespace Engine {
         renderingCreateInfo.colorAttachmentCount = 0;
         renderingCreateInfo.pColorAttachmentFormats = nullptr;
         renderingCreateInfo.depthAttachmentFormat = Config::USE_D16_SHADOW_MAPS ? VK_FORMAT_D16_UNORM : VK_FORMAT_D32_SFLOAT;
+        renderingCreateInfo.viewMask = (1u << SHADOW_MAP_CASCADES) - 1u;
 
         VkGraphicsPipelineCreateInfo pipelineInfo {};
         pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;

@@ -1,6 +1,7 @@
 #version 460
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_ARB_shader_viewport_layer_array : require
+#extension GL_EXT_multiview : enable
 
 layout(location = 0) in vec3 inPosition;
 
@@ -29,16 +30,11 @@ layout(set = 0, binding = 5) readonly buffer ObjectDataBuffer {
     ObjectData objects[];
 } objectData;
 
-layout(push_constant) uniform PushConsts {
-    uint cascadeIndex;
-} push;
-
 void main() {
-    uint objectIndex  = uint(gl_InstanceIndex);
-    uint cascadeIndex = push.cascadeIndex;
+    uint objectIndex = uint(gl_InstanceIndex);
+    uint viewIndex = uint(gl_ViewIndex);
 
-    mat4 model         = objectData.objects[objectIndex].modelMatrix;
-    mat4 lightViewProj = sceneUbo.lightViewProj[cascadeIndex];
+    mat4 model = objectData.objects[objectIndex].modelMatrix;
+    mat4 lightViewProj = sceneUbo.lightViewProj[viewIndex];
     gl_Position = lightViewProj * (model * vec4(inPosition, 1.0));
-    gl_Layer    = int(cascadeIndex);
 }
