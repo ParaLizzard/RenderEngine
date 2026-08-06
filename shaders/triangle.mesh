@@ -61,16 +61,17 @@ struct Payload {
 
 taskPayloadSharedEXT Payload payload;
 
-shared uint s_triangleIndices[128 + 126 * 3];
+shared uint s_triangleIndices[128];
+shared vec4 s_clipPos[128];
 
 void main() {
     uint objectID = payload.objectID;
     uint localMeshletIdx = payload.meshletIndices[gl_WorkGroupID.x];
-    
+
     ObjectData obj = objects[objectID];
     uint globalMeshletID = obj.baseMeshlet + localMeshletIdx;
     Meshlet m = meshlets[globalMeshletID];
-    
+
     uint vertexCount = m.vertexCount;
     uint triangleCount = m.triangleCount;
 
@@ -78,12 +79,15 @@ void main() {
     if (vertIdx < vertexCount) {
         uint globalVertexID = meshletVertices[m.vertexOffset + vertIdx];
         PositionData pd = positions[globalVertexID];
-        
+
         vec4 pos = pc.viewProj * (obj.modelMatrix * vec4(pd.x, pd.y, pd.z, 1.0));
         gl_MeshVerticesEXT[vertIdx].gl_Position = pos;
         outInstanceID[vertIdx] = objectID;
+        s_clipPos[vertIdx] = pos;
     }
-    
+
+    barrier();
+
     // --- Debug Flags ---
     bool enableFrustumCull = true;
     bool enableBackfaceCull = true;
@@ -91,26 +95,18 @@ void main() {
 
     uint triIdx = gl_LocalInvocationID.x;
     bool visible = false;
-    
+
     uint v0, v1, v2;
     if (triIdx < triangleCount) {
         uint triOffset = m.indexOffset + triIdx * 3u;
         v0 = uint(meshletTriangles[triOffset + 0u]);
         v1 = uint(meshletTriangles[triOffset + 1u]);
         v2 = uint(meshletTriangles[triOffset + 2u]);
-        
-        uint globalV0 = meshletVertices[m.vertexOffset + v0];
-        uint globalV1 = meshletVertices[m.vertexOffset + v1];
-        uint globalV2 = meshletVertices[m.vertexOffset + v2];
-        
-        PositionData pd0 = positions[globalV0];
-        PositionData pd1 = positions[globalV1];
-        PositionData pd2 = positions[globalV2];
-        
-        vec4 p0 = pc.viewProj * (obj.modelMatrix * vec4(pd0.x, pd0.y, pd0.z, 1.0));
-        vec4 p1 = pc.viewProj * (obj.modelMatrix * vec4(pd1.x, pd1.y, pd1.z, 1.0));
-        vec4 p2 = pc.viewProj * (obj.modelMatrix * vec4(pd2.x, pd2.y, pd2.z, 1.0));
-        
+
+        vec4 p0 = s_clipPos[v0];
+        vec4 p1 = s_clipPos[v1];
+        vec4 p2 = s_clipPos[v2];
+
         visible = true;
 
         if (enableFrustumCull && (p0.w <= 0.0 && p1.w <= 0.0 && p2.w <= 0.0)) {

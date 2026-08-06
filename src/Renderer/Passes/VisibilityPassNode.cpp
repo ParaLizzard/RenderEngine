@@ -45,13 +45,15 @@ namespace Engine {
                                          VK_FORMAT_R32G32_UINT,
                                          currentExtent);
 
-        renderGraph.readBuffer("CompactedIndexBuffer",
-                               VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT,
-                               VK_ACCESS_2_SHADER_READ_BIT);
+        if (!device.isMeshShaderSupported()) {
+            renderGraph.readBuffer("CompactedIndexBuffer",
+                                   VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT,
+                                   VK_ACCESS_2_SHADER_READ_BIT);
 
-        renderGraph.readBuffer("SingleIndirectCommand",
-                               VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT,
-                               VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
+            renderGraph.readBuffer("SingleIndirectCommand",
+                                   VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT,
+                                   VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
+        }
 
         renderGraph.writeImage("VisBuffer",
                                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
@@ -75,7 +77,7 @@ namespace Engine {
         VisibilityPushConstants pushConsts{};
         pushConsts.viewProjection = clipMatrix * projection * view;
         pushConsts.cameraPos = frameInfo.cullCameraPos;
-        
+
         glm::mat4 tvp = glm::transpose(frameInfo.cullViewProj);
         pushConsts.frustumPlanes[0] = tvp[3] + tvp[0]; // Left
         pushConsts.frustumPlanes[1] = tvp[3] - tvp[0]; // Right
@@ -241,7 +243,7 @@ namespace Engine {
         rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
         rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
         rasterizer.lineWidth = 1.0f;
-        rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+        rasterizer.cullMode = VK_CULL_MODE_NONE;
         rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 
         VkPipelineMultisampleStateCreateInfo multisampling {};
@@ -300,6 +302,7 @@ namespace Engine {
 
     void VisibilityPassNode::createMeshPipeline()
     {
+        // 1. Create meshPipelineLayout
         VkPushConstantRange pushConstantRange {};
         pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_TASK_BIT_EXT;
         pushConstantRange.offset = 0;
@@ -316,6 +319,7 @@ namespace Engine {
 
         vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &meshPipelineLayout);
 
+        // 2. Create Pipeline
         auto taskCode = ShaderUtils::readFile("shaders/meshlet.task.spv");
         auto meshCode = ShaderUtils::readFile("shaders/triangle.mesh.spv");
         auto fragCode = ShaderUtils::readFile("shaders/visbuffer_mesh.frag.spv");
@@ -406,4 +410,3 @@ namespace Engine {
     }
 
 } // namespace Engine
-

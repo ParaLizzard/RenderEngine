@@ -42,6 +42,7 @@ namespace Engine {
         //assetStreamer.enqueueLoad("models/pbr_sphere.glb");
         //assetStreamer.enqueueLoad("models/square.glb");
         assetStreamer.enqueueLoad("models/sponza_optimized.glb");
+        //assetStreamer.enqueueLoad("models/model.glb");
         assetStreamer.enqueueLoad("C:/Users/Jan Varga/Downloads/pkg_a_curtains/pkg_a_curtains/NewSponza_Curtains_glTF.gltf");
         //assetStreamer.enqueueLoad("C:/Users/Jan Varga/Downloads/Sponza-crytek/Sponza.gltf");
 
