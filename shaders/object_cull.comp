@@ -16,8 +16,6 @@ layout(std430, set = 0, binding = 5) readonly buffer ObjectBuffer {
     ObjectData objects[];
 };
 
-// --- CullPass Local Buffers (set = 1) ---
-
 layout(std430, set = 1, binding = 0) buffer DispatchCommandBuffer {
     uint dispatchX;
     uint dispatchY;
@@ -38,6 +36,7 @@ layout(push_constant) uniform PushConsts {
     float projM11;
     uint objectCapacity;
     uint clipPlaneCount;
+    uint targetAlphaMode; // 0 = Opaque, 1 = Mask
 } push;
 
 const float SUBPIXEL_THRESHOLD = 0.0005;
@@ -48,16 +47,21 @@ void main() {
 
     ObjectData obj = objects[objectID];
 
-    if (obj.meshletCount == 0 || (obj.alphaMode & 3u) == 2) {
+    if (obj.meshletCount == 0 || (obj.alphaMode & 3u) == 2u) {
         return;
     }
 
-    // 1. Calculate World Space Sphere
+    if (push.targetAlphaMode == 0u && (obj.alphaMode & 3u) != 0u) {
+        return;
+    }
+    if (push.targetAlphaMode == 1u && (obj.alphaMode & 3u) != 1u) {
+        return;
+    }
+
     vec4 sphere = obj.boundingSphere;
     vec3 localCenter = sphere.xyz;
     vec3 worldCenter = (obj.modelMatrix * vec4(localCenter, 1.0)).xyz;
-    
-    // Scale radius by object transform
+
     float sqX = dot(obj.modelMatrix[0].xyz, obj.modelMatrix[0].xyz);
     float sqY = dot(obj.modelMatrix[1].xyz, obj.modelMatrix[1].xyz);
     float sqZ = dot(obj.modelMatrix[2].xyz, obj.modelMatrix[2].xyz);
@@ -69,7 +73,6 @@ void main() {
     bool enableContributionCull = true;
     // -------------------
 
-    // 2. Frustum Culling
     bool visible = true;
     if (enableFrustumCull) {
         for (uint i = 0u; i < push.clipPlaneCount; i++) {
@@ -80,7 +83,6 @@ void main() {
         }
     }
 
-    // 3. Contribution Culling
     if (visible && enableContributionCull) {
         vec3 camToCenter = worldCenter - push.cameraPos;
         float dist = length(camToCenter);

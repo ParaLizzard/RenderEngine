@@ -39,6 +39,7 @@ namespace Engine {
         void createPipelineLayout();
         void createPipeline();
         void createMeshPipeline();
+        void createMaskedPipeline();
 
         Device &device;
         Renderer &renderer;
@@ -50,6 +51,9 @@ namespace Engine {
         VkPipeline pipeline;
         VkPipeline meshPipeline {VK_NULL_HANDLE};
         VkPipelineLayout meshPipelineLayout {VK_NULL_HANDLE};
+        VkPipelineLayout maskedPipelineLayout {VK_NULL_HANDLE};
+        VkPipeline       maskedPipeline       {VK_NULL_HANDLE};
+
         PFN_vkCmdDrawMeshTasksIndirectEXT pfn_vkCmdDrawMeshTasksIndirectEXT = nullptr;
         PFN_vkCmdDrawMeshTasksEXT pfn_vkCmdDrawMeshTasksEXT = nullptr;
 

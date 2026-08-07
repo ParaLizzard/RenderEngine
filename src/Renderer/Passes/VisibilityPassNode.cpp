@@ -14,6 +14,7 @@ namespace Engine {
     {
         createPipelineLayout();
         createPipeline();
+        createMaskedPipeline();
         
         if (device.isMeshShaderSupported()) {
             pfn_vkCmdDrawMeshTasksEXT = (PFN_vkCmdDrawMeshTasksEXT)vkGetInstanceProcAddr(device.getInstance(), "vkCmdDrawMeshTasksEXT");
@@ -35,6 +36,10 @@ namespace Engine {
             vkDestroyPipelineLayout(device.getDevice(), pipelineLayout, nullptr);
         if (meshPipelineLayout != VK_NULL_HANDLE)
             vkDestroyPipelineLayout(device.getDevice(), meshPipelineLayout, nullptr);
+        if (maskedPipeline != VK_NULL_HANDLE)
+            vkDestroyPipeline(device.getDevice(), maskedPipeline, nullptr);
+        if (maskedPipelineLayout != VK_NULL_HANDLE)
+            vkDestroyPipelineLayout(device.getDevice(), maskedPipelineLayout, nullptr);
     }
 
     void VisibilityPassNode::setup(RenderGraphBuilder &renderGraph)
@@ -51,6 +56,14 @@ namespace Engine {
                                    VK_ACCESS_2_SHADER_READ_BIT);
 
             renderGraph.readBuffer("SingleIndirectCommand",
+                                   VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT,
+                                   VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
+
+            renderGraph.readBuffer("MaskedCompactedIndexBuffer",
+                                   VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT,
+                                   VK_ACCESS_2_SHADER_READ_BIT);
+
+            renderGraph.readBuffer("MaskedSingleIndirectCommand",
                                    VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT,
                                    VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
         }
@@ -107,8 +120,6 @@ namespace Engine {
         colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         colorAttachment.clearValue.color.uint32[0] = 0;
         colorAttachment.clearValue.color.uint32[1] = 0;
-        // colorAttachment.clearValue.color.uint32[0] = 0xFFFFFFFF;
-        //  colorAttachment.clearValue.color.uint32[1] = 0xFFFFFFFF;
 
         VkRenderingAttachmentInfo depthAttachment {};
         depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -165,7 +176,7 @@ namespace Engine {
 
             vkCmdPushConstants(cmd,
                                pipelineLayout,
-                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_TASK_BIT_EXT,
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                                0,
                                sizeof(VisibilityPushConstants),
                                &pushConsts);
@@ -176,6 +187,31 @@ namespace Engine {
                               1,
                               sizeof(VkDrawIndirectCommand));
         }
+
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, maskedPipeline);
+
+        VkDescriptorSet maskedSets[] = {
+            resourceHeap.getDescriptorSet(currentFrame),
+            cullPass.getMaskedObjectDescriptorSet(currentFrame)
+        };
+        vkCmdBindDescriptorSets(cmd,
+                                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                maskedPipelineLayout,
+                                0, 2, maskedSets,
+                                0, nullptr);
+
+        vkCmdPushConstants(cmd,
+                           maskedPipelineLayout,
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0,
+                           sizeof(VisibilityPushConstants),
+                           &pushConsts);
+
+        vkCmdDrawIndirect(cmd,
+                          cullPass.getMaskedSingleIndirectCommandBuffer(currentFrame),
+                          0,
+                          1,
+                          sizeof(VkDrawIndirectCommand));
 
         vkCmdEndRendering(cmd);
     }
@@ -188,7 +224,7 @@ namespace Engine {
     void VisibilityPassNode::createPipelineLayout()
     {
         VkPushConstantRange pushConstantRange {};
-        pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_TASK_BIT_EXT;
+        pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
         pushConstantRange.offset = 0;
         pushConstantRange.size = sizeof(VisibilityPushConstants);
 
@@ -302,7 +338,6 @@ namespace Engine {
 
     void VisibilityPassNode::createMeshPipeline()
     {
-        // 1. Create meshPipelineLayout
         VkPushConstantRange pushConstantRange {};
         pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_TASK_BIT_EXT;
         pushConstantRange.offset = 0;
@@ -319,7 +354,6 @@ namespace Engine {
 
         vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &meshPipelineLayout);
 
-        // 2. Create Pipeline
         auto taskCode = ShaderUtils::readFile("shaders/meshlet.task.spv");
         auto meshCode = ShaderUtils::readFile("shaders/triangle.mesh.spv");
         auto fragCode = ShaderUtils::readFile("shaders/visbuffer_mesh.frag.spv");
@@ -407,6 +441,122 @@ namespace Engine {
         vkDestroyShaderModule(device.getDevice(), taskShaderModule, nullptr);
         vkDestroyShaderModule(device.getDevice(), meshShaderModule, nullptr);
         vkDestroyShaderModule(device.getDevice(), fragShaderModule, nullptr);
+    }
+
+    void VisibilityPassNode::createMaskedPipeline()
+    {
+        VkShaderStageFlags stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+        if (device.isMeshShaderSupported()) {
+            stageFlags |= VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_TASK_BIT_EXT;
+        }
+
+        VkPushConstantRange pushConstantRange {};
+        pushConstantRange.stageFlags = stageFlags;
+        pushConstantRange.offset = 0;
+        pushConstantRange.size = sizeof(VisibilityPushConstants);
+
+        VkDescriptorSetLayout layouts[] = {resourceHeap.getDescriptorSetLayout(), cullPass.getObjectSetLayout()};
+
+        VkPipelineLayoutCreateInfo pipelineLayoutInfo {};
+        pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        pipelineLayoutInfo.pushConstantRangeCount = 1;
+        pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
+        pipelineLayoutInfo.setLayoutCount = 2;
+        pipelineLayoutInfo.pSetLayouts = layouts;
+
+        if (vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &maskedPipelineLayout) != VK_SUCCESS) {
+            throw std::runtime_error("VisibilityPassNode: failed to create masked pipeline layout");
+        }
+
+        auto vertCode = ShaderUtils::readFile("shaders/visbuffer_masked.vert.spv");
+        auto fragCode = ShaderUtils::readFile("shaders/visbuffer_masked.frag.spv");
+
+        VkShaderModule vertModule = ShaderUtils::createShaderModule(device.getDevice(), vertCode);
+        VkShaderModule fragModule = ShaderUtils::createShaderModule(device.getDevice(), fragCode);
+
+        VkPipelineShaderStageCreateInfo stages[2] {};
+        stages[0].sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        stages[0].stage  = VK_SHADER_STAGE_VERTEX_BIT;
+        stages[0].module = vertModule;
+        stages[0].pName  = "main";
+
+        stages[1].sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        stages[1].stage  = VK_SHADER_STAGE_FRAGMENT_BIT;
+        stages[1].module = fragModule;
+        stages[1].pName  = "main";
+
+        VkPipelineVertexInputStateCreateInfo vertexInputInfo {};
+        vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+
+        VkPipelineInputAssemblyStateCreateInfo inputAssembly {};
+        inputAssembly.sType    = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+        inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+        VkPipelineViewportStateCreateInfo viewportState {};
+        viewportState.sType         = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+        viewportState.viewportCount = 1;
+        viewportState.scissorCount  = 1;
+
+        VkPipelineRasterizationStateCreateInfo rasterizer {};
+        rasterizer.sType       = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+        rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+        rasterizer.lineWidth   = 1.0f;
+        rasterizer.cullMode    = VK_CULL_MODE_NONE;
+        rasterizer.frontFace   = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+
+        VkPipelineMultisampleStateCreateInfo multisampling {};
+        multisampling.sType                = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+        multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+        VkPipelineDepthStencilStateCreateInfo depthStencil {};
+        depthStencil.sType            = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+        depthStencil.depthTestEnable  = VK_TRUE;
+        depthStencil.depthWriteEnable = VK_TRUE;
+        depthStencil.depthCompareOp   = VK_COMPARE_OP_LESS;
+
+        VkPipelineColorBlendAttachmentState colorBlendAttachment {};
+        colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT;
+        colorBlendAttachment.blendEnable    = VK_FALSE;
+
+        VkPipelineColorBlendStateCreateInfo colorBlending {};
+        colorBlending.sType           = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+        colorBlending.attachmentCount = 1;
+        colorBlending.pAttachments    = &colorBlendAttachment;
+
+        std::vector<VkDynamicState> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+        VkPipelineDynamicStateCreateInfo dynamicState {};
+        dynamicState.sType             = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+        dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+        dynamicState.pDynamicStates    = dynamicStates.data();
+
+        VkFormat visBufferFormat = VK_FORMAT_R32G32_UINT;
+        VkPipelineRenderingCreateInfo renderingCreateInfo {};
+        renderingCreateInfo.sType                   = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+        renderingCreateInfo.colorAttachmentCount    = 1;
+        renderingCreateInfo.pColorAttachmentFormats = &visBufferFormat;
+        renderingCreateInfo.depthAttachmentFormat   = VK_FORMAT_D32_SFLOAT;
+
+        VkGraphicsPipelineCreateInfo pipelineInfo {};
+        pipelineInfo.sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+        pipelineInfo.pNext               = &renderingCreateInfo;
+        pipelineInfo.stageCount          = 2;
+        pipelineInfo.pStages             = stages;
+        pipelineInfo.pVertexInputState   = &vertexInputInfo;
+        pipelineInfo.pInputAssemblyState = &inputAssembly;
+        pipelineInfo.pViewportState      = &viewportState;
+        pipelineInfo.pRasterizationState = &rasterizer;
+        pipelineInfo.pMultisampleState   = &multisampling;
+        pipelineInfo.pDepthStencilState  = &depthStencil;
+        pipelineInfo.pColorBlendState    = &colorBlending;
+        pipelineInfo.pDynamicState       = &dynamicState;
+        pipelineInfo.layout              = maskedPipelineLayout;
+
+        if (vkCreateGraphicsPipelines(device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, nullptr, &maskedPipeline) != VK_SUCCESS) {
+            throw std::runtime_error("VisibilityPassNode: failed to create masked pipeline");
+        }
+
+        vkDestroyShaderModule(device.getDevice(), vertModule, nullptr);
+        vkDestroyShaderModule(device.getDevice(), fragModule, nullptr);
     }
 
 } // namespace Engine

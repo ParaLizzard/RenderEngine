@@ -42,6 +42,7 @@ namespace Engine {
 
         void createPipelineLayout();
         void createPipeline();
+        void createMaskedPipeline();
         void updateDescriptors();
 
         Device &device;
@@ -52,6 +53,8 @@ namespace Engine {
 
         VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
         VkPipeline pipeline = VK_NULL_HANDLE;
+        VkPipelineLayout maskedPipelineLayout = VK_NULL_HANDLE;
+        VkPipeline maskedPipeline = VK_NULL_HANDLE;
 
         VkPipelineLayout computePipelineLayout = VK_NULL_HANDLE;
         VkPipeline computePipeline = VK_NULL_HANDLE;

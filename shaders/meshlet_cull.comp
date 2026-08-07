@@ -71,6 +71,7 @@ layout(push_constant) uniform PushConsts {
     float projM11;
     uint objectCapacity;
     uint clipPlaneCount;
+    uint targetAlphaMode;
 } push;
 
 const float SUBPIXEL_THRESHOLD = 0.0005;

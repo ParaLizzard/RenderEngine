@@ -69,14 +69,17 @@ namespace Engine {
 
         std::array<VkDescriptorPoolSize, 1> poolSizes {};
         poolSizes[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        poolSizes[0].descriptorCount = Config::MAX_FRAMES_IN_FLIGHT * 8;
+        poolSizes[0].descriptorCount = Config::MAX_FRAMES_IN_FLIGHT * 8 * 2;
 
         VkDescriptorPoolCreateInfo poolInfo {};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
         poolInfo.pPoolSizes = poolSizes.data();
-        poolInfo.maxSets = Config::MAX_FRAMES_IN_FLIGHT;
+        poolInfo.maxSets = Config::MAX_FRAMES_IN_FLIGHT * 2;
         vkCreateDescriptorPool(device.getDevice(), &poolInfo, nullptr, &objectDescriptorPool);
+
+        objectDescriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        maskedObjectDescriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
 
         gpuDispatchCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
         gpuVisibleObjectBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
@@ -88,6 +91,17 @@ namespace Engine {
         visibleMeshletBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
         taskWorkgroupBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
         taskDispatchCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
+
+        gpuMaskedDispatchCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        gpuMaskedVisibleObjectBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        maskedCompactedIndexBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        maskedSingleIndirectCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        maskedTriangleDispatchCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        maskedVisibleMeshletBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
+
+        gpuMaskedIndirectCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        gpuMaskedDrawCountBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
+
 
         for (uint32_t i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
             gpuDispatchCommandBuffers[i] =
@@ -144,6 +158,60 @@ namespace Engine {
                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                          0);
 
+            gpuMaskedDispatchCommandBuffers[i] =
+                std::make_unique<Buffer>(device,
+                                         sizeof(VkDispatchIndirectCommand),
+                                         1,
+                                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                         VMA_MEMORY_USAGE_GPU_ONLY,
+                                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                         0);
+
+            gpuMaskedVisibleObjectBuffers[i] =
+                std::make_unique<Buffer>(device,
+                                         sizeof(uint32_t),
+                                         Config::MAX_SCENE_OBJECTS,
+                                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                         VMA_MEMORY_USAGE_GPU_ONLY,
+                                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                         0);
+
+            maskedCompactedIndexBuffers[i] =
+                std::make_unique<Buffer>(device,
+                                         sizeof(uint32_t),
+                                         Config::MAX_SCENE_OBJECTS * Config::MAX_TRIANGLES * 3,
+                                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
+                                         VMA_MEMORY_USAGE_GPU_ONLY,
+                                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                         0);
+
+            maskedSingleIndirectCommandBuffers[i] =
+                std::make_unique<Buffer>(device,
+                                         sizeof(VkDrawIndexedIndirectCommand),
+                                         1,
+                                         VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                         VMA_MEMORY_USAGE_CPU_TO_GPU,
+                                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                         0);
+
+            maskedTriangleDispatchCommandBuffers[i] =
+                std::make_unique<Buffer>(device,
+                                         sizeof(VkDispatchIndirectCommand),
+                                         1,
+                                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                         VMA_MEMORY_USAGE_GPU_ONLY,
+                                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                         0);
+
+            maskedVisibleMeshletBuffers[i] =
+                std::make_unique<Buffer>(device,
+                                         sizeof(uint32_t) * 2,
+                                         Config::MAX_SCENE_OBJECTS * 100,
+                                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                         VMA_MEMORY_USAGE_GPU_ONLY,
+                                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                         0);
+
             taskWorkgroupBuffers[i] =
                 std::make_unique<Buffer>(device,
                                          sizeof(uint32_t) * 2,
@@ -180,6 +248,15 @@ namespace Engine {
                                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                          0);
 
+            gpuMaskedIndirectCommandBuffers[i] =
+                std::make_unique<Buffer>(device,
+                                         sizeof(VkDrawIndexedIndirectCommand),
+                                         Config::MAX_SCENE_OBJECTS,
+                                         VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                         VMA_MEMORY_USAGE_CPU_TO_GPU,
+                                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                         0);
+
             VkDescriptorSetAllocateInfo allocInfo {};
             allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
             allocInfo.descriptorPool = objectDescriptorPool;
@@ -187,6 +264,9 @@ namespace Engine {
             allocInfo.pSetLayouts = &objectSetLayout;
             if (vkAllocateDescriptorSets(device.getDevice(), &allocInfo, &objectDescriptorSets[i]) != VK_SUCCESS) {
                 throw std::runtime_error("Failed to allocate object descriptor sets in CullPassNode");
+            }
+            if (vkAllocateDescriptorSets(device.getDevice(), &allocInfo, &maskedObjectDescriptorSets[i]) != VK_SUCCESS) {
+                throw std::runtime_error("Failed to allocate masked object descriptor sets in CullPassNode");
             }
 
             VkDescriptorBufferInfo dispatchInfo = gpuDispatchCommandBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
@@ -256,11 +336,28 @@ namespace Engine {
             descriptorWrites[7].descriptorCount = 1;
             descriptorWrites[7].pBufferInfo = &taskDispatchInfo;
 
-            vkUpdateDescriptorSets(device.getDevice(),
-                                   static_cast<uint32_t>(descriptorWrites.size()),
-                                   descriptorWrites.data(),
-                                   0,
-                                   nullptr);
+            vkUpdateDescriptorSets(device.getDevice(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+
+            // Writes for masked object descriptor set
+            VkDescriptorBufferInfo maskedDispatchInfo = gpuMaskedDispatchCommandBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
+            VkDescriptorBufferInfo maskedVisibleObjInfo = gpuMaskedVisibleObjectBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
+            VkDescriptorBufferInfo maskedSingleIndirectInfo = maskedSingleIndirectCommandBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
+            VkDescriptorBufferInfo maskedCompactedInfo = maskedCompactedIndexBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
+            VkDescriptorBufferInfo maskedVisibleMeshletsInfo = maskedVisibleMeshletBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
+            VkDescriptorBufferInfo maskedTriangleDispatchInfo = maskedTriangleDispatchCommandBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
+
+            std::array<VkWriteDescriptorSet, 8> maskedDescriptorWrites = descriptorWrites;
+            for (auto &w : maskedDescriptorWrites) {
+                w.dstSet = maskedObjectDescriptorSets[i];
+            }
+            maskedDescriptorWrites[0].pBufferInfo = &maskedDispatchInfo;
+            maskedDescriptorWrites[1].pBufferInfo = &maskedVisibleObjInfo;
+            maskedDescriptorWrites[2].pBufferInfo = &maskedSingleIndirectInfo;
+            maskedDescriptorWrites[3].pBufferInfo = &maskedCompactedInfo;
+            maskedDescriptorWrites[4].pBufferInfo = &maskedVisibleMeshletsInfo;
+            maskedDescriptorWrites[5].pBufferInfo = &maskedTriangleDispatchInfo;
+
+            vkUpdateDescriptorSets(device.getDevice(), static_cast<uint32_t>(maskedDescriptorWrites.size()), maskedDescriptorWrites.data(), 0, nullptr);
         }
 
         createPipeline();
@@ -421,6 +518,14 @@ namespace Engine {
             renderGraph.writeBuffer("SingleIndirectCommand",
                                     VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                                     VK_ACCESS_2_SHADER_WRITE_BIT);
+
+            renderGraph.writeBuffer("MaskedCompactedIndexBuffer",
+                                 VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                                 VK_ACCESS_2_SHADER_WRITE_BIT);
+
+            renderGraph.writeBuffer("MaskedSingleIndirectCommand",
+                                    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                                    VK_ACCESS_2_SHADER_WRITE_BIT);
         }
     }
 
@@ -434,23 +539,28 @@ namespace Engine {
         if (sceneDirty) {
             opaqueDraws.clear();
             indirectCommandsArray.clear();
+            maskedDraws.clear();
+            maskedIndirectCommandsArray.clear();
 
             for (size_t i = 0; i < frameInfo.gameObjects->size(); i++) {
                 const auto &obj = (*frameInfo.gameObjects)[i];
                 if (obj.subMesh.indexCount == 0)
                     continue;
-                if (obj.alphaMode == AlphaMode::Blend)
-                    continue;
 
-                opaqueDraws.push_back(&obj);
-
-                VkDrawIndexedIndirectCommand cmdCommand {};
-                cmdCommand.indexCount = obj.subMesh.indexCount;
+                VkDrawIndexedIndirectCommand cmdCommand{};
+                cmdCommand.indexCount    = obj.subMesh.indexCount;
                 cmdCommand.instanceCount = 1;
-                cmdCommand.firstIndex = obj.subMesh.firstIndex;
-                cmdCommand.vertexOffset = obj.subMesh.vertexOffset;
+                cmdCommand.firstIndex    = obj.subMesh.firstIndex;
+                cmdCommand.vertexOffset  = obj.subMesh.vertexOffset;
                 cmdCommand.firstInstance = static_cast<uint32_t>(i);
-                indirectCommandsArray.push_back(cmdCommand);
+
+                if (obj.alphaMode == AlphaMode::Opaque) {
+                    opaqueDraws.push_back(&obj);
+                    indirectCommandsArray.push_back(cmdCommand);
+                } else if (obj.alphaMode == AlphaMode::Mask) {
+                    maskedDraws.push_back(&obj);
+                    maskedIndirectCommandsArray.push_back(cmdCommand);
+                }
             }
 
             framesToUpdate = Config::MAX_FRAMES_IN_FLIGHT;
@@ -465,34 +575,37 @@ namespace Engine {
                     0);
                 gpuIndirectCommandBuffers[currentFrame]->flush(VK_WHOLE_SIZE, 0);
             }
+
+            if (!maskedIndirectCommandsArray.empty()) {
+                gpuMaskedIndirectCommandBuffers[currentFrame]->writeToBuffer(
+                    maskedIndirectCommandsArray.data(),
+                    maskedIndirectCommandsArray.size() * sizeof(VkDrawIndexedIndirectCommand),
+                    0);
+                gpuMaskedIndirectCommandBuffers[currentFrame]->flush(VK_WHOLE_SIZE, 0);
+            }
+
             framesToUpdate--;
         }
 
-        if (!indirectCommandsArray.empty()) {
+        uint32_t totalObjects = static_cast<uint32_t>(frameInfo.gameObjects->size());
+        if (totalObjects > 0) {
             VkDispatchIndirectCommand dispatchCmd{0, 1, 1};
-            vkCmdUpdateBuffer(
-                cmd,
-                gpuDispatchCommandBuffers[currentFrame]->getBuffer(),
-                0,
-                sizeof(VkDispatchIndirectCommand),
-                &dispatchCmd
-            );
+            vkCmdUpdateBuffer(cmd, gpuDispatchCommandBuffers[currentFrame]->getBuffer(), 0, sizeof(VkDispatchIndirectCommand), &dispatchCmd);
+            vkCmdUpdateBuffer(cmd, gpuMaskedDispatchCommandBuffers[currentFrame]->getBuffer(), 0, sizeof(VkDispatchIndirectCommand), &dispatchCmd);
 
             std::vector<VkBufferMemoryBarrier2> transferBarriers;
             transferBarriers.push_back(VkUtils::bufferBarrier(
                 gpuDispatchCommandBuffers[currentFrame]->getBuffer(), 0, VK_WHOLE_SIZE,
                 VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
                 VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT));
+            transferBarriers.push_back(VkUtils::bufferBarrier(
+                gpuMaskedDispatchCommandBuffers[currentFrame]->getBuffer(), 0, VK_WHOLE_SIZE,
+                VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT));
 
             if (device.isMeshShaderSupported()) {
                 VkDispatchIndirectCommand taskDispatchCmd{0, 1, 1};
-                vkCmdUpdateBuffer(
-                    cmd,
-                    taskDispatchCommandBuffers[currentFrame]->getBuffer(),
-                    0,
-                    sizeof(VkDispatchIndirectCommand),
-                    &taskDispatchCmd
-                );
+                vkCmdUpdateBuffer(cmd, taskDispatchCommandBuffers[currentFrame]->getBuffer(), 0, sizeof(VkDispatchIndirectCommand), &taskDispatchCmd);
 
                 transferBarriers.push_back(VkUtils::bufferBarrier(
                     taskDispatchCommandBuffers[currentFrame]->getBuffer(), 0, VK_WHOLE_SIZE,
@@ -500,49 +613,32 @@ namespace Engine {
                     VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT));
             } else {
                 VkDrawIndirectCommand initialCmd{0, 1, 0, 0};
-                vkCmdUpdateBuffer(
-                    cmd,
-                    singleIndirectCommandBuffers[currentFrame]->getBuffer(),
-                    0,
-                    sizeof(VkDrawIndirectCommand),
-                    &initialCmd
-                );
+                vkCmdUpdateBuffer(cmd, singleIndirectCommandBuffers[currentFrame]->getBuffer(), 0, sizeof(VkDrawIndirectCommand), &initialCmd);
+                vkCmdUpdateBuffer(cmd, maskedSingleIndirectCommandBuffers[currentFrame]->getBuffer(), 0, sizeof(VkDrawIndirectCommand), &initialCmd);
 
                 VkDispatchIndirectCommand triDispatchCmd{0, 1, 1};
-                vkCmdUpdateBuffer(
-                    cmd,
-                    triangleDispatchCommandBuffers[currentFrame]->getBuffer(),
-                    0,
-                    sizeof(VkDispatchIndirectCommand),
-                    &triDispatchCmd
-                );
+                vkCmdUpdateBuffer(cmd, triangleDispatchCommandBuffers[currentFrame]->getBuffer(), 0, sizeof(VkDispatchIndirectCommand), &triDispatchCmd);
+                vkCmdUpdateBuffer(cmd, maskedTriangleDispatchCommandBuffers[currentFrame]->getBuffer(), 0, sizeof(VkDispatchIndirectCommand), &triDispatchCmd);
 
                 transferBarriers.push_back(VkUtils::bufferBarrier(
                     singleIndirectCommandBuffers[currentFrame]->getBuffer(), 0, VK_WHOLE_SIZE,
                     VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
                     VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT));
                 transferBarriers.push_back(VkUtils::bufferBarrier(
+                    maskedSingleIndirectCommandBuffers[currentFrame]->getBuffer(), 0, VK_WHOLE_SIZE,
+                    VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT));
+                transferBarriers.push_back(VkUtils::bufferBarrier(
                     triangleDispatchCommandBuffers[currentFrame]->getBuffer(), 0, VK_WHOLE_SIZE,
+                    VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT));
+                transferBarriers.push_back(VkUtils::bufferBarrier(
+                    maskedTriangleDispatchCommandBuffers[currentFrame]->getBuffer(), 0, VK_WHOLE_SIZE,
                     VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
                     VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT));
             }
 
             VkUtils::pipelineBarrier(cmd, 0, 0, 0, 0, {}, transferBarriers);
-
-            VkDescriptorSet sets[] = {
-                resourceHeap.getDescriptorSet(currentFrame),
-                objectDescriptorSets[currentFrame]
-            };
-            vkCmdBindDescriptorSets(
-                cmd,
-                VK_PIPELINE_BIND_POINT_COMPUTE,
-                computePipelineLayout,
-                0,
-                2,
-                sets,
-                0,
-                nullptr
-            );
 
             ComputePushConstants compPc {};
             compPc.viewProj  = viewProjection;
@@ -562,90 +658,92 @@ namespace Engine {
             }
 
             compPc.cullFlags          = frameInfo.cullEnabled ? 1 : 0;
-
-
             compPc.objectCount       = megaBuffer.getMeshletCount();
-            compPc.actualObjectCount = static_cast<uint32_t>(frameInfo.gameObjects->size());
+            compPc.actualObjectCount = totalObjects;
             compPc.projM11           = projection[1][1];
             compPc.objectCapacity    = Config::MAX_SCENE_OBJECTS;
             compPc.clipPlaneCount    = 6;
 
-            vkCmdPushConstants(
-                cmd,
-                computePipelineLayout,
-                VK_SHADER_STAGE_COMPUTE_BIT,
-                0,
-                sizeof(ComputePushConstants),
-                &compPc
-            );
+            auto runCullPipelinePass = [&](VkDescriptorSet cullSet, uint32_t alphaModeTag) {
+                compPc.targetAlphaMode = alphaModeTag;
 
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, objectCullPipeline);
-            uint32_t objectGroupCount = (compPc.actualObjectCount + Config::CULL_WORKGROUP_SIZE - 1) / Config::CULL_WORKGROUP_SIZE;
-            vkCmdDispatch(cmd, objectGroupCount, 1, 1);
+                VkDescriptorSet sets[] = {
+                    resourceHeap.getDescriptorSet(currentFrame),
+                    cullSet
+                };
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipelineLayout, 0, 2, sets, 0, nullptr);
+                vkCmdPushConstants(cmd, computePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ComputePushConstants), &compPc);
 
-            std::vector<VkBufferMemoryBarrier2> objectCullBarriers = {
-                VkUtils::bufferBarrier(
-                    gpuDispatchCommandBuffers[currentFrame]->getBuffer(), 0, VK_WHOLE_SIZE,
-                    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
-                    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT,
-                    VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT),
-                VkUtils::bufferBarrier(
-                    gpuVisibleObjectBuffers[currentFrame]->getBuffer(), 0, VK_WHOLE_SIZE,
-                    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
-                    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT)
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, objectCullPipeline);
+                uint32_t objectGroupCount = (compPc.actualObjectCount + Config::CULL_WORKGROUP_SIZE - 1) / Config::CULL_WORKGROUP_SIZE;
+                vkCmdDispatch(cmd, objectGroupCount, 1, 1);
+
+                VkMemoryBarrier2 objCullBarrier{};
+                objCullBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+                objCullBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+                objCullBarrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+                objCullBarrier.dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+                objCullBarrier.dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_2_SHADER_READ_BIT;
+
+                VkDependencyInfo objCullDep{};
+                objCullDep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+                objCullDep.memoryBarrierCount = 1;
+                objCullDep.pMemoryBarriers = &objCullBarrier;
+                vkCmdPipelineBarrier2(cmd, &objCullDep);
+
+                if (device.isMeshShaderSupported() && alphaModeTag == 0) {
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, taskSubmitPipeline);
+                    vkCmdDispatchIndirect(cmd, gpuDispatchCommandBuffers[currentFrame]->getBuffer(), 0);
+
+                    VkMemoryBarrier2 taskSubmitBarrier{};
+                    taskSubmitBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+                    taskSubmitBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+                    taskSubmitBarrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+                    taskSubmitBarrier.dstStageMask = VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
+                    taskSubmitBarrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
+
+                    VkDependencyInfo taskSubmitDep{};
+                    taskSubmitDep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+                    taskSubmitDep.memoryBarrierCount = 1;
+                    taskSubmitDep.pMemoryBarriers = &taskSubmitBarrier;
+                    vkCmdPipelineBarrier2(cmd, &taskSubmitDep);
+                } else {
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, meshletCullPipeline);
+                    vkCmdDispatchIndirect(cmd, (alphaModeTag == 0 ? gpuDispatchCommandBuffers[currentFrame] : gpuMaskedDispatchCommandBuffers[currentFrame])->getBuffer(), 0);
+
+                    VkMemoryBarrier2 meshletCullBarrier{};
+                    meshletCullBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+                    meshletCullBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+                    meshletCullBarrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+                    meshletCullBarrier.dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+                    meshletCullBarrier.dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_2_SHADER_READ_BIT;
+
+                    VkDependencyInfo meshletCullDep{};
+                    meshletCullDep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+                    meshletCullDep.memoryBarrierCount = 1;
+                    meshletCullDep.pMemoryBarriers = &meshletCullBarrier;
+                    vkCmdPipelineBarrier2(cmd, &meshletCullDep);
+
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, triangleCullPipeline);
+                    vkCmdDispatchIndirect(cmd, (alphaModeTag == 0 ? triangleDispatchCommandBuffers[currentFrame] : maskedTriangleDispatchCommandBuffers[currentFrame])->getBuffer(), 0);
+
+                    VkMemoryBarrier2 triangleCullBarrier{};
+                    triangleCullBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+                    triangleCullBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+                    triangleCullBarrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+                    triangleCullBarrier.dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
+                    triangleCullBarrier.dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_2_SHADER_READ_BIT;
+
+                    VkDependencyInfo triangleCullDep{};
+                    triangleCullDep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+                    triangleCullDep.memoryBarrierCount = 1;
+                    triangleCullDep.pMemoryBarriers = &triangleCullBarrier;
+                    vkCmdPipelineBarrier2(cmd, &triangleCullDep);
+                }
             };
 
-            VkUtils::pipelineBarrier(cmd, 0, 0, 0, 0, {}, objectCullBarriers);
-
-            if (device.isMeshShaderSupported()) {
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, taskSubmitPipeline);
-                vkCmdDispatchIndirect(cmd, gpuDispatchCommandBuffers[currentFrame]->getBuffer(), 0);
-
-                std::vector<VkBufferMemoryBarrier2> taskSubmitBarriers = {
-                    VkUtils::bufferBarrier(
-                        taskWorkgroupBuffers[currentFrame]->getBuffer(), 0, VK_WHOLE_SIZE,
-                        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
-                        VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT, VK_ACCESS_2_SHADER_READ_BIT),
-                    VkUtils::bufferBarrier(
-                        taskDispatchCommandBuffers[currentFrame]->getBuffer(), 0, VK_WHOLE_SIZE,
-                        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
-                        VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT)
-                };
-
-                VkUtils::pipelineBarrier(cmd, 0, 0, 0, 0, {}, taskSubmitBarriers);
-            } else {
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, meshletCullPipeline);
-                vkCmdDispatchIndirect(cmd, gpuDispatchCommandBuffers[currentFrame]->getBuffer(), 0);
-
-                VkMemoryBarrier2 meshletCullBarrier{};
-                meshletCullBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-                meshletCullBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-                meshletCullBarrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
-                meshletCullBarrier.dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-                meshletCullBarrier.dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_2_SHADER_READ_BIT;
-
-                VkDependencyInfo meshletCullDep{};
-                meshletCullDep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-                meshletCullDep.memoryBarrierCount = 1;
-                meshletCullDep.pMemoryBarriers = &meshletCullBarrier;
-                vkCmdPipelineBarrier2(cmd, &meshletCullDep);
-
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, triangleCullPipeline);
-                vkCmdDispatchIndirect(cmd, triangleDispatchCommandBuffers[currentFrame]->getBuffer(), 0);
-
-                VkMemoryBarrier2 triangleCullBarrier{};
-                triangleCullBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-                triangleCullBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-                triangleCullBarrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
-                triangleCullBarrier.dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
-                triangleCullBarrier.dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_2_SHADER_READ_BIT;
-
-                VkDependencyInfo triangleCullDep{};
-                triangleCullDep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-                triangleCullDep.memoryBarrierCount = 1;
-                triangleCullDep.pMemoryBarriers = &triangleCullBarrier;
-                vkCmdPipelineBarrier2(cmd, &triangleCullDep);
-            }
+            runCullPipelinePass(objectDescriptorSets[currentFrame], 0);
+            runCullPipelinePass(maskedObjectDescriptorSets[currentFrame], 1);
         }
     }
 

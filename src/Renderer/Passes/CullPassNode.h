@@ -21,9 +21,8 @@ namespace Engine {
         float projM11;
         uint32_t objectCapacity;
         uint32_t clipPlaneCount;
+        uint32_t targetAlphaMode;
     };
-
-    // ObjectData moved to TransformUpdatePassNode
 
     class CullPassNode: public RenderPassNode
     {
@@ -48,7 +47,6 @@ namespace Engine {
         {
             return gpuDrawCountBuffers[frameIdx]->getBuffer();
         }
-        // Object buffer is now managed globally by ResourceHeap and TransformUpdatePassNode
         [[nodiscard]] VkBuffer getGpuIndirectCommandBuffer(uint32_t frameIdx) const
         {
             return gpuIndirectCommandBuffers[frameIdx]->getBuffer();
@@ -56,6 +54,10 @@ namespace Engine {
         [[nodiscard]] VkDescriptorSet getObjectDescriptorSet(uint32_t frameIdx) const
         {
             return objectDescriptorSets[frameIdx];
+        }
+        [[nodiscard]] VkDescriptorSet getMaskedObjectDescriptorSet(uint32_t frameIdx) const
+        {
+            return maskedObjectDescriptorSets[frameIdx];
         }
         VkDescriptorSetLayout getObjectSetLayout()
         {
@@ -68,6 +70,14 @@ namespace Engine {
         [[nodiscard]] VkBuffer getSingleIndirectCommandBuffer(uint32_t currentFrame) const
         {
             return singleIndirectCommandBuffers[currentFrame]->getBuffer();
+        }
+        [[nodiscard]] VkBuffer getMaskedCompactedIndexBuffer(uint32_t frameIdx) const
+        {
+            return maskedCompactedIndexBuffers[frameIdx]->getBuffer();
+        }
+        [[nodiscard]] VkBuffer getMaskedSingleIndirectCommandBuffer(uint32_t currentFrame) const
+        {
+            return maskedSingleIndirectCommandBuffers[currentFrame]->getBuffer();
         }
 
 
@@ -90,6 +100,14 @@ namespace Engine {
         [[nodiscard]] uint32_t getActualObjectCount() const
         {
             return static_cast<uint32_t>(indirectCommandsArray.size());
+        }
+        [[nodiscard]] VkBuffer getMaskedIndirectCommandBuffer(uint32_t frameIdx) const
+        {
+            return gpuMaskedIndirectCommandBuffers[frameIdx]->getBuffer();
+        }
+        [[nodiscard]] uint32_t getMaskedActualDrawCount() const
+        {
+            return static_cast<uint32_t>(maskedIndirectCommandsArray.size());
         }
 
         [[nodiscard]] const glm::mat4& getActiveCullViewProj() const { return activeCullViewProj; }
@@ -119,11 +137,10 @@ namespace Engine {
 
         std::vector<std::unique_ptr<Buffer>> gpuIndirectCommandBuffers;
 
-        //std::vector<std::unique_ptr<Buffer>> gpuCompactedIndirectCommandBuffers;
         std::vector<std::unique_ptr<Buffer>> compactedIndexBuffers;
         std::vector<std::unique_ptr<Buffer>> singleIndirectCommandBuffers;
 
-        std::vector<std::unique_ptr<Buffer>> gpuDrawCountBuffers; // old counter
+        std::vector<std::unique_ptr<Buffer>> gpuDrawCountBuffers;
 
         std::vector<std::unique_ptr<Buffer>> gpuDispatchCommandBuffers;
         std::vector<std::unique_ptr<Buffer>> gpuVisibleObjectBuffers;
@@ -134,6 +151,19 @@ namespace Engine {
 
         std::vector<std::unique_ptr<Buffer>> taskWorkgroupBuffers;
         std::vector<std::unique_ptr<Buffer>> taskDispatchCommandBuffers;
+
+        std::vector<const GameObject *> maskedDraws;
+        std::vector<VkDrawIndexedIndirectCommand> maskedIndirectCommandsArray;
+        std::vector<std::unique_ptr<Buffer>> gpuMaskedIndirectCommandBuffers;
+        std::vector<std::unique_ptr<Buffer>> gpuMaskedDrawCountBuffers;
+
+        std::vector<std::unique_ptr<Buffer>> gpuMaskedDispatchCommandBuffers;
+        std::vector<std::unique_ptr<Buffer>> gpuMaskedVisibleObjectBuffers;
+        std::vector<std::unique_ptr<Buffer>> maskedCompactedIndexBuffers;
+        std::vector<std::unique_ptr<Buffer>> maskedSingleIndirectCommandBuffers;
+        std::vector<std::unique_ptr<Buffer>> maskedTriangleDispatchCommandBuffers;
+        std::vector<std::unique_ptr<Buffer>> maskedVisibleMeshletBuffers;
+        std::vector<VkDescriptorSet> maskedObjectDescriptorSets;
 
         bool sceneDirty = true;
         int framesToUpdate = 0;

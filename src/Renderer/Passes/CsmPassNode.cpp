@@ -93,6 +93,10 @@ namespace Engine {
             vkDestroyPipeline(device.getDevice(), computePipeline, nullptr);
         if (computePipelineLayout != VK_NULL_HANDLE)
             vkDestroyPipelineLayout(device.getDevice(), computePipelineLayout, nullptr);
+        if (maskedPipeline != VK_NULL_HANDLE)
+            vkDestroyPipeline(device.getDevice(), maskedPipeline, nullptr);
+        if (maskedPipelineLayout != VK_NULL_HANDLE)
+            vkDestroyPipelineLayout(device.getDevice(), maskedPipelineLayout, nullptr);
         if (pipeline != VK_NULL_HANDLE)
             vkDestroyPipeline(device.getDevice(), pipeline, nullptr);
         if (pipelineLayout != VK_NULL_HANDLE)
@@ -284,11 +288,11 @@ namespace Engine {
         scissor.extent = {SHADOW_MAP_SIZE, SHADOW_MAP_SIZE};
         vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, maskedPipeline);
 
         VkDescriptorSet bindlessSet = resourceHeap.getDescriptorSet(currentFrame);
         VkDescriptorSet sets[] = {bindlessSet, objectDescriptorSets[currentFrame]};
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 2, sets, 0, nullptr);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, maskedPipelineLayout, 0, 2, sets, 0, nullptr);
 
         megaBuffer.bindPositionOnly(cmd);
 
@@ -338,7 +342,6 @@ namespace Engine {
         VkDescriptorSetLayout bindlessLayout = resourceHeap.getDescriptorSetLayout();
         VkDescriptorSetLayout layouts[] = {bindlessLayout, objectSetLayout};
 
-        // No graphics push constants needed; using multiview gl_ViewIndex instead
         VkPipelineLayoutCreateInfo pipelineLayoutInfo {};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         pipelineLayoutInfo.pushConstantRangeCount = 0;
@@ -347,6 +350,7 @@ namespace Engine {
         pipelineLayoutInfo.pSetLayouts = layouts;
 
         vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &pipelineLayout);
+        vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &maskedPipelineLayout);
 
         VkPushConstantRange pushConstantRangeCompute {};
         pushConstantRangeCompute.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
@@ -477,6 +481,117 @@ namespace Engine {
 
         vkCreateComputePipelines(device.getDevice(), VK_NULL_HANDLE, 1, &pipelineComputeInfo, nullptr, &computePipeline);
         vkDestroyShaderModule(device.getDevice(), compModule, nullptr);
+
+        createMaskedPipeline();
+    }
+
+    void CsmPassNode::createMaskedPipeline()
+    {
+        auto vertCode = ShaderUtils::readFile("shaders/shadow_masked.vert.spv");
+        auto fragCode = ShaderUtils::readFile("shaders/shadow_masked.frag.spv");
+
+        VkShaderModule vertShaderModule = ShaderUtils::createShaderModule(device.getDevice(), vertCode);
+        VkShaderModule fragShaderModule = ShaderUtils::createShaderModule(device.getDevice(), fragCode);
+
+        VkPipelineShaderStageCreateInfo shaderStages[2] {};
+        shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        shaderStages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+        shaderStages[0].module = vertShaderModule;
+        shaderStages[0].pName = "main";
+
+        shaderStages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        shaderStages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+        shaderStages[1].module = fragShaderModule;
+        shaderStages[1].pName = "main";
+
+        VkVertexInputBindingDescription binding {};
+        binding.binding = 0;
+        binding.stride = sizeof(Model::VertexPosition);
+        binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+        VkVertexInputAttributeDescription attribute {};
+        attribute.binding = 0;
+        attribute.location = 0;
+        attribute.format = VK_FORMAT_R32G32B32_SFLOAT;
+        attribute.offset = 0;
+
+        VkPipelineVertexInputStateCreateInfo vertexInputInfo {};
+        vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+        vertexInputInfo.vertexBindingDescriptionCount = 1;
+        vertexInputInfo.pVertexBindingDescriptions = &binding;
+        vertexInputInfo.vertexAttributeDescriptionCount = 1;
+        vertexInputInfo.pVertexAttributeDescriptions = &attribute;
+
+        VkPipelineInputAssemblyStateCreateInfo inputAssembly {};
+        inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+        inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+        VkPipelineViewportStateCreateInfo viewportState {};
+        viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+        viewportState.viewportCount = 1;
+        viewportState.scissorCount = 1;
+
+        VkPipelineRasterizationStateCreateInfo rasterizer {};
+        rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+        rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+        rasterizer.lineWidth = 1.0f;
+        rasterizer.cullMode = VK_CULL_MODE_NONE;
+        rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        rasterizer.depthBiasEnable = VK_TRUE;
+        rasterizer.depthBiasConstantFactor = 0.0f;
+        rasterizer.depthBiasClamp = 0.0f;
+        rasterizer.depthBiasSlopeFactor = 3.0f;
+        rasterizer.depthClampEnable = VK_FALSE;
+
+        VkPipelineMultisampleStateCreateInfo multisampling {};
+        multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+        multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+        VkPipelineDepthStencilStateCreateInfo depthStencil {};
+        depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+        depthStencil.depthTestEnable = VK_TRUE;
+        depthStencil.depthWriteEnable = VK_TRUE;
+        depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+
+        VkPipelineColorBlendStateCreateInfo colorBlending {};
+        colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+        colorBlending.attachmentCount = 0;
+        colorBlending.pAttachments = nullptr;
+
+        std::vector<VkDynamicState> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+        VkPipelineDynamicStateCreateInfo dynamicState {};
+        dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+        dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+        dynamicState.pDynamicStates = dynamicStates.data();
+
+        VkPipelineRenderingCreateInfo renderingCreateInfo{};
+        renderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+        renderingCreateInfo.colorAttachmentCount = 0;
+        renderingCreateInfo.pColorAttachmentFormats = nullptr;
+        renderingCreateInfo.depthAttachmentFormat = Config::USE_D16_SHADOW_MAPS ? VK_FORMAT_D16_UNORM : VK_FORMAT_D32_SFLOAT;
+        renderingCreateInfo.viewMask = (1u << SHADOW_MAP_CASCADES) - 1u;
+
+        VkGraphicsPipelineCreateInfo pipelineInfo {};
+        pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+        pipelineInfo.pNext = &renderingCreateInfo;
+        pipelineInfo.stageCount = 2;
+        pipelineInfo.pStages = shaderStages;
+        pipelineInfo.pVertexInputState = &vertexInputInfo;
+        pipelineInfo.pInputAssemblyState = &inputAssembly;
+        pipelineInfo.pViewportState = &viewportState;
+        pipelineInfo.pRasterizationState = &rasterizer;
+        pipelineInfo.pMultisampleState = &multisampling;
+        pipelineInfo.pDepthStencilState = &depthStencil;
+        pipelineInfo.pColorBlendState = &colorBlending;
+        pipelineInfo.pDynamicState = &dynamicState;
+        pipelineInfo.layout = maskedPipelineLayout;
+
+        if (vkCreateGraphicsPipelines(device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, VK_NULL_HANDLE, &maskedPipeline) != VK_SUCCESS) {
+            throw std::runtime_error("CsmPassNode: failed to create masked shadow pipeline");
+        }
+
+        vkDestroyShaderModule(device.getDevice(), vertShaderModule, nullptr);
+        vkDestroyShaderModule(device.getDevice(), fragShaderModule, nullptr);
     }
 
     void CsmPassNode::updateCascades(SceneUbo &sceneUbo, FrameInfo &frameInfo)
@@ -517,7 +632,6 @@ namespace Engine {
                 glm::vec3(-1.0f, -1.0f,  1.0f),
             };
 
-            // Project frustum corners into world
             glm::mat4 invCam = glm::inverse(frameInfo.camera->getProjection() * frameInfo.camera->getView());
             for (uint32_t j = 0; j < 8; j++) {
                 glm::vec4 invCorner = invCam * glm::vec4(frustumCorners[j], 1.0f);
@@ -530,7 +644,6 @@ namespace Engine {
                 frustumCorners[j] = frustumCorners[j] + (dist * lastSplitDist);
             }
 
-            // Frustum centre
             glm::vec3 frustumCenter = glm::vec3(0.0f);
             for (uint32_t j = 0; j < 8; j++) {
                 frustumCenter += frustumCorners[j];

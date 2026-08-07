@@ -92,25 +92,25 @@ namespace Engine {
         bindings[7].binding = 7;
         bindings[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         bindings[7].descriptorCount = 1;
-        bindings[7].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+        bindings[7].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
         // Binding 8: MeshletBuffer
         bindings[8].binding = 8;
         bindings[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         bindings[8].descriptorCount = 1;
-        bindings[8].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT | meshStages;
+        bindings[8].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | meshStages;
 
         // Binding 9: MeshletVerticesBuffer
         bindings[9].binding = 9;
         bindings[9].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         bindings[9].descriptorCount = 1;
-        bindings[9].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT | meshStages;
+        bindings[9].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | meshStages;
 
         // Binding 10: MeshletTrianglesBuffer
         bindings[10].binding = 10;
         bindings[10].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         bindings[10].descriptorCount = 1;
-        bindings[10].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT | meshStages;
+        bindings[10].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | meshStages;
 
         // Binding 11: IndexBuffer
         bindings[11].binding = 11;

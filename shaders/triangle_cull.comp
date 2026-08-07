@@ -70,6 +70,7 @@ layout(push_constant) uniform PushConsts {
     uint cascadeIndex;
     uint objectCapacity;
     uint clipPlaneCount;
+    uint targetAlphaMode;
 } push;
 
 void main() {

@@ -41,9 +41,10 @@ namespace Engine {
 
         //assetStreamer.enqueueLoad("models/pbr_sphere.glb");
         //assetStreamer.enqueueLoad("models/square.glb");
-        assetStreamer.enqueueLoad("models/sponza_optimized.glb");
+        //assetStreamer.enqueueLoad("models/sponza_optimized.glb");
         //assetStreamer.enqueueLoad("models/model.glb");
-        assetStreamer.enqueueLoad("C:/Users/Jan Varga/Downloads/pkg_a_curtains/pkg_a_curtains/NewSponza_Curtains_glTF.gltf");
+        assetStreamer.enqueueLoad("models/AlphaTest.glb");
+        //assetStreamer.enqueueLoad("C:/Users/Jan Varga/Downloads/pkg_a_curtains/pkg_a_curtains/NewSponza_Curtains_glTF.gltf");
         //assetStreamer.enqueueLoad("C:/Users/Jan Varga/Downloads/Sponza-crytek/Sponza.gltf");
 
 
@@ -303,6 +304,18 @@ namespace Engine {
                                                VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                                                VK_ACCESS_2_SHADER_WRITE_BIT);
 
+            renderGraph.registerPhysicalBuffer("MaskedCompactedIndexBuffer",
+                                               cullPass.getMaskedCompactedIndexBuffer(currentFrame),
+                                               Config::MAX_SCENE_OBJECTS * Config::MAX_TRIANGLES * 3 * sizeof(uint32_t),
+                                               VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                                               VK_ACCESS_2_SHADER_WRITE_BIT);
+
+            renderGraph.registerPhysicalBuffer("MaskedSingleIndirectCommand",
+                                               cullPass.getMaskedSingleIndirectCommandBuffer(currentFrame),
+                                               sizeof(VkDrawIndirectCommand),
+                                               VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                                               VK_ACCESS_2_SHADER_WRITE_BIT);
+
             VkDeviceSize normalBufferSize =
                 static_cast<VkDeviceSize>(currentExtent.width) * currentExtent.height * sizeof(uint32_t);
             renderGraph.registerPhysicalBuffer("PackedNormals",
@@ -360,11 +373,19 @@ namespace Engine {
                                        resourceHeap.getMaterialBufferSize());
 
         renderGraph.updateBufferHandle("CompactedIndexBuffer",
-                               cullPass.getCompactedIndexBuffer(currentFrame),
-                               Config::MAX_SCENE_OBJECTS * Config::MAX_TRIANGLES * 3 * sizeof(uint32_t));
+                                       cullPass.getCompactedIndexBuffer(currentFrame),
+                                       Config::MAX_SCENE_OBJECTS * Config::MAX_TRIANGLES * 3 * sizeof(uint32_t));
 
         renderGraph.updateBufferHandle("SingleIndirectCommand",
                                        cullPass.getSingleIndirectCommandBuffer(currentFrame),
+                                       sizeof(VkDrawIndirectCommand));
+
+        renderGraph.updateBufferHandle("MaskedCompactedIndexBuffer",
+                                       cullPass.getMaskedCompactedIndexBuffer(currentFrame),
+                                       Config::MAX_SCENE_OBJECTS * Config::MAX_TRIANGLES * 3 * sizeof(uint32_t));
+
+        renderGraph.updateBufferHandle("MaskedSingleIndirectCommand",
+                                       cullPass.getMaskedSingleIndirectCommandBuffer(currentFrame),
                                        sizeof(VkDrawIndirectCommand));
 
         VkDeviceSize normalBufferSize =

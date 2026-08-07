@@ -62,8 +62,7 @@ void main() {
 
     ObjectData obj = objects[objectID];
 
-    // Skip transparent objects (AlphaMode::Blend = 2)
-    if (obj.alphaMode == 2) return;
+    if ((obj.alphaMode & 3u) == 2u) return;
 
     vec4 sphere = obj.boundingSphere;
     mat4 model  = obj.modelMatrix;
