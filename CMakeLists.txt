@@ -209,6 +209,8 @@ set(PASSES_SOURCES
         src/Renderer/Passes/CsmPassNode.h
         src/Renderer/Passes/TransformUpdatePassNode.cpp
         src/Renderer/Passes/TransformUpdatePassNode.h
+        src/Renderer/Passes/TaaPassNode.cpp
+        src/Renderer/Passes/TaaPassNode.h
 )
 
 set(SCENE_SOURCES

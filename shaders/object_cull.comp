@@ -12,6 +12,19 @@ struct ObjectData {
     uint padding1;
 };
 
+layout(set = 0, binding = 1) uniform SceneUbo {
+    mat4 viewProj;
+    mat4 prevViewProj;
+    vec4 frustumPlanes[6];
+    vec4 cameraPos;
+    vec4 directionalLight;
+    mat4 lightViewProj[3];
+    vec4 cascadesSplits;
+    float maxReflectionLod;
+    uint blueNoiseTexIndex;
+    vec2 _pad;
+} sceneUbo;
+
 layout(std430, set = 0, binding = 5) readonly buffer ObjectBuffer {
     ObjectData objects[];
 };
@@ -29,15 +42,12 @@ layout(std430, set = 1, binding = 1) buffer VisibleObjectBuffer {
 };
 
 layout(push_constant) uniform PushConsts {
-    mat4 viewProj;
-    vec4 frustumPlanes[6];
-    vec3 cameraPos;
     uint cullFlags;
     uint objectCount; // total Meshlets
     uint actualObjectCount; // real objects
-    float projM11;
     uint objectCapacity;
     uint clipPlaneCount;
+    uint targetAlphaMode;
 } push;
 
 const float SUBPIXEL_THRESHOLD = 0.0005;
@@ -73,7 +83,7 @@ void main() {
     bool visible = true;
     if (enableFrustumCull) {
         for (uint i = 0u; i < push.clipPlaneCount; i++) {
-            if (dot(push.frustumPlanes[i].xyz, worldCenter) + push.frustumPlanes[i].w < -worldRadius) {
+            if (dot(sceneUbo.frustumPlanes[i].xyz, worldCenter) + sceneUbo.frustumPlanes[i].w < -worldRadius) {
                 visible = false;
                 break;
             }
@@ -82,10 +92,10 @@ void main() {
 
     // 3. Contribution Culling
     if (visible && enableContributionCull) {
-        vec3 camToCenter = worldCenter - push.cameraPos;
+        vec3 camToCenter = worldCenter - sceneUbo.cameraPos.xyz;
         float dist = length(camToCenter);
         if (dist > worldRadius) {
-            float projRadius = (worldRadius / dist) * abs(push.projM11);
+            float projRadius = (worldRadius / dist) * abs(sceneUbo.cameraPos.w);
             if (projRadius < SUBPIXEL_THRESHOLD) {
                 visible = false;
             }

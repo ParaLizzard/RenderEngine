@@ -41,6 +41,9 @@ struct VertexAttribute {
 };
 
 layout(set = 0, binding = 1) uniform SceneUbo {
+    mat4 viewProj;
+    mat4 prevViewProj;
+    vec4 frustumPlanes[6];
     vec4 cameraPosition;
     vec4 directionalLight;
     mat4 lightViewProj[3];

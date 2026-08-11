@@ -4,6 +4,8 @@
 layout(location = 0) flat out uint outInstanceID;
 layout(location = 1) flat out uint outSyntheticIndex;
 layout(location = 2) out vec2 outUV;
+layout(location = 3) out vec4 outCurClipPos;
+layout(location = 4) out vec4 outPrevClipPos;
 
 struct PositionData {
     float x, y, z;
@@ -36,6 +38,19 @@ struct VertexAttribute {
     uint  texId;
 };
 
+layout(set = 0, binding = 1) uniform SceneUbo {
+    mat4 viewProj;
+    mat4 prevViewProj;
+    vec4 frustumPlanes[6];
+    vec4 cameraPos;
+    vec4 directionalLight;
+    mat4 lightViewProj[3];
+    vec4 cascadesSplits;
+    float maxReflectionLod;
+    uint blueNoiseTexIndex;
+    vec2 _pad;
+} sceneUbo;
+
 layout(set = 0, binding = 5) readonly buffer ObjectBuffer { ObjectData objects[]; };
 layout(set = 0, binding = 6) readonly buffer VertexBuffer { PositionData positions[]; };
 layout(set = 0, binding = 7) readonly buffer AttributeBuffer { VertexAttribute attributes[]; };
@@ -46,13 +61,9 @@ layout(set = 0, binding = 10) readonly buffer MeshletTriangleMap { uint8_t meshl
 layout(set = 1, binding = 3) readonly buffer CompactedIndexBuffer { uint syntheticIndices[]; };
 
 layout(push_constant) uniform PushConstants {
-    mat4 viewProj;
-    vec4 frustumPlanes[6];
-    vec3 cameraPos;
     uint cullFlags;
     uint objectCount;
     uint actualObjectCount;
-    float projM11;
     uint objectCapacity;
     uint clipPlaneCount;
     uint isMeshShader;
@@ -79,5 +90,8 @@ void main() {
     outUV = vec2(attr.uvX, attr.uvY);
 
     mat4 model = objects[objectID].modelMatrix;
-    gl_Position = pc.viewProj * (model * vec4(pd.x, pd.y, pd.z, 1.0));
+    vec4 worldPos = model * vec4(pd.x, pd.y, pd.z, 1.0);
+    outCurClipPos = sceneUbo.viewProj * worldPos;
+    outPrevClipPos = sceneUbo.prevViewProj * worldPos;
+    gl_Position = outCurClipPos;
 }

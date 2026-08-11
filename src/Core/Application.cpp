@@ -140,8 +140,32 @@ namespace Engine {
             info.camera = &camera;
             info.gameObjects = &sceneManager.objects();
 
+            glm::mat4 curViewProj = camera.getProjection() * camera.getView();
+            if (firstFrame) {
+                prevViewProj = curViewProj;
+                firstFrame = false;
+            }
+
             SceneUbo uboData{};
-            uboData.cameraPosition = glm::vec4(cameraObject->transform.translation, 1.0f);
+            uboData.viewProjection = curViewProj;
+            uboData.prevViewProjection = prevViewProj;
+
+            glm::mat4 cullVP = freezeCulling ? frozenViewProj : curViewProj;
+            glm::mat4 tvp = glm::transpose(cullVP);
+            uboData.frustumPlanes[0] = tvp[3] + tvp[0]; // Left
+            uboData.frustumPlanes[1] = tvp[3] - tvp[0]; // Right
+            uboData.frustumPlanes[2] = tvp[3] + tvp[1]; // Bottom
+            uboData.frustumPlanes[3] = tvp[3] - tvp[1]; // Top
+            uboData.frustumPlanes[4] = tvp[2];          // Near
+            uboData.frustumPlanes[5] = tvp[3] - tvp[2]; // Far
+
+            for (int i = 0; i < 6; i++) {
+                float len = glm::length(glm::vec3(uboData.frustumPlanes[i]));
+                uboData.frustumPlanes[i] /= len;
+            }
+
+            glm::vec3 cullCamPos = freezeCulling ? frozenCameraPos : camera.getPosition();
+            uboData.cameraPosition = glm::vec4(cullCamPos, camera.getProjection()[1][1]);
             uboData.directionalLight = glm::vec4(glm::normalize(glm::vec3(0.2f, -1.0f, 0.1f)), 7.0f);
             uboData.maxReflectionLod = static_cast<float>(ibl->prefilteredCube.mipLevels - 1);
             uboData.blueNoiseTexIndex = blueNoiseSlot;
@@ -150,6 +174,8 @@ namespace Engine {
 
             sceneUboBuffers[currentFrame]->writeToBuffer(&uboData, sizeof(SceneUbo), 0);
             sceneUboBuffers[currentFrame]->flush(sizeof(SceneUbo), 0);
+
+            prevViewProj = curViewProj;
 
             compileFrameGraph();
             updateFrameGraph();

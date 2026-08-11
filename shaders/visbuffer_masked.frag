@@ -5,8 +5,11 @@
 layout(location = 0) flat in uint inInstanceID;
 layout(location = 1) flat in uint inSyntheticIndex;
 layout(location = 2) in vec2 inUV;
+layout(location = 3) in vec4 inCurClipPos;
+layout(location = 4) in vec4 inPrevClipPos;
 
 layout(location = 0) out uvec2 outVisBuffer;
+layout(location = 1) out vec2 outVelocity;
 
 struct Meshlet {
     float center_x, center_y, center_z, radius;
@@ -88,4 +91,7 @@ void main() {
     }
 
     outVisBuffer = uvec2(inInstanceID + 1u, inSyntheticIndex);
+    vec2 curNDC  = inCurClipPos.xy / inCurClipPos.w;
+    vec2 prevNDC = inPrevClipPos.xy / inPrevClipPos.w;
+    outVelocity  = (curNDC - prevNDC) * 0.5;
 }

@@ -151,8 +151,8 @@ namespace Engine {
 
             visibleMeshletBuffers[i] =
                 std::make_unique<Buffer>(device,
-                                         sizeof(uint32_t) * 2, // uvec2
-                                         Config::MAX_SCENE_OBJECTS * 100, // Safe estimate for maximum visible meshlets
+                                         sizeof(uint32_t) * 2,
+                                         Config::MAX_SCENE_OBJECTS * 100,
                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                          VMA_MEMORY_USAGE_GPU_ONLY,
                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -640,26 +640,9 @@ namespace Engine {
             VkUtils::pipelineBarrier(cmd, 0, 0, 0, 0, {}, transferBarriers);
 
             ComputePushConstants compPc {};
-            compPc.viewProj  = viewProjection;
-            compPc.cameraPos = frameInfo.cullCameraPos;
-
-            glm::mat4 tvp = glm::transpose(frameInfo.cullViewProj);
-            compPc.frustumPlanes[0] = tvp[3] + tvp[0]; // Left
-            compPc.frustumPlanes[1] = tvp[3] - tvp[0]; // Right
-            compPc.frustumPlanes[2] = tvp[3] + tvp[1]; // Bottom
-            compPc.frustumPlanes[3] = tvp[3] - tvp[1]; // Top
-            compPc.frustumPlanes[4] = tvp[2];          // Near
-            compPc.frustumPlanes[5] = tvp[3] - tvp[2]; // Far
-
-            for (int i = 0; i < 6; i++) {
-                float len = glm::length(glm::vec3(compPc.frustumPlanes[i]));
-                compPc.frustumPlanes[i] /= len;
-            }
-
             compPc.cullFlags          = frameInfo.cullEnabled ? 1 : 0;
             compPc.objectCount       = megaBuffer.getMeshletCount();
             compPc.actualObjectCount = totalObjects;
-            compPc.projM11           = projection[1][1];
             compPc.objectCapacity    = Config::MAX_SCENE_OBJECTS;
             compPc.clipPlaneCount    = 6;
 

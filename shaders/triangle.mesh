@@ -8,6 +8,8 @@ layout(triangles, max_vertices = 128, max_primitives = 126) out;
 
 layout(location = 0) flat out uint outInstanceID[];
 layout(location = 1) perprimitiveEXT flat out uint outSyntheticIndex[];
+layout(location = 2) out vec4 outCurClipPos[];
+layout(location = 3) out vec4 outPrevClipPos[];
 
 struct PositionData {
     float x, y, z;
@@ -35,6 +37,19 @@ struct Meshlet {
     uint triangleCount;
 };
 
+layout(set = 0, binding = 1) uniform SceneUbo {
+    mat4 viewProj;
+    mat4 prevViewProj;
+    vec4 frustumPlanes[6];
+    vec4 cameraPos;
+    vec4 directionalLight;
+    mat4 lightViewProj[3];
+    vec4 cascadesSplits;
+    float maxReflectionLod;
+    uint blueNoiseTexIndex;
+    vec2 _pad;
+} sceneUbo;
+
 layout(std430, set = 0, binding = 5) readonly buffer ObjectBuffer { ObjectData objects[]; };
 layout(std430, set = 0, binding = 6) readonly buffer VertexBuffer { PositionData positions[]; };
 layout(std430, set = 0, binding = 8) readonly buffer MeshletBuffer { Meshlet meshlets[]; };
@@ -42,13 +57,9 @@ layout(std430, set = 0, binding = 9) readonly buffer MeshletVertexMap { uint mes
 layout(std430, set = 0, binding = 10) readonly buffer MeshletTriangleMap { uint8_t meshletTriangles[]; };
 
 layout(push_constant) uniform PushConsts {
-    mat4 viewProj;
-    vec4 frustumPlanes[6];
-    vec3 cameraPos;
     uint cullFlags;
     uint objectCount;
     uint actualObjectCount;
-    uint cascadeIndex;
     uint objectCapacity;
     uint clipPlaneCount;
     uint isMeshShader;
@@ -80,10 +91,15 @@ void main() {
         uint globalVertexID = meshletVertices[m.vertexOffset + vertIdx];
         PositionData pd = positions[globalVertexID];
 
-        vec4 pos = pc.viewProj * (obj.modelMatrix * vec4(pd.x, pd.y, pd.z, 1.0));
-        gl_MeshVerticesEXT[vertIdx].gl_Position = pos;
+        vec4 worldPos = obj.modelMatrix * vec4(pd.x, pd.y, pd.z, 1.0);
+        vec4 curPos = sceneUbo.viewProj * worldPos;
+        vec4 prevPos = sceneUbo.prevViewProj * worldPos;
+
+        gl_MeshVerticesEXT[vertIdx].gl_Position = curPos;
         outInstanceID[vertIdx] = objectID;
-        s_clipPos[vertIdx] = pos;
+        outCurClipPos[vertIdx] = curPos;
+        outPrevClipPos[vertIdx] = prevPos;
+        s_clipPos[vertIdx] = curPos;
     }
 
     barrier();

@@ -33,6 +33,19 @@ struct ObjectData {
     uint padding1;
 };
 
+layout(set = 0, binding = 1) uniform SceneUbo {
+    mat4 viewProj;
+    mat4 prevViewProj;
+    vec4 frustumPlanes[6];
+    vec4 cameraPos;
+    vec4 directionalLight;
+    mat4 lightViewProj[3];
+    vec4 cascadesSplits;
+    float maxReflectionLod;
+    uint blueNoiseTexIndex;
+    vec2 _pad;
+} sceneUbo;
+
 layout(std430, set = 0, binding = 5) readonly buffer ObjectBuffer { ObjectData objects[]; };
 layout(std430, set = 0, binding = 6) readonly buffer VertexBuffer { PositionData positions[]; };
 layout(std430, set = 0, binding = 8) readonly buffer MeshletBuffer { Meshlet meshlets[]; };
@@ -61,13 +74,9 @@ layout(std430, set = 1, binding = 3) buffer CompactedIndexBuffer {
 };
 
 layout(push_constant) uniform PushConsts {
-    mat4 viewProj;
-    vec4 frustumPlanes[6];
-    vec3 cameraPos;
     uint cullFlags;
     uint objectCount;
     uint actualObjectCount;
-    uint cascadeIndex;
     uint objectCapacity;
     uint clipPlaneCount;
     uint targetAlphaMode;
@@ -103,9 +112,9 @@ void main() {
         PositionData pd1 = positions[globalVert1];
         PositionData pd2 = positions[globalVert2];
 
-        vec4 p0 = push.viewProj * (obj.modelMatrix * vec4(pd0.x, pd0.y, pd0.z, 1.0));
-        vec4 p1 = push.viewProj * (obj.modelMatrix * vec4(pd1.x, pd1.y, pd1.z, 1.0));
-        vec4 p2 = push.viewProj * (obj.modelMatrix * vec4(pd2.x, pd2.y, pd2.z, 1.0));
+        vec4 p0 = sceneUbo.viewProj * (obj.modelMatrix * vec4(pd0.x, pd0.y, pd0.z, 1.0));
+        vec4 p1 = sceneUbo.viewProj * (obj.modelMatrix * vec4(pd1.x, pd1.y, pd1.z, 1.0));
+        vec4 p2 = sceneUbo.viewProj * (obj.modelMatrix * vec4(pd2.x, pd2.y, pd2.z, 1.0));
 
         // --- Debug Flags ---
         bool enableFrustumCull = true;

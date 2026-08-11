@@ -28,6 +28,19 @@ struct ObjectData {
     uint padding1;
 };
 
+layout(set = 0, binding = 1) uniform SceneUbo {
+    mat4 viewProj;
+    mat4 prevViewProj;
+    vec4 frustumPlanes[6];
+    vec4 cameraPos;
+    vec4 directionalLight;
+    mat4 lightViewProj[3];
+    vec4 cascadesSplits;
+    float maxReflectionLod;
+    uint blueNoiseTexIndex;
+    vec2 _pad;
+} sceneUbo;
+
 layout(std430, set = 0, binding = 5) readonly buffer ObjectBuffer {
     ObjectData objects[];
 };
@@ -62,15 +75,12 @@ layout(std430, set = 1, binding = 5) buffer TriangleDispatchCommandBuffer {
 };
 
 layout(push_constant) uniform PushConsts {
-    mat4 viewProj;
-    vec4 frustumPlanes[6];
-    vec3 cameraPos;
     uint cullFlags;
     uint objectCount;
     uint actualObjectCount;
-    float projM11;
     uint objectCapacity;
     uint clipPlaneCount;
+    uint targetAlphaMode;
 } push;
 
 const float SUBPIXEL_THRESHOLD = 0.0005;
@@ -110,7 +120,7 @@ void main() {
             visible = true;
             if (enableFrustumCull) {
                 for (uint p = 0u; p < push.clipPlaneCount; p++) {
-                    if (dot(push.frustumPlanes[p].xyz, worldCenter) + push.frustumPlanes[p].w < -worldRadius) {
+                    if (dot(sceneUbo.frustumPlanes[p].xyz, worldCenter) + sceneUbo.frustumPlanes[p].w < -worldRadius) {
                         visible = false;
                         break;
                     }
@@ -118,10 +128,10 @@ void main() {
             }
 
             if (visible && enableContributionCull) {
-                vec3 camToCenter = worldCenter - push.cameraPos;
+                vec3 camToCenter = worldCenter - sceneUbo.cameraPos.xyz;
                 float dist = length(camToCenter);
                 if (dist > worldRadius) {
-                    float projRadius = (worldRadius / dist) * abs(push.projM11);
+                    float projRadius = (worldRadius / dist) * abs(sceneUbo.cameraPos.w);
                     if (projRadius < SUBPIXEL_THRESHOLD) {
                         visible = false;
                     }
@@ -142,7 +152,7 @@ void main() {
                 if (!doubleSided && cone_cutoff < 0.99) {
                     vec3 cone_axis_world = normalize(mat3(obj.normalMatrix) * cone_axis_local);
 
-                    vec3 camera_to_center = worldCenter - push.cameraPos;
+                    vec3 camera_to_center = worldCenter - sceneUbo.cameraPos.xyz;
                     float distSq = dot(camera_to_center, camera_to_center);
 
                     if (distSq > worldRadius * worldRadius) {

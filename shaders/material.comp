@@ -53,6 +53,9 @@ layout(set = 0, binding = 0) readonly buffer MaterialHeapBuffer {
 } materialHeap;
 
 layout(set = 0, binding = 1) uniform SceneUbo {
+    mat4 viewProj;
+    mat4 prevViewProj;
+    vec4 frustumPlanes[6];
     vec4 cameraPos;
     vec4 directionalLight; // xyz = dir, w = intensity
     mat4 lightViewProj[3];

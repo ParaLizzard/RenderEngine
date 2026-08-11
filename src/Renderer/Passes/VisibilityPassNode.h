@@ -9,13 +9,9 @@ namespace Engine {
     class CullPassNode;
     struct VisibilityPushConstants
     {
-        glm::mat4 viewProjection;
-        glm::vec4 frustumPlanes[6];
-        glm::vec3 cameraPos;
         uint32_t cullFlags;
         uint32_t objectCount;
         uint32_t actualObjectCount;
-        float projM11;
         uint32_t objectCapacity;
         uint32_t clipPlaneCount;
         uint32_t isMeshShader;

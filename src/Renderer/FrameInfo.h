@@ -45,6 +45,9 @@ namespace Engine {
 
     struct SceneUbo
     {
+        glm::mat4 viewProjection;
+        glm::mat4 prevViewProjection;
+        glm::vec4 frustumPlanes[6];
         glm::vec4 cameraPosition;
         glm::vec4 directionalLight;
         glm::mat4 lightViewProj[SHADOW_MAP_CASCADES];

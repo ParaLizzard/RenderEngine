@@ -4,6 +4,8 @@
 
 layout(location = 0) flat out uint outInstanceID;
 layout(location = 1) flat out uint outSyntheticIndex;
+layout(location = 2) out vec4 outCurClipPos;
+layout(location = 3) out vec4 outPrevClipPos;
 
 struct PositionData {
     float x, y, z;
@@ -28,6 +30,19 @@ struct ObjectData {
     uint padding1;
 };
 
+layout(set = 0, binding = 1) uniform SceneUbo {
+    mat4 viewProj;
+    mat4 prevViewProj;
+    vec4 frustumPlanes[6];
+    vec4 cameraPos;
+    vec4 directionalLight;
+    mat4 lightViewProj[3];
+    vec4 cascadesSplits;
+    float maxReflectionLod;
+    uint blueNoiseTexIndex;
+    vec2 _pad;
+} sceneUbo;
+
 // Set 0: MegaBuffer geometry
 layout(set = 0, binding = 5) readonly buffer ObjectBuffer { ObjectData objects[]; };
 layout(set = 0, binding = 6) readonly buffer VertexBuffer { PositionData positions[]; };
@@ -39,7 +54,12 @@ layout(set = 0, binding = 10) readonly buffer MeshletTriangleMap { uint8_t meshl
 layout(set = 1, binding = 3) readonly buffer CompactedIndexBuffer { uint syntheticIndices[]; };
 
 layout(push_constant) uniform PushConstants {
-    mat4 viewProj;
+    uint cullFlags;
+    uint objectCount;
+    uint actualObjectCount;
+    uint objectCapacity;
+    uint clipPlaneCount;
+    uint isMeshShader;
 } pc;
 
 void main() {
@@ -61,5 +81,8 @@ void main() {
     outSyntheticIndex = syntheticIndex;
 
     mat4 model = objects[objectID].modelMatrix;
-    gl_Position = pc.viewProj * (model * vec4(pd.x, pd.y, pd.z, 1.0));
+    vec4 worldPos = model * vec4(pd.x, pd.y, pd.z, 1.0);
+    outCurClipPos = sceneUbo.viewProj * worldPos;
+    outPrevClipPos = sceneUbo.prevViewProj * worldPos;
+    gl_Position = outCurClipPos;
 }

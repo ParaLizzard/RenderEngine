@@ -49,6 +49,7 @@ namespace Engine {
         renderGraph.createTransientImage("VisBuffer",
                                          VK_FORMAT_R32G32_UINT,
                                          currentExtent);
+        renderGraph.createTransientImage("VelocityBuffer", VK_FORMAT_R16G16_SFLOAT, currentExtent);
 
         if (!device.isMeshShaderSupported()) {
             renderGraph.readBuffer("CompactedIndexBuffer",
@@ -73,6 +74,11 @@ namespace Engine {
                                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
                                VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
 
+        renderGraph.writeImage("VelocityBuffer",
+                                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+
         renderGraph.writeImage(
             "DepthImage",
             VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
@@ -84,33 +90,13 @@ namespace Engine {
     {
         uint32_t currentFrame = renderer.getFrameIndex();
 
-        glm::mat4 projection = frameInfo.camera->getProjection();
-        glm::mat4 view = frameInfo.camera->getView();
-        glm::mat4 clipMatrix = glm::mat4(1.0f);
         VisibilityPushConstants pushConsts{};
-        pushConsts.viewProjection = clipMatrix * projection * view;
-        pushConsts.cameraPos = frameInfo.cullCameraPos;
-
-        glm::mat4 tvp = glm::transpose(frameInfo.cullViewProj);
-        pushConsts.frustumPlanes[0] = tvp[3] + tvp[0]; // Left
-        pushConsts.frustumPlanes[1] = tvp[3] - tvp[0]; // Right
-        pushConsts.frustumPlanes[2] = tvp[3] + tvp[1]; // Bottom
-        pushConsts.frustumPlanes[3] = tvp[3] - tvp[1]; // Top
-        pushConsts.frustumPlanes[4] = tvp[2];          // Near
-        pushConsts.frustumPlanes[5] = tvp[3] - tvp[2]; // Far
-
-        for (int i = 0; i < 6; i++) {
-            float len = glm::length(glm::vec3(pushConsts.frustumPlanes[i]));
-            pushConsts.frustumPlanes[i] /= len;
-        }
-
-        pushConsts.objectCount       = megaBuffer.getMeshletCount();
-        pushConsts.actualObjectCount = static_cast<uint32_t>(frameInfo.gameObjects->size());
-        pushConsts.projM11           = projection[1][1];
-        pushConsts.objectCapacity    = Config::MAX_SCENE_OBJECTS;
-        pushConsts.clipPlaneCount    = 6;
-        pushConsts.isMeshShader = device.isMeshShaderSupported() ? 1 : 0;
-        pushConsts.cullFlags = frameInfo.cullEnabled ? 1 : 0;
+        pushConsts.cullFlags          = frameInfo.cullEnabled ? 1 : 0;
+        pushConsts.objectCount        = megaBuffer.getMeshletCount();
+        pushConsts.actualObjectCount  = static_cast<uint32_t>(frameInfo.gameObjects->size());
+        pushConsts.objectCapacity     = Config::MAX_SCENE_OBJECTS;
+        pushConsts.clipPlaneCount     = 6;
+        pushConsts.isMeshShader       = device.isMeshShaderSupported() ? 1 : 0;
 
         VkRenderingAttachmentInfo colorAttachment {};
         colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -121,6 +107,15 @@ namespace Engine {
         colorAttachment.clearValue.color.uint32[0] = 0;
         colorAttachment.clearValue.color.uint32[1] = 0;
 
+        VkRenderingAttachmentInfo velocityAttachment {};
+        velocityAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        velocityAttachment.imageView = frameInfo.renderGraph->getImageView("VelocityBuffer");
+        velocityAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        velocityAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        velocityAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        velocityAttachment.clearValue.color.float32[0] = 0.0f;
+        velocityAttachment.clearValue.color.float32[1] = 0.0f;
+
         VkRenderingAttachmentInfo depthAttachment {};
         depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
         depthAttachment.imageView = renderer.getSwapChain().getDepthImageView();
@@ -129,13 +124,15 @@ namespace Engine {
         depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         depthAttachment.clearValue.depthStencil = {1.0f, 0};
 
+
+        std::array attachments { colorAttachment, velocityAttachment };
         VkRenderingInfo renderingInfo {};
         renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
         renderingInfo.renderArea.offset = {0, 0};
         renderingInfo.renderArea.extent = frameInfo.extent;
         renderingInfo.layerCount = 1;
-        renderingInfo.colorAttachmentCount = 1;
-        renderingInfo.pColorAttachments = &colorAttachment;
+        renderingInfo.colorAttachmentCount = 2;
+        renderingInfo.pColorAttachments = attachments.data();
         renderingInfo.pDepthAttachment = &depthAttachment;
 
         vkCmdBeginRendering(cmd, &renderingInfo);
@@ -297,14 +294,16 @@ namespace Engine {
         depthStencil.depthWriteEnable = VK_TRUE;
         depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
 
-        VkPipelineColorBlendAttachmentState colorBlendAttachment {};
-        colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT;
-        colorBlendAttachment.blendEnable = VK_FALSE;
+        std::array<VkPipelineColorBlendAttachmentState, 2> blendAttachments{};
+        blendAttachments[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT;
+        blendAttachments[0].blendEnable = VK_FALSE;
+        blendAttachments[1].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT;
+        blendAttachments[1].blendEnable = VK_FALSE;
 
         VkPipelineColorBlendStateCreateInfo colorBlending {};
         colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-        colorBlending.attachmentCount = 1;
-        colorBlending.pAttachments = &colorBlendAttachment;
+        colorBlending.attachmentCount = 2;
+        colorBlending.pAttachments = blendAttachments.data();
 
         std::vector<VkDynamicState> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
         VkPipelineDynamicStateCreateInfo dynamicState {};
@@ -312,11 +311,11 @@ namespace Engine {
         dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
         dynamicState.pDynamicStates = dynamicStates.data();
 
-        VkFormat visBufferFormat = VK_FORMAT_R32G32_UINT;
+        std::array formats = {VK_FORMAT_R32G32_UINT, VK_FORMAT_R16G16_SFLOAT};
         VkPipelineRenderingCreateInfo renderingCreateInfo {};
         renderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-        renderingCreateInfo.colorAttachmentCount = 1;
-        renderingCreateInfo.pColorAttachmentFormats = &visBufferFormat;
+        renderingCreateInfo.colorAttachmentCount = 2;
+        renderingCreateInfo.pColorAttachmentFormats = formats.data();
         renderingCreateInfo.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
 
         VkGraphicsPipelineCreateInfo pipelineInfo {};
@@ -405,14 +404,16 @@ namespace Engine {
         depthStencil.depthWriteEnable = VK_TRUE;
         depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
 
-        VkPipelineColorBlendAttachmentState colorBlendAttachment {};
-        colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT;
-        colorBlendAttachment.blendEnable = VK_FALSE;
+        std::array<VkPipelineColorBlendAttachmentState, 2> blendAttachments{};
+        blendAttachments[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT;
+        blendAttachments[0].blendEnable = VK_FALSE;
+        blendAttachments[1].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT;
+        blendAttachments[1].blendEnable = VK_FALSE;
 
         VkPipelineColorBlendStateCreateInfo colorBlending {};
         colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-        colorBlending.attachmentCount = 1;
-        colorBlending.pAttachments = &colorBlendAttachment;
+        colorBlending.attachmentCount = 2;
+        colorBlending.pAttachments = blendAttachments.data();
 
         std::vector<VkDynamicState> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
         VkPipelineDynamicStateCreateInfo dynamicState {};
@@ -420,11 +421,11 @@ namespace Engine {
         dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
         dynamicState.pDynamicStates = dynamicStates.data();
 
-        VkFormat visBufferFormat = VK_FORMAT_R32G32_UINT;
+        std::array formats = {VK_FORMAT_R32G32_UINT, VK_FORMAT_R16G16_SFLOAT};
         VkPipelineRenderingCreateInfo renderingCreateInfo {};
         renderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-        renderingCreateInfo.colorAttachmentCount = 1;
-        renderingCreateInfo.pColorAttachmentFormats = &visBufferFormat;
+        renderingCreateInfo.colorAttachmentCount = 2;
+        renderingCreateInfo.pColorAttachmentFormats = formats.data();
         renderingCreateInfo.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
 
         VkGraphicsPipelineCreateInfo pipelineInfo {};
@@ -519,14 +520,16 @@ namespace Engine {
         depthStencil.depthWriteEnable = VK_TRUE;
         depthStencil.depthCompareOp   = VK_COMPARE_OP_LESS;
 
-        VkPipelineColorBlendAttachmentState colorBlendAttachment {};
-        colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT;
-        colorBlendAttachment.blendEnable    = VK_FALSE;
+        std::array<VkPipelineColorBlendAttachmentState, 2> blendAttachments{};
+        blendAttachments[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT;
+        blendAttachments[0].blendEnable = VK_FALSE;
+        blendAttachments[1].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT;
+        blendAttachments[1].blendEnable = VK_FALSE;
 
         VkPipelineColorBlendStateCreateInfo colorBlending {};
         colorBlending.sType           = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-        colorBlending.attachmentCount = 1;
-        colorBlending.pAttachments    = &colorBlendAttachment;
+        colorBlending.attachmentCount = 2;
+        colorBlending.pAttachments    = blendAttachments.data();
 
         std::vector<VkDynamicState> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
         VkPipelineDynamicStateCreateInfo dynamicState {};
@@ -534,11 +537,11 @@ namespace Engine {
         dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
         dynamicState.pDynamicStates    = dynamicStates.data();
 
-        VkFormat visBufferFormat = VK_FORMAT_R32G32_UINT;
+        std::array formats = {VK_FORMAT_R32G32_UINT, VK_FORMAT_R16G16_SFLOAT};
         VkPipelineRenderingCreateInfo renderingCreateInfo {};
         renderingCreateInfo.sType                   = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-        renderingCreateInfo.colorAttachmentCount    = 1;
-        renderingCreateInfo.pColorAttachmentFormats = &visBufferFormat;
+        renderingCreateInfo.colorAttachmentCount    = 2;
+        renderingCreateInfo.pColorAttachmentFormats = formats.data();
         renderingCreateInfo.depthAttachmentFormat   = VK_FORMAT_D32_SFLOAT;
 
         VkGraphicsPipelineCreateInfo pipelineInfo {};

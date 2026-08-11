@@ -91,5 +91,7 @@ namespace Engine {
         bool cullEnabled = true;
         glm::mat4 frozenViewProj = glm::mat4(1.0f);
         glm::vec3 frozenCameraPos = glm::vec3(0.0f);
+        glm::mat4 prevViewProj = glm::mat4(1.0f);
+        bool firstFrame = true;
     };
 } // namespace Engine
