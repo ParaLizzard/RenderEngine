@@ -110,6 +110,11 @@ class APICall:
     parameters: dict = field(default_factory=dict)
     children: list = field(default_factory=list)
     category: str = "other"
+    duration_us: float = 0.0
+    timestamp: int = 0
+    thread_id: str = ""
+    pipeline_state: dict = field(default_factory=dict)
+
 
 
 @dataclass
@@ -148,12 +153,28 @@ def find_renderdoccmd(custom_path: Optional[str] = None) -> str:
 # ─── XML Conversion via renderdoccmd ───────────────────────────────────────────
 
 def convert_rdc_to_xml(rdc_path: str, renderdoccmd: str, output_dir: str) -> str:
-    """Convert RDC to XML using renderdoccmd."""
+    """Convert RDC capture file to XML (or ZIP containing XML and shader chunks)."""
     xml_path = os.path.join(output_dir, "capture.xml")
+    zip_path = os.path.join(output_dir, "capture.zip")
 
-    print(f"  Converting RDC to XML via renderdoccmd...")
+    print(f"  Converting RDC to XML/ZIP via renderdoccmd...")
     print(f"  This may take several minutes for large captures...")
 
+    # Try zip.xml first so binary chunk files (including SPIR-V shaders) are extracted
+    cmd_zip = [renderdoccmd, "convert", "-f", rdc_path, "-o", zip_path, "-c", "zip.xml"]
+    try:
+        res = subprocess.run(cmd_zip, capture_output=True, text=True, timeout=3600)
+        if os.path.exists(zip_path) and os.path.getsize(zip_path) > 0:
+            import zipfile
+            with zipfile.ZipFile(zip_path, 'r') as zf:
+                zf.extractall(output_dir)
+            if os.path.exists(xml_path):
+                print(f"  ZIP.XML exported & uncompressed: {xml_path} ({os.path.getsize(xml_path) / 1048576:.1f} MB)")
+                return xml_path
+    except Exception:
+        pass
+
+    # Fallback to plain XML conversion
     cmd = [
         renderdoccmd, "convert",
         "-f", rdc_path,
@@ -265,149 +286,171 @@ def extract_thumbnail(rdc_path: str, renderdoccmd: str, output_dir: str) -> str:
 
 # ─── XML Parsing ──────────────────────────────────────────────────────────────
 
+def extract_chunk_params(elem, max_depth: int = 3, current_depth: int = 0) -> dict:
+    """Recursively extract key-value parameter structure from a chunk XML node."""
+    if current_depth > max_depth:
+        return {}
+    params = {}
+    for child in elem:
+        name = child.get('name', '') or child.tag
+        val_str = child.get('string', '')
+        if not val_str:
+            if child.text and child.text.strip():
+                val_str = child.text.strip()
+            elif 'id' in child.attrib:
+                val_str = child.get('id', '')
+        if val_str and val_str not in ('0', 'false', '0.000000'):
+            params[name] = val_str
+        if len(child) > 0 and current_depth < max_depth:
+            sub = extract_chunk_params(child, max_depth, current_depth + 1)
+            for k, v in sub.items():
+                params[f"{name}.{k}"] = v
+    return params
+
+
 def parse_xml_streaming(xml_path: str, verbosity: str) -> tuple:
     """
-    Parse the RenderDoc XML export using streaming (iterparse) to handle
-    very large files without loading everything into memory.
-
-    Returns (api_calls, resources, frame_stats, metadata)
+    Parse RenderDoc XML export using streaming (iterparse). Handles modern <chunk>
+    elements, <header> metadata, timestamps, and parameters.
     """
     api_calls = []
     resources = []
     stats = FrameStats()
     metadata = RDCMetadata()
 
-    current_chunk = []
-    chunk_depth = 0
     max_calls = {
-        'summary': 0,       # Don't collect individual calls
-        'normal': 50000,     # Reasonable limit
-        'verbose': 500000,   # Very high limit
+        'summary': 0,
+        'normal': 50000,
+        'verbose': 500000,
     }.get(verbosity, 50000)
 
-    call_counter = defaultdict(int)
-    resource_types_seen = defaultdict(int)
+    timebase_freq = 1.0
 
     print(f"  Parsing XML ({verbosity} mode)...")
-    file_size = os.path.getsize(xml_path)
-    last_progress = 0
 
     try:
-        context = ET.iterparse(xml_path, events=('start', 'end'))
-        path_stack = []
-        current_call = None
-        current_params = {}
-        call_count = 0
+        context = ET.iterparse(xml_path, events=('end',))
         event_id_counter = 0
 
-        for event, elem in context:
-            if event == 'start':
-                path_stack.append(elem.tag)
+        for _, elem in context:
+            tag = elem.tag.lower() if elem.tag else ""
 
-                # Track different element types
-                tag = elem.tag.lower() if elem.tag else ""
+            if tag == 'driver':
+                metadata.api = elem.text or elem.get('name', 'Vulkan')
+            elif tag == 'machineident':
+                metadata.machine_info = f"Machine ID: {elem.text}"
+            elif tag == 'timebase':
+                freq_str = elem.get('frequency', '10')
+                try:
+                    timebase_freq = float(freq_str) if float(freq_str) > 0 else 1.0
+                except ValueError:
+                    timebase_freq = 1.0
 
-                # Detect API calls
-                if tag in ('call', 'apicall', 'action', 'event', 'drawcall'):
-                    call_name = elem.get('name', '') or elem.get('Name', '') or elem.text or ""
-                    event_id_counter += 1
+            elif tag in ('chunk', 'call', 'apicall', 'action', 'event', 'drawcall'):
+                call_name = elem.get('name', '') or elem.get('Name', '') or elem.text or ""
+                event_id_counter += 1
 
-                    if call_name:
-                        stats.total_api_calls += 1
-                        call_counter[call_name] += 1
+                if call_name:
+                    stats.total_api_calls += 1
 
-                        # Categorize
-                        category = 'other'
-                        for cat_name, pattern in VK_CALL_CATEGORIES.items():
-                            if pattern.search(call_name):
-                                category = cat_name
-                                break
+                    category = 'other'
+                    for cat_name, pattern in VK_CALL_CATEGORIES.items():
+                        if pattern.search(call_name):
+                            category = cat_name
+                            break
 
-                        # Update stats
-                        if category == 'draw':
-                            stats.total_draw_calls += 1
-                        elif category == 'dispatch':
-                            stats.total_dispatches += 1
-                        elif category == 'sync':
-                            stats.total_barriers += 1
-                        elif category == 'renderpass':
-                            stats.total_render_passes += 1
-                        elif category == 'creation':
-                            stats.total_resources_created += 1
-                        elif category == 'descriptor':
-                            stats.total_descriptor_updates += 1
-                        elif category == 'push_constants':
-                            stats.total_push_constant_calls += 1
-                        elif category == 'copy' or category == 'transfer':
-                            stats.total_copy_calls += 1
-                        elif category == 'clear':
-                            stats.total_clear_calls += 1
-                        elif category == 'query':
-                            stats.total_query_calls += 1
-                        elif category == 'submit':
-                            stats.total_submit_calls += 1
+                    if category == 'draw':
+                        stats.total_draw_calls += 1
+                    elif category == 'dispatch':
+                        stats.total_dispatches += 1
+                    elif category == 'sync':
+                        stats.total_barriers += 1
+                    elif category == 'renderpass':
+                        stats.total_render_passes += 1
+                    elif category == 'creation':
+                        stats.total_resources_created += 1
+                    elif category == 'descriptor':
+                        stats.total_descriptor_updates += 1
+                    elif category == 'push_constants':
+                        stats.total_push_constant_calls += 1
+                    elif category in ('copy', 'transfer'):
+                        stats.total_copy_calls += 1
+                    elif category == 'clear':
+                        stats.total_clear_calls += 1
+                    elif category == 'query':
+                        stats.total_query_calls += 1
+                    elif category == 'submit':
+                        stats.total_submit_calls += 1
 
-                        # Collect individual calls up to limit
-                        if len(api_calls) < max_calls:
-                            current_call = APICall(
-                                name=call_name,
-                                event_id=event_id_counter,
-                                category=category,
-                            )
+                    params = extract_chunk_params(elem)
 
-                # Resource creation tracking
-                if any(k in tag for k in ['resource', 'buffer', 'image', 'texture', 'sampler', 'pipeline', 'shader', 'descriptorset']):
-                    res_name = elem.get('name', '') or elem.get('Name', '') or ""
-                    res_type = elem.get('type', '') or elem.get('Type', '') or tag
-                    if res_name or any(elem.attrib.values()):
-                        resource_types_seen[res_type] += 1
-                        if verbosity != 'summary':
-                            resources.append(ResourceInfo(
-                                resource_type=res_type,
-                                name=res_name,
-                                handle=elem.get('handle', '') or elem.get('id', ''),
-                                details=dict(elem.attrib),
-                            ))
+                    if len(api_calls) < max_calls:
+                        ts = int(elem.get('timestamp', '0'))
+                        dur = int(elem.get('duration', '0'))
+                        thread_id = elem.get('threadID', '')
+                        dur_us = (dur / timebase_freq) if timebase_freq > 0 else float(dur)
 
-            elif event == 'end':
-                tag = elem.tag.lower() if elem.tag else ""
+                        call = APICall(
+                            name=call_name,
+                            event_id=event_id_counter,
+                            category=category,
+                            timestamp=ts,
+                            duration_us=dur_us,
+                            thread_id=thread_id,
+                            parameters=params
+                        )
+                        api_calls.append(call)
 
-                # Finalize API call
-                if tag in ('call', 'apicall', 'action', 'event', 'drawcall'):
-                    if current_call:
-                        # Extract parameters from child elements
-                        for child in elem:
-                            param_name = child.get('name', '') or child.tag
-                            param_val = child.text or child.get('value', '') or ""
-                            if param_name and param_val:
-                                current_call.parameters[param_name] = param_val
+                    # Track resource creations
+                    if category == 'creation' or 'Create' in call_name or 'Allocate' in call_name:
+                        res_handle = ""
+                        res_name = ""
+                        res_details = {}
+                        for k, v in params.items():
+                            kl = k.lower()
+                            if ('pcreateinfo.name' in kl or 'debuglabel' in kl) and v and not res_name:
+                                res_name = v
+                            if not res_handle:
+                                if any(h in kl for h in ('handle', 'resourceid', 'image', 'buffer', 'memory', 'view', 'sampler', 'pipeline', 'set', 'pool', 'swapchain', 'fence', 'semaphore', 'shadermodule')):
+                                    if v.isdigit() or v.startswith('ResourceId') or v.startswith('0x'):
+                                        res_handle = f"ResourceId::{v}" if v.isdigit() else v
+                            if any(d in kl for d in ('format', 'extent', 'size', 'stage', 'usage', 'type', 'width', 'height')):
+                                res_details[k.split('.')[-1]] = v
 
-                        api_calls.append(current_call)
-                        current_call = None
+                        if not res_name:
+                            desc = []
+                            if 'CreateInfo.format' in params: desc.append(params['CreateInfo.format'])
+                            if 'CreateInfo.extent.width' in params and 'CreateInfo.extent.height' in params:
+                                desc.append(f"{params['CreateInfo.extent.width']}x{params['CreateInfo.extent.height']}")
+                            if 'CreateInfo.size' in params:
+                                try: desc.append(f"{int(params['CreateInfo.size']):,}B")
+                                except ValueError: desc.append(f"{params['CreateInfo.size']}B")
+                            if 'memoryRequirements.size' in params:
+                                try: desc.append(f"mem:{int(params['memoryRequirements.size']):,}B")
+                                except ValueError: desc.append(f"mem:{params['memoryRequirements.size']}B")
+                            res_name = " ".join(desc)
 
-                # Extract metadata
-                if tag in ('driver', 'driverinfo'):
-                    metadata.driver_info = elem.text or str(dict(elem.attrib))
-                elif tag in ('api', 'graphicsapi'):
-                    metadata.api = elem.text or elem.get('name', '')
+                        resources.append(ResourceInfo(
+                            resource_type=call_name.replace('vkCreate', '').replace('vkAllocate', ''),
+                            name=res_name,
+                            handle=res_handle,
+                            details=res_details if res_details else params
+                        ))
 
-                if path_stack:
-                    path_stack.pop()
-
-                # Free memory periodically
                 elem.clear()
 
+
     except ET.ParseError as e:
-        print(f"  WARNING: XML parse error (partial data extracted): {e}", file=sys.stderr)
+        print(f"  WARNING: XML parse error: {e}", file=sys.stderr)
     except Exception as e:
         print(f"  WARNING: Error during XML parsing: {e}", file=sys.stderr)
 
-    # If XML was essentially empty or had a different structure, try flat text parsing
     if stats.total_api_calls == 0:
         print(f"  XML had no recognized API call elements. Attempting flat text scan...")
         stats, api_calls, resources = parse_xml_flat(xml_path, verbosity, max_calls)
 
     return api_calls, resources, stats, metadata
+
 
 
 def parse_xml_flat(xml_path: str, verbosity: str, max_calls: int) -> tuple:
@@ -1006,6 +1049,113 @@ def generate_output(
     return "\n".join(lines)
 
 
+# ─── SPIR-V Shader Parsing ───────────────────────────────────────────────────
+
+def parse_spirv_shaders(temp_dir: str) -> list:
+    """Scan temp directory or extracted capture for SPIR-V shader binaries."""
+    shaders = []
+    if not os.path.isdir(temp_dir):
+        return shaders
+
+    STAGE_NAMES = {
+        0: 'Vertex', 1: 'TessControl', 2: 'TessEval', 3: 'Geometry',
+        4: 'Fragment', 5: 'GLCompute', 5267: 'TaskNV', 5268: 'MeshNV',
+        5364: 'TaskEXT', 5365: 'MeshEXT'
+    }
+
+    for root, _, files in os.walk(temp_dir):
+        for fname in files:
+            fpath = os.path.join(root, fname)
+            try:
+                if os.path.getsize(fpath) >= 20:
+                    with open(fpath, 'rb') as f:
+                        data = f.read()
+                    if len(data) >= 20 and data[:4] == b'\x03\x02\x23\x07':
+                        ver = struct.unpack('<I', data[4:8])[0]
+                        maj = (ver >> 16) & 0xff
+                        min_v = (ver >> 8) & 0xff
+                        bound = struct.unpack('<I', data[12:16])[0]
+                        entry_points = []
+                        idx = 20
+                        while idx + 4 <= len(data):
+                            w = struct.unpack('<I', data[idx:idx+4])[0]
+                            word_count = w >> 16
+                            opcode = w & 0xffff
+                            if word_count == 0 or idx + word_count * 4 > len(data):
+                                break
+                            if opcode == 15 and word_count >= 4:
+                                exec_model = struct.unpack('<I', data[idx+4:idx+8])[0]
+                                stage = STAGE_NAMES.get(exec_model, f"Stage({exec_model})")
+                                str_bytes = data[idx+12:idx+word_count*4]
+                                null_pos = str_bytes.find(b'\x00')
+                                name = str_bytes[:null_pos].decode('utf-8', errors='replace') if null_pos != -1 else "main"
+                                entry_points.append({'stage': stage, 'name': name})
+                            idx += word_count * 4
+
+                        shaders.append({
+                            'file': fname,
+                            'version': f"{maj}.{min_v}",
+                            'size': len(data),
+                            'entry_points': entry_points,
+                        })
+            except Exception:
+                pass
+
+    return shaders
+
+
+# ─── Diff Comparison ───────────────────────────────────────────────────────────
+
+def generate_diff_output(file1: str, file2: str) -> str:
+    """Compare two capture analysis files side-by-side."""
+    lines = []
+    w = lines.append
+    w("=" * 100)
+    w("CAPTURE DIFF COMPARISON SUMMARY")
+    w("=" * 100)
+    w(f"  File A: {os.path.basename(file1)}")
+    w(f"  File B: {os.path.basename(file2)}")
+    w("")
+
+    def load_counts(path):
+        counts = defaultdict(int)
+        if not os.path.exists(path):
+            return counts
+        with open(path, 'r', encoding='utf-8', errors='replace') as f:
+            in_table = False
+            for line in f:
+                if 'API Call Frequency Table:' in line or 'API Call Summary:' in line:
+                    in_table = True
+                    continue
+                if in_table and '=====' in line:
+                    break
+                if in_table and line.strip() and not line.startswith('Function'):
+                    parts = line.split()
+                    if len(parts) >= 2 and parts[-2].isdigit():
+                        func = parts[0]
+                        counts[func] = int(parts[-2])
+        return counts
+
+    c1 = load_counts(file1)
+    c2 = load_counts(file2)
+    all_funcs = sorted(set(c1.keys()) | set(c2.keys()))
+
+    w(f"  {'Function':<50s} {'File A':>10s} {'File B':>10s} {'Diff':>10s}")
+    w(f"  {'-'*50} {'-'*10} {'-'*10} {'-'*10}")
+    for func in all_funcs:
+        v1 = c1[func]
+        v2 = c2[func]
+        diff = v2 - v1
+        diff_str = f"{diff:+d}" if diff != 0 else "0"
+        w(f"  {func:<50s} {v1:>10d} {v2:>10d} {diff_str:>10s}")
+
+    w("")
+    w("=" * 100)
+    w("END OF DIFF COMPARISON")
+    w("=" * 100)
+    return "\n".join(lines)
+
+
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
@@ -1016,11 +1166,11 @@ def main():
 Examples:
   python renderdoc_rdc_to_text.py capture.rdc
   python renderdoc_rdc_to_text.py capture.rdc --output analysis.txt
-  python renderdoc_rdc_to_text.py capture.rdc --verbosity verbose
+  python renderdoc_rdc_to_text.py capture.rdc --diff other_analysis.txt
   python renderdoc_rdc_to_text.py capture.rdc --renderdoccmd "C:\\Path\\To\\renderdoccmd.exe"
         """
     )
-    parser.add_argument("input", help="Path to .rdc file")
+    parser.add_argument("input", help="Path to .rdc file or previous analysis text file")
     parser.add_argument("--output", "-o", help="Output text file path (default: <input>_analysis.txt)")
     parser.add_argument("--verbosity", "-v", choices=["summary", "normal", "verbose"],
                         default="normal", help="Output verbosity level (default: normal)")
@@ -1028,6 +1178,7 @@ Examples:
     parser.add_argument("--keep-temp", action="store_true",
                         help="Keep temporary XML/JSON files (for debugging)")
     parser.add_argument("--xml-only", help="Use pre-existing XML file instead of converting from RDC")
+    parser.add_argument("--diff", help="Path to second capture analysis file to diff against input")
 
     args = parser.parse_args()
 
@@ -1035,6 +1186,18 @@ Examples:
     if not input_path.exists():
         print(f"ERROR: File not found: {input_path}", file=sys.stderr)
         sys.exit(1)
+
+    if args.diff:
+        diff_path = Path(args.diff)
+        if not diff_path.exists():
+            print(f"ERROR: Diff target not found: {diff_path}", file=sys.stderr)
+            sys.exit(1)
+        output_text = generate_diff_output(str(input_path), str(diff_path))
+        output_path = Path(args.output) if args.output else input_path.with_name(input_path.stem + "_diff.txt")
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(output_text)
+        print(f"Diff output written to {output_path}")
+        return
 
     # Default output path
     if args.output:
@@ -1071,9 +1234,12 @@ Examples:
         sections = extract_sections(str(input_path), renderdoccmd, temp_dir)
         section_strings = parse_section_strings(sections)
 
-        # Step 4: Extract thumbnail
-        print("Step 4/5: Extracting thumbnail...")
+        # Step 4: Extract thumbnail & SPIR-V shaders
+        print("Step 4/5: Extracting thumbnail and scanning SPIR-V shaders...")
         thumbnail_path = extract_thumbnail(str(input_path), renderdoccmd, temp_dir)
+        spirv_shaders = parse_spirv_shaders(temp_dir)
+        if spirv_shaders:
+            print(f"  Extracted {len(spirv_shaders)} SPIR-V shader modules")
 
         # Step 5: Parse XML
         print("Step 5/5: Parsing extracted data...")
@@ -1088,7 +1254,6 @@ Examples:
 
         if xml_path and os.path.exists(xml_path):
             api_calls, resources, stats, xml_metadata = parse_xml_streaming(xml_path, args.verbosity)
-            # Merge metadata
             if xml_metadata.api:
                 metadata.api = xml_metadata.api
             if xml_metadata.driver_info:
@@ -1102,6 +1267,15 @@ Examples:
             str(input_path), metadata, stats, api_calls, resources,
             chrome_data, section_strings, thumbnail_path, args.verbosity,
         )
+
+        # Append SPIR-V shaders summary if found
+        if spirv_shaders:
+            sh_lines = ["\n" + "="*100, "SECTION 14: DISCOVERED SPIR-V SHADER MODULES", "="*100, ""]
+            for sh in spirv_shaders:
+                eps = ", ".join(f"{ep['stage']}:{ep['name']}" for ep in sh['entry_points']) or "No entry point"
+                sh_lines.append(f"  [{sh['file']}] SPIR-V {sh['version']} ({sh['size']:,} bytes) — Entry Points: {eps}")
+            sh_lines.append("")
+            output_text += "\n" + "\n".join(sh_lines)
 
         # Write output
         with open(output_path, 'w', encoding='utf-8') as f:
@@ -1132,3 +1306,4 @@ Examples:
 
 if __name__ == "__main__":
     main()
+

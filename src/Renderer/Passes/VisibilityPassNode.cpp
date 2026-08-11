@@ -10,7 +10,7 @@ namespace Engine {
                                            Model &megaBuffer,
                                            CullPassNode &cullPass,
                                            ResourceHeap &resourceHeap):
-        device(device), renderer(renderer), megaBuffer(megaBuffer), cullPass(cullPass), resourceHeap(resourceHeap)
+        RenderPassNode("Visibility Pass"), device(device), renderer(renderer), megaBuffer(megaBuffer), cullPass(cullPass), resourceHeap(resourceHeap)
     {
         createPipelineLayout();
         createPipeline();
@@ -200,9 +200,14 @@ namespace Engine {
                                 0, 2, maskedSets,
                                 0, nullptr);
 
+        VkShaderStageFlags maskedStages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+        if (device.isMeshShaderSupported()) {
+            maskedStages |= VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_TASK_BIT_EXT;
+        }
+
         vkCmdPushConstants(cmd,
                            maskedPipelineLayout,
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           maskedStages,
                            0,
                            sizeof(VisibilityPushConstants),
                            &pushConsts);

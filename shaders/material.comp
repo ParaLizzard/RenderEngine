@@ -3,6 +3,7 @@
 #extension GL_KHR_shader_subgroup_basic : enable
 #extension GL_KHR_shader_subgroup_vote : enable
 #extension GL_KHR_shader_subgroup_ballot : enable
+#extension GL_KHR_shader_subgroup_quad : enable
 #extension GL_EXT_shader_8bit_storage : require
 
 const float PI = 3.141592;
@@ -348,7 +349,7 @@ void main() {
     M_dy = abs(M_dy) < 1e-7 ? (M_dy >= 0.0 ? 1e-7 : -1e-7) : M_dy;
 
     float u_dy = (Rx * By_dy - Ry_dy * Bx) / M_dy;
-    float v_dy = (Ax * Ry_dy - Ay_dy * Rx) / M_dy;
+    float v_dy = (Ax * Ry_dy - Ay * Rx) / M_dy;
     vec3 bary_dy = vec3(u_dy, v_dy, 1.0 - u_dy - v_dy);
 
     vec3 worldPos = bary.x * p0 + bary.y * p1 + bary.z * p2;
@@ -432,23 +433,26 @@ void main() {
     vec3 H        = normalize(viewDir + lightDir);
 
     float rawNdotL = dot(worldNormal, lightDir);
+    float rawNdotV = dot(worldNormal, viewDir);
     float NdotL    = max(rawNdotL, 0.0);
-    float NdotV    = max(dot(worldNormal, viewDir), Epsilon);
+    float NdotV    = max(rawNdotV, 0.001);
 
     vec3 F0 = mix(Fdielectric, albedo, metalness);
 
     float NdotL_diffuse = NdotL;
     float lightRoughness = max(roughness, 0.05);
 
-    float NDF = ndfGGX(max(dot(worldNormal, H), 0.0), lightRoughness);
-    float G   = gaSchlickGGX(NdotL, NdotV, lightRoughness);
-    vec3  F   = fresnelSchlick(F0, max(dot(H, viewDir), 0.0));
-
-    vec3 specular = (NDF * G * F) / (4.0 * NdotV + Epsilon);
+    vec3 F = fresnelSchlick(F0, max(dot(H, viewDir), 0.0));
+    vec3 specular = vec3(0.0);
+    if (rawNdotL > 0.0 && rawNdotV > 0.0) {
+        float NDF = ndfGGX(max(dot(worldNormal, H), 0.0), lightRoughness);
+        float G   = gaSchlickGGX(NdotL, NdotV, lightRoughness);
+        specular  = (NDF * G * F) / (4.0 * NdotV + Epsilon);
+    }
     vec3 kD       = (vec3(1.0) - F) * (1.0 - metalness);
 
     vec4 viewPos = pc.view * vec4(worldPos, 1.0);
-    float depth = viewPos.z;
+    float depth = abs(viewPos.z);
     
     uint cascadeIndex = 0;
     for(uint i = 0; i < 2; ++i) {
@@ -456,6 +460,8 @@ void main() {
             cascadeIndex = i + 1;
         }
     }
+
+
 
     const float cascadeScale[3] = float[](1.0, 0.35, 0.1);
     float scale = cascadeIndex < 3 ? cascadeScale[cascadeIndex] : 0.1;
@@ -465,11 +471,12 @@ void main() {
     vec3 shadowWorldPos = worldPos + worldNormal * normalBiasAmt;
 
     vec4 shadowCoord = sceneUbo.lightViewProj[cascadeIndex] * vec4(shadowWorldPos, 1.0);
-    shadowCoord /= shadowCoord.w;
     shadowCoord.xy = shadowCoord.xy * 0.5 + 0.5;
 
     float shadowFactor = 1.0;
-    if (shadowCoord.x > 0.0 && shadowCoord.x < 1.0 &&
+    if (rawNdotL <= 0.0) {
+        shadowFactor = 0.0;
+    } else if (shadowCoord.x > 0.0 && shadowCoord.x < 1.0 &&
         shadowCoord.y > 0.0 && shadowCoord.y < 1.0 &&
         shadowCoord.z > 0.0 && shadowCoord.z < 1.0) {
 
@@ -494,7 +501,6 @@ void main() {
             vec3 nextShadowWorldPos = worldPos + worldNormal * nextNormalBiasAmt;
             
             vec4 nextCoord = sceneUbo.lightViewProj[nextCascade] * vec4(nextShadowWorldPos, 1.0);
-            nextCoord /= nextCoord.w;
             nextCoord.xy = nextCoord.xy * 0.5 + 0.5;
             
             float nextShadowFactor = 1.0;
@@ -514,6 +520,8 @@ void main() {
             shadowFactor = mix(shadowFactor, nextShadowFactor, blendFactor);
         }
     }
+
+
 
     float lightIntensity = sceneUbo.directionalLight.w;
     vec3 directLight = (kD * albedo / PI * NdotL_diffuse + specular) * vec3(lightIntensity) * shadowFactor;
@@ -552,6 +560,24 @@ void main() {
         finalRadiance = hashColor(objID);
     } else if (pc.debugMode == 4u) {
         finalRadiance = vec3(combinedAO);
+    } else if (pc.debugMode == 5u) {
+        if (cascadeIndex == 0) finalRadiance = vec3(1.0, 0.0, 0.0);
+        else if (cascadeIndex == 1) finalRadiance = vec3(0.0, 1.0, 0.0);
+        else if (cascadeIndex == 2) finalRadiance = vec3(0.0, 0.0, 1.0);
+        else finalRadiance = vec3(1.0, 1.0, 0.0);
+    } else if (pc.debugMode == 6u) {
+        float normalizedDepth = clamp(depth / 90.0, 0.0, 1.0);
+        finalRadiance = vec3(normalizedDepth);
+    } else if (pc.debugMode >= 7u && pc.debugMode <= 9u) {
+        uint cIndex = pc.debugMode - 7u;
+        vec4 sc = sceneUbo.lightViewProj[cIndex] * vec4(worldPos, 1.0);
+        sc.xy = sc.xy * 0.5 + 0.5;
+        if (sc.x >= 0.0 && sc.x <= 1.0 && sc.y >= 0.0 && sc.y <= 1.0) {
+            float sDepth = texture(csmDepthMap, vec3(sc.xy, float(cIndex))).r;
+            finalRadiance = vec3(sDepth);
+        } else {
+            finalRadiance = vec3(fract(sc.x), fract(sc.y), 0.0);
+        }
     }
 
     uint packedNormal = encodeOctNormal(worldNormal);

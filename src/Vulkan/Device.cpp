@@ -374,6 +374,7 @@ namespace Engine {
         vulkan12Features.drawIndirectCount = VK_TRUE;
         vulkan12Features.shaderOutputLayer = VK_TRUE;
         vulkan12Features.storageBuffer8BitAccess = VK_TRUE;
+        vulkan12Features.hostQueryReset = VK_TRUE;
 
         VkPhysicalDeviceMeshShaderFeaturesEXT meshShaderFeatures{};
         meshShaderFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
@@ -388,11 +389,13 @@ namespace Engine {
         deviceFeatures2.features = {.geometryShader = VK_TRUE,
                                     .multiDrawIndirect = VK_TRUE,
                                     .drawIndirectFirstInstance = VK_TRUE,
+                                    .depthClamp = VK_TRUE,
                                     .samplerAnisotropy = VK_TRUE};
 
         if (bMeshShaderSupported) {
             meshShaderFeatures.meshShader = VK_TRUE;
             meshShaderFeatures.taskShader = VK_TRUE;
+            meshShaderFeatures.multiviewMeshShader = VK_TRUE;
             meshShaderFeatures.pNext = &vulkan11Features;
             deviceFeatures2.pNext = &meshShaderFeatures;
         } else {
@@ -446,7 +449,9 @@ namespace Engine {
         allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_3;
         allocatorInfo.pVulkanFunctions = &vulkanFunctions;
 
-        allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+        allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT |
+                          VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT |
+                          VMA_ALLOCATOR_CREATE_KHR_MAINTENANCE4_BIT;
 
         if (vmaCreateAllocator(&allocatorInfo, &allocator) != VK_SUCCESS) {
             throw std::runtime_error("Device: failed to create allocator");

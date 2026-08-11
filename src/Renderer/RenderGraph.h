@@ -6,6 +6,12 @@
 #include <vulkan/vulkan.h>
 #include "vma/vk_mem_alloc.h"
 #include "Renderer/RenderPassNode.h"
+#include "Core/EngineConfig.h"
+
+#include <algorithm>
+#include <chrono>
+#include <iomanip>
+#include <iostream>
 
 namespace Engine {
 
@@ -83,6 +89,23 @@ namespace Engine {
         std::vector<BufferUsageDeclaration> bufferUsages;
     };
 
+    struct PassProfileStats
+    {
+        std::string name;
+        double totalTimeMs = 0.0;
+        double minTimeMs = 999999.0;
+        double maxTimeMs = 0.0;
+        uint32_t samples = 0;
+        int depth = 0;
+    };
+
+    struct ProfileMarker {
+        std::string name;
+        uint32_t queryIndexStart;
+        uint32_t queryIndexEnd;
+        int depth;
+    };
+
     class RenderGraph
     {
     public:
@@ -115,18 +138,36 @@ namespace Engine {
         void updateImageHandle(const std::string &name, VkImage image, VkImageView view, VkExtent2D extent);
         void updateBufferHandle(const std::string &name, VkBuffer buffer, VkDeviceSize size);
 
+        void pushProfileMarker(VkCommandBuffer cmd, const std::string &name);
+        void popProfileMarker(VkCommandBuffer cmd);
+
 
         VkImageView getImageView(const std::string &name) const;
         VkImage getImage(const std::string &name) const;
         VkDescriptorBufferInfo getBufferInfo(const std::string &name, int32_t currentFrame);
 
     private:
+        void printProfileSummaryTable();
+
         Device &device;
 
         std::vector<PassExecutionInfo> registeredPasses;
         std::unordered_map<std::string, GraphImage> imageRegistry;
         std::unordered_map<std::string, TransientResource> transientCache;
         std::unordered_map<std::string, GraphBuffer> bufferRegistry;
+
+        VkQueryPool profilerQueryPool = VK_NULL_HANDLE;
+        std::chrono::high_resolution_clock::time_point startTime;
+        bool profilingStarted = false;
+        bool profileSummaryPrinted = false;
+        std::vector<PassProfileStats> profileStats;
+        std::unordered_map<std::string, size_t> profileStatsMap;
+
+        uint32_t currentQueryCount = 0;
+        uint32_t currentFrameOffset = 0;
+        int currentProfileDepth = 0;
+        std::vector<ProfileMarker> activeMarkers;
+        std::vector<ProfileMarker> frameMarkers[Config::MAX_FRAMES_IN_FLIGHT];
     };
 
     class RenderGraphBuilder

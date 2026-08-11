@@ -11,7 +11,7 @@
 
 namespace Engine {
     CullPassNode::CullPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap):
-        device(device), megaBuffer(megaBuffer), renderer(renderer), resourceHeap(resourceHeap)
+        RenderPassNode("Cull Pass"), device(device), megaBuffer(megaBuffer), renderer(renderer), resourceHeap(resourceHeap)
     {
         objectDescriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
 
@@ -338,7 +338,6 @@ namespace Engine {
 
             vkUpdateDescriptorSets(device.getDevice(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 
-            // Writes for masked object descriptor set
             VkDescriptorBufferInfo maskedDispatchInfo = gpuMaskedDispatchCommandBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
             VkDescriptorBufferInfo maskedVisibleObjInfo = gpuMaskedVisibleObjectBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
             VkDescriptorBufferInfo maskedSingleIndirectInfo = maskedSingleIndirectCommandBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);

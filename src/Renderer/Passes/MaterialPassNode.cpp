@@ -18,7 +18,7 @@ namespace Engine {
                      ResourceHeap &resourceHeap,
                      CullPassNode &cullPass,
                      RenderGraph &renderGraph):
-        device(device), megaBuffer(megaBuffer), renderer(renderer), resourceHeap(resourceHeap), cullPass(cullPass), renderGraph(renderGraph)
+        RenderPassNode("Material Pass"), device(device), megaBuffer(megaBuffer), renderer(renderer), resourceHeap(resourceHeap), cullPass(cullPass), renderGraph(renderGraph)
     {
         globalPool = DescriptorPool::Builder(device)
                      .setMaxSets(Config::MAX_FRAMES_IN_FLIGHT)

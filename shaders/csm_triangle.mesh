@@ -1,0 +1,120 @@
+#version 460
+#extension GL_EXT_mesh_shader : require
+#extension GL_EXT_shader_8bit_storage : require
+
+layout(local_size_x = 64) in;
+layout(triangles, max_vertices = 64, max_primitives = 124) out;
+
+layout(push_constant) uniform PushConsts {
+    uint cascadeIndex;
+} push;
+
+struct PositionData {
+    float x, y, z;
+};
+
+struct ObjectData {
+    mat4 modelMatrix;
+    mat4 normalMatrix;
+    vec4 boundingSphere;
+    uint baseMeshlet;
+    uint meshletCount;
+    uint alphaMode;
+    uint padding1;
+};
+
+struct Meshlet {
+    float center_x;
+    float center_y;
+    float center_z;
+    float radius;
+    uint cone_axis_cutoff;
+    uint vertexOffset;
+    uint indexOffset;
+    uint vertexCount;
+    uint triangleCount;
+};
+
+layout(set = 0, binding = 1) uniform SceneUbo {
+    vec4 cameraPosition;
+    vec4 directionalLight;
+    mat4 lightViewProj[3];
+    vec4 cascadesSplits;
+    float maxReflectionLod;
+    uint blueNoiseTexIndex;
+    vec2 padding;
+} sceneUbo;
+
+layout(std430, set = 0, binding = 5) readonly buffer ObjectBuffer { ObjectData objects[]; };
+layout(std430, set = 0, binding = 6) readonly buffer VertexBuffer { PositionData positions[]; };
+layout(std430, set = 0, binding = 8) readonly buffer MeshletBuffer { Meshlet meshlets[]; };
+layout(std430, set = 0, binding = 9) readonly buffer MeshletVertexMap { uint meshletVertices[]; };
+layout(std430, set = 0, binding = 10) readonly buffer MeshletTriangleMap { uint meshletTriangleWords[]; };
+
+struct Payload {
+    uint objectID;
+    uint meshletIndices[32];
+};
+
+taskPayloadSharedEXT Payload payload;
+
+shared ObjectData s_obj;
+shared Meshlet s_m;
+shared mat4 s_lightModelViewProj;
+
+shared uint s_triangleWords[96]; // 124 triangles * 3 bytes = 372 bytes = 93 words, but byte offset can reach 374, so we need 94 words. We allocate 96 for safety.
+
+uint getTriangleByte(uint byteOffset) {
+    uint word = s_triangleWords[byteOffset / 4u];
+    uint shift = (byteOffset % 4u) * 8u;
+    return (word >> shift) & 0xFFu;
+}
+
+void main() {
+    uint objectID = payload.objectID;
+    uint localMeshletIdx = payload.meshletIndices[gl_WorkGroupID.x];
+    uint cascadeIndex = push.cascadeIndex;
+    uint ti = gl_LocalInvocationID.x;
+
+    if (ti == 0) {
+        s_obj = objects[objectID];
+        uint globalMeshletID = s_obj.baseMeshlet + localMeshletIdx;
+        s_m = meshlets[globalMeshletID];
+        s_lightModelViewProj = sceneUbo.lightViewProj[cascadeIndex] * s_obj.modelMatrix;
+    }
+    barrier();
+
+    uint vertexCount = s_m.vertexCount;
+    uint triangleCount = s_m.triangleCount;
+    uint indexOffset = s_m.indexOffset;
+    uint startWord = indexOffset / 4u;
+    uint wordOffset = indexOffset % 4u;
+    
+    // Cooperatively load triangle index words into perfectly coalesced L1 SRAM
+    for (uint i = ti; i < 96u; i += gl_WorkGroupSize.x) {
+        s_triangleWords[i] = meshletTriangleWords[startWord + i];
+    }
+    barrier();
+
+    if (ti == 0) {
+        SetMeshOutputsEXT(vertexCount, triangleCount);
+    }
+    barrier();
+
+    // Output vertices
+    if (ti < vertexCount) {
+        uint globalVertexID = meshletVertices[s_m.vertexOffset + ti];
+        PositionData pd = positions[globalVertexID];
+        gl_MeshVerticesEXT[ti].gl_Position = s_lightModelViewProj * vec4(pd.x, pd.y, pd.z, 1.0);
+    }
+
+    // Output primitives directly, letting the hardware rasterizer do backface culling efficiently
+    for (uint triIdx = ti; triIdx < triangleCount; triIdx += gl_WorkGroupSize.x) {
+        uint localByteOffset = wordOffset + triIdx * 3u;
+        uint v0 = getTriangleByte(localByteOffset + 0u);
+        uint v1 = getTriangleByte(localByteOffset + 1u);
+        uint v2 = getTriangleByte(localByteOffset + 2u);
+        
+        gl_PrimitiveTriangleIndicesEXT[triIdx] = uvec3(v0, v1, v2);
+    }
+}

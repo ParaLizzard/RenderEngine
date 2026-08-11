@@ -1,13 +1,28 @@
 #include "Renderer/RenderGraph.h"
+#include "Core/EngineConfig.h"
 #include "Vulkan/Device.h"
 #include "Vulkan/VkUtils.h"
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
 namespace Engine {
     RenderGraph::RenderGraph(Device &device): device(device)
-    {}
+    {
+        startTime = std::chrono::high_resolution_clock::now();
+    }
 
     RenderGraph::~RenderGraph()
     {
+        if (profilerQueryPool != VK_NULL_HANDLE) {
+            vkDestroyQueryPool(device.getDevice(), profilerQueryPool, nullptr);
+            profilerQueryPool = VK_NULL_HANDLE;
+        }
+
         for (auto &pair: transientCache) {
             vkDestroyImageView(device.getDevice(), pair.second.view, nullptr);
             vmaDestroyImage(device.getAllocator(), pair.second.image, pair.second.allocation);
@@ -159,7 +174,47 @@ namespace Engine {
             pass.passNode->resolve(*this, frameInfo);
         }
 
-        for (PassExecutionInfo &pass: registeredPasses) {
+        if (profilerQueryPool == VK_NULL_HANDLE) {
+            VkQueryPoolCreateInfo queryPoolInfo {};
+            queryPoolInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+            queryPoolInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+            queryPoolInfo.queryCount = Config::MAX_FRAMES_IN_FLIGHT * 256;
+            if (vkCreateQueryPool(device.getDevice(), &queryPoolInfo, nullptr, &profilerQueryPool) != VK_SUCCESS) {
+                profilerQueryPool = VK_NULL_HANDLE;
+            } else {
+
+                vkResetQueryPool(device.getDevice(), profilerQueryPool, 0, Config::MAX_FRAMES_IN_FLIGHT * 256);
+            }
+        }
+
+        auto now = std::chrono::high_resolution_clock::now();
+        double elapsedSeconds = std::chrono::duration<double>(now - startTime).count();
+
+        if (!profilingStarted && elapsedSeconds >= 30.0) {
+            profilingStarted = true;
+        }
+
+        bool activeProfiling = profilingStarted && !profileSummaryPrinted && (profilerQueryPool != VK_NULL_HANDLE);
+        
+        static int framesProfiledCount = 0;
+        if (activeProfiling) {
+            framesProfiledCount++;
+        }
+
+        uint32_t passCount = static_cast<uint32_t>(registeredPasses.size());
+        uint32_t currentFrame = frameInfo.frameIndex;
+        uint32_t frameOffset = currentFrame * 256;
+        currentFrameOffset = frameOffset;
+        currentQueryCount = 0;
+        currentProfileDepth = 0;
+        activeMarkers.clear();
+
+        if (profilerQueryPool != VK_NULL_HANDLE) {
+            vkCmdResetQueryPool(cmdBuffer, profilerQueryPool, frameOffset, 256);
+        }
+
+        for (size_t passIdx = 0; passIdx < registeredPasses.size(); ++passIdx) {
+            PassExecutionInfo &pass = registeredPasses[passIdx];
             std::vector<VkImageMemoryBarrier2> imageBarriers;
             std::vector<VkBufferMemoryBarrier2> bufferBarriers;
 
@@ -223,8 +278,153 @@ namespace Engine {
                 vkCmdPipelineBarrier2(cmdBuffer, &dep);
             }
 
+            if (activeProfiling) {
+                pushProfileMarker(cmdBuffer, pass.passNode->getName());
+            }
+
             pass.passNode->execute(cmdBuffer, frameInfo);
+
+            if (activeProfiling) {
+                popProfileMarker(cmdBuffer);
+            }
         }
+
+        if (activeProfiling) {
+            frameMarkers[currentFrame] = activeMarkers;
+        }
+
+        if (activeProfiling && framesProfiledCount > Config::MAX_FRAMES_IN_FLIGHT) {
+            uint32_t prevFrame = (currentFrame + Config::MAX_FRAMES_IN_FLIGHT - 1) % Config::MAX_FRAMES_IN_FLIGHT;
+            uint32_t prevOffset = prevFrame * 256;
+            auto &prevMarkers = frameMarkers[prevFrame];
+            uint32_t queryCount = static_cast<uint32_t>(prevMarkers.size() * 2);
+            
+            if (queryCount > 0) {
+                std::vector<uint64_t> timestamps(queryCount, 0);
+                VkResult res = vkGetQueryPoolResults(
+                    device.getDevice(),
+                    profilerQueryPool,
+                    prevOffset,
+                    queryCount,
+                    queryCount * sizeof(uint64_t),
+                    timestamps.data(),
+                    sizeof(uint64_t),
+                    VK_QUERY_RESULT_64_BIT
+                );
+
+                if (res == VK_SUCCESS) {
+                    float periodNs = device.getDeviceProperties().limits.timestampPeriod;
+                    for (const auto &marker : prevMarkers) {
+                        uint64_t tStart = timestamps[marker.queryIndexStart];
+                        uint64_t tEnd = timestamps[marker.queryIndexEnd];
+                        if (tEnd >= tStart && tStart > 0) {
+                            double passMs = static_cast<double>(tEnd - tStart) * static_cast<double>(periodNs) / 1000000.0;
+                            
+                            auto it = profileStatsMap.find(marker.name);
+                            if (it == profileStatsMap.end()) {
+                                PassProfileStats newStats;
+                                newStats.name = marker.name;
+                                newStats.depth = marker.depth;
+                                profileStats.push_back(newStats);
+                                profileStatsMap[marker.name] = profileStats.size() - 1;
+                                it = profileStatsMap.find(marker.name);
+                            }
+                            
+                            auto &s = profileStats[it->second];
+                            s.totalTimeMs += passMs;
+                            s.minTimeMs = std::min(s.minTimeMs, passMs);
+                            s.maxTimeMs = std::max(s.maxTimeMs, passMs);
+                            s.samples++;
+                        }
+                    }
+                }
+            }
+
+            if (elapsedSeconds >= 35.0) {
+                profileSummaryPrinted = true;
+                printProfileSummaryTable();
+            }
+        }
+    }
+
+    void RenderGraph::pushProfileMarker(VkCommandBuffer cmd, const std::string &name) {
+        if (profilerQueryPool == VK_NULL_HANDLE || currentQueryCount >= 254) return;
+        uint32_t startIdx = currentQueryCount++;
+        vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, profilerQueryPool, currentFrameOffset + startIdx);
+        activeMarkers.push_back({name, startIdx, 0, currentProfileDepth++});
+    }
+
+    void RenderGraph::popProfileMarker(VkCommandBuffer cmd) {
+        if (profilerQueryPool == VK_NULL_HANDLE || currentQueryCount >= 255) return;
+        uint32_t endIdx = currentQueryCount++;
+        vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, profilerQueryPool, currentFrameOffset + endIdx);
+
+        for (auto it = activeMarkers.rbegin(); it != activeMarkers.rend(); ++it) {
+            if (it->queryIndexEnd == 0) {
+                it->queryIndexEnd = endIdx;
+                currentProfileDepth--;
+                break;
+            }
+        }
+    }
+
+    void RenderGraph::printProfileSummaryTable()
+    {
+        double totalGpuMs = 0.0;
+        std::vector<PassProfileStats> statsList;
+        for (const auto &s : profileStats) {
+            if (s.samples > 0) {
+                statsList.push_back(s);
+                if (s.depth == 0) {
+                    totalGpuMs += (s.totalTimeMs / s.samples);
+                }
+            }
+        }
+
+        std::cout << "\n========================================================================================\n"
+                  << "ENGINE GPU PASS PROFILER SUMMARY (Measured Over 5s Window After 30s Warmup)\n"
+                  << "========================================================================================\n"
+                  << std::left << std::setw(30) << "Pass Name"
+                  << " | " << std::setw(16) << "Avg GPU Time (ms)"
+                  << " | " << std::setw(12) << "Min (ms)"
+                  << " | " << std::setw(12) << "Max (ms)"
+                  << " | " << std::setw(12) << "% GPU Share" << "\n"
+                  << "----------------------------------------------------------------------------------------\n";
+
+        for (const auto &s : statsList) {
+            double avgMs = s.totalTimeMs / s.samples;
+
+            double pct = 0.0;
+            if (s.depth == 0 && totalGpuMs > 0.0) {
+                pct = (avgMs / totalGpuMs) * 100.0;
+            }
+            
+            std::string displayName = s.name;
+            if (s.depth > 0) {
+                displayName = std::string(s.depth * 2, ' ') + "|- " + s.name;
+            }
+
+            std::cout << std::left << std::setw(30) << displayName
+                      << " | " << std::fixed << std::setprecision(3) << std::setw(16) << avgMs
+                      << " | " << std::setw(12) << s.minTimeMs
+                      << " | " << std::setw(12) << s.maxTimeMs
+                      << " | ";
+                      
+            if (s.depth == 0) {
+                std::cout << std::setprecision(1) << std::setw(11) << pct << " %\n";
+            } else {
+                std::cout << std::setw(13) << " " << "\n";
+            }
+        }
+        std::cout << "----------------------------------------------------------------------------------------\n"
+                  << std::left << std::setw(30) << "Total Measured Pass Time"
+                  << " | " << std::fixed << std::setprecision(3) << std::setw(16) << totalGpuMs << " ms\n"
+                  << "========================================================================================\n" << std::flush;
+
+        std::cout << "\a" << std::flush;
+#ifdef _WIN32
+        Beep(750, 300);
+#endif
     }
 
     void RenderGraph::clear()

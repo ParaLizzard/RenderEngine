@@ -4,7 +4,7 @@
 namespace Engine {
 
     TransformUpdatePassNode::TransformUpdatePassNode(Device &device, Renderer &renderer):
-    device(device), renderer(renderer)
+        RenderPassNode("Transform Update Pass"), device(device), renderer(renderer)
     {
         globalObjectBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
         stagingBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);

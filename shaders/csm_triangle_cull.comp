@@ -1,0 +1,104 @@
+#version 460
+
+#extension GL_KHR_shader_subgroup_arithmetic : enable
+#extension GL_KHR_shader_subgroup_basic : enable
+#extension GL_KHR_shader_subgroup_ballot : enable
+#extension GL_EXT_shader_8bit_storage : require
+
+layout(local_size_x = 128) in;
+
+struct Meshlet {
+    float center_x;
+    float center_y;
+    float center_z;
+    float radius;
+    uint cone_axis_cutoff;
+    uint vertexOffset;
+    uint indexOffset;
+    uint vertexCount;
+    uint triangleCount;
+};
+
+struct ObjectData {
+    mat4 modelMatrix;
+    mat4 normalMatrix;
+    vec4 boundingSphere;
+    uint baseMeshlet;
+    uint meshletCount;
+    uint alphaMode;
+    uint padding1;
+};
+
+layout(std430, set = 0, binding = 5) readonly buffer ObjectBuffer { ObjectData objects[]; };
+layout(std430, set = 0, binding = 8) readonly buffer MeshletBuffer { Meshlet meshlets[]; };
+
+layout(std430, set = 1, binding = 2) buffer SingleIndirectCommandBuffer {
+    uint vertexCount;
+    uint instanceCount;
+    uint firstVertex;
+    uint firstInstance;
+};
+
+layout(std430, set = 1, binding = 3) buffer CompactedIndexBuffer {
+    uint syntheticIndices[];
+};
+
+layout(std430, set = 1, binding = 4) readonly buffer VisibleMeshletBuffer {
+    uvec2 visibleMeshlets[];
+};
+
+layout(std430, set = 1, binding = 5) readonly buffer TriangleDispatchCommandBuffer {
+    uint dispatchX;
+    uint dispatchY;
+    uint dispatchZ;
+};
+
+layout(push_constant) uniform PushConsts {
+    uint objectCount;
+    uint actualObjectCount;
+    uint cullFlags;
+} push;
+
+void main() {
+    uint meshletWorkgroupID = gl_WorkGroupID.x;
+    if (meshletWorkgroupID >= dispatchX) return;
+
+    uvec2 visibleMeshlet = visibleMeshlets[meshletWorkgroupID];
+    uint objectID = visibleMeshlet.x;
+    uint localMeshletIdx = visibleMeshlet.y;
+
+    ObjectData obj = objects[objectID];
+    uint globalMeshletID = obj.baseMeshlet + localMeshletIdx;
+    Meshlet m = meshlets[globalMeshletID];
+
+    uint triangleCount = m.triangleCount;
+    uint triIdx = gl_LocalInvocationID.x;
+
+    bool visible = (triIdx < triangleCount);
+
+    #ifdef GL_KHR_shader_subgroup_arithmetic
+    uint visibleFlag = visible ? 1u : 0u;
+    uint waveVisibleCount = subgroupAdd(visibleFlag);
+    uint waveVisibleOffset = subgroupExclusiveAdd(visibleFlag);
+
+    uint waveBase = 0u;
+    if (subgroupElect()) {
+        if (waveVisibleCount > 0u) {
+            waveBase = atomicAdd(vertexCount, waveVisibleCount * 3u);
+        }
+    }
+    waveBase = subgroupBroadcast(waveBase, subgroupBallotFindLSB(subgroupBallot(true)));
+
+    if (visible) {
+        uint syntheticIndex = (objectID << 22u) | ((localMeshletIdx & 0x1FFFu) << 9u) | ((triIdx * 3u) & 0x1FFu);
+        uint outIndex = (waveBase / 3u) + waveVisibleOffset;
+        syntheticIndices[outIndex] = syntheticIndex;
+    }
+    #else
+    if (visible) {
+        uint slot = atomicAdd(vertexCount, 3u);
+        uint syntheticIndex = (objectID << 22u) | ((localMeshletIdx & 0x1FFFu) << 9u) | ((triIdx * 3u) & 0x1FFu);
+        syntheticIndices[slot / 3u] = syntheticIndex;
+    }
+    #endif
+}

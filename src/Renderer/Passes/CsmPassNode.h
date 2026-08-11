@@ -1,4 +1,9 @@
 #pragma once
+#include <memory>
+#include <vector>
+#include <vulkan/vulkan.h>
+
+#include "Vulkan/Buffer.h"
 #include "Renderer/RenderPassNode.h"
 #include "Renderer/Passes/CullPassNode.h"
 
@@ -31,17 +36,21 @@ namespace Engine {
         struct CsmCullPushConstants
         {
             uint32_t objectCount;
-            uint32_t objectCapacity;
+            uint32_t actualObjectCount;
+            uint32_t cullFlags;
         };
 
         struct CascadeGpuData
         {
             glm::mat4 viewProj[SHADOW_MAP_CASCADES];
             glm::vec4 frustumPlanes[SHADOW_MAP_CASCADES * 6];
+            glm::vec4 cameraForward;
         };
 
         void createPipelineLayout();
         void createPipeline();
+        void createMeshPipeline();
+        void createMaskedMeshPipeline();
         void createMaskedPipeline();
         void updateDescriptors();
 
@@ -53,24 +62,43 @@ namespace Engine {
 
         VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
         VkPipeline pipeline = VK_NULL_HANDLE;
+
+        VkPipelineLayout meshPipelineLayout = VK_NULL_HANDLE;
+        VkPipeline meshPipeline = VK_NULL_HANDLE;
+
         VkPipelineLayout maskedPipelineLayout = VK_NULL_HANDLE;
         VkPipeline maskedPipeline = VK_NULL_HANDLE;
+        VkPipeline maskedMeshPipeline = VK_NULL_HANDLE;
 
         VkPipelineLayout computePipelineLayout = VK_NULL_HANDLE;
-        VkPipeline computePipeline = VK_NULL_HANDLE;
+        VkPipeline objectCullPipeline = VK_NULL_HANDLE;
+        VkPipeline taskSubmitPipeline = VK_NULL_HANDLE;
+        VkPipeline meshletCullPipeline = VK_NULL_HANDLE;
+        VkPipeline triangleCullPipeline = VK_NULL_HANDLE;
 
-        std::vector<VkDescriptorSet> objectDescriptorSets;
         VkDescriptorSetLayout objectSetLayout {VK_NULL_HANDLE};
         VkDescriptorPool objectDescriptorPool {VK_NULL_HANDLE};
+        std::vector<VkDescriptorSet> objectDescriptorSets;
 
-        std::vector<std::unique_ptr<Buffer>> gpuCompactedIndirectCommandBuffers;
-        std::vector<std::unique_ptr<Buffer>> gpuDrawCountBuffers;
+        std::vector<std::unique_ptr<Buffer>> gpuDispatchCommandBuffers;
+        std::vector<std::unique_ptr<Buffer>> gpuVisibleObjectBuffers;
+        std::vector<std::unique_ptr<Buffer>> singleIndirectCommandBuffers;
+        std::vector<std::unique_ptr<Buffer>> compactedIndexBuffers;
+        std::vector<std::unique_ptr<Buffer>> visibleMeshletBuffers;
+        std::vector<std::unique_ptr<Buffer>> triangleDispatchCommandBuffers;
+        std::vector<std::unique_ptr<Buffer>> taskWorkgroupBuffers;
+        std::vector<std::unique_ptr<Buffer>> taskDispatchCommandBuffers;
+        std::vector<std::unique_ptr<Buffer>> maskedTaskWorkgroupBuffers;
+        std::vector<std::unique_ptr<Buffer>> maskedTaskDispatchCommandBuffers;
         std::vector<std::unique_ptr<Buffer>> cascadeDataBuffers;
 
         glm::mat4 cascadeViewProjs[SHADOW_MAP_CASCADES];
 
         VkImage csmImageCache = VK_NULL_HANDLE;
         VkImageView csmArrayView = VK_NULL_HANDLE;
+        VkImageView cascadeViews[SHADOW_MAP_CASCADES] = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
+
+        PFN_vkCmdDrawMeshTasksIndirectEXT pfn_vkCmdDrawMeshTasksIndirectEXT {nullptr};
 
         bool descriptorsUpdated = false;
     };

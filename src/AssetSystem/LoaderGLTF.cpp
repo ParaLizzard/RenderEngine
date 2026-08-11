@@ -540,8 +540,19 @@ namespace Engine {
 
         auto gltfFile = fastgltf::MappedGltfFile::FromPath(filePath);
         if (!bool(gltfFile)) {
-            std::cerr << "LoaderGLTF: Failed to open: " << fastgltf::getErrorMessage(gltfFile.error()) << '\n';
-            throw std::runtime_error("Failed to load " + filePath.string());
+            auto dataBuffer = fastgltf::GltfDataBuffer::FromPath(filePath);
+            if (!bool(dataBuffer)) {
+                std::cerr << "LoaderGLTF: Failed to open: " << fastgltf::getErrorMessage(gltfFile.error()) << '\n';
+                throw std::runtime_error("Failed to load " + filePath.string());
+            }
+
+            auto asset = parser.loadGltf(dataBuffer.get(), filePath.parent_path(), gltfOptions);
+            if (asset.error() != fastgltf::Error::None) {
+                std::cerr << "LoaderGLTF: Parse error: " << fastgltf::getErrorMessage(asset.error()) << '\n';
+                throw std::runtime_error("Failed to load " + filePath.string());
+            }
+
+            return std::move(asset.get());
         }
 
         auto asset = parser.loadGltf(gltfFile.get(), filePath.parent_path(), gltfOptions);

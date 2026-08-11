@@ -4,7 +4,7 @@
 #extension GL_KHR_shader_subgroup_basic : enable
 #extension GL_KHR_shader_subgroup_ballot : enable
 
-layout(local_size_x = 64) in;
+layout(local_size_x = 256) in;
 
 struct ObjectData {
     mat4 modelMatrix;
@@ -16,53 +16,74 @@ struct ObjectData {
     uint padding1;
 };
 
-struct VkDrawIndexedIndirectCommand {
-    uint indexCount;
-    uint instanceCount;
-    uint firstIndex;
-    int  vertexOffset;
-    uint firstInstance;
+struct TaskWorkgroup {
+    uint objectID;
+    uint baseMeshletIndex;
 };
 
-// Set 0: ResourceHeap
 layout(std430, set = 0, binding = 5) readonly buffer ObjectBuffer {
     ObjectData objects[];
 };
 
-// Set 1: CSM Storage
-layout(std430, set = 1, binding = 0) readonly buffer BlueprintBuffer {
-    VkDrawIndexedIndirectCommand blueprints[];
+layout(std430, set = 1, binding = 0) buffer DispatchCommandBuffer {
+    uint visibleObjectCount;
+    uint dispatchY;
+    uint dispatchZ;
 };
 
-layout(std430, set = 1, binding = 1) buffer DrawCountBuffer {
-    uint drawCounts[3];
+layout(std430, set = 1, binding = 1) buffer VisibleObjectBuffer {
+    uint visibleObjects[];
 };
 
-layout(std430, set = 1, binding = 2) buffer CompactedIndirectBuffer {
-    VkDrawIndexedIndirectCommand compactedCommands[];
+layout(std430, set = 1, binding = 6) writeonly buffer TaskWorkgroupBuffer {
+    TaskWorkgroup taskWorkgroups[];
 };
 
-layout(std430, set = 1, binding = 3) readonly buffer CascadeDataBuffer {
-    mat4  cascadeViewProj[3];
-    vec4  cascadePlanes[18];
+layout(std430, set = 1, binding = 7) buffer TaskDispatchCommandBuffer {
+    uint taskDispatchX;
+    uint taskDispatchY;
+    uint taskDispatchZ;
+};
+
+layout(std430, set = 1, binding = 8) readonly buffer CascadeDataBuffer {
+    mat4 cascadeViewProj[3];
+    vec4 cascadePlanes[18];
+    vec4 cameraForward;
+};
+
+layout(std430, set = 1, binding = 9) writeonly buffer MaskedTaskWorkgroupBuffer {
+    TaskWorkgroup maskedTaskWorkgroups[];
+};
+
+layout(std430, set = 1, binding = 10) buffer MaskedTaskDispatchCommandBuffer {
+    uint maskedTaskDispatchX;
+    uint maskedTaskDispatchY;
+    uint maskedTaskDispatchZ;
 };
 
 layout(push_constant) uniform PushConsts {
     uint objectCount;
-    uint objectCapacity;
+    uint actualObjectCount;
+    uint cullFlags;
 } push;
+
+shared vec4 s_cascadePlanes[18];
 
 void main() {
     uint gID = gl_GlobalInvocationID.x;
-    if (gID >= push.objectCount)
+    uint ti = gl_LocalInvocationID.x;
+
+    if (ti < 18u) {
+        s_cascadePlanes[ti] = cascadePlanes[ti];
+    }
+    barrier();
+
+    if (gID >= push.actualObjectCount)
         return;
 
-    VkDrawIndexedIndirectCommand blueprint = blueprints[gID];
-    uint objectID = blueprint.firstInstance;
-
-    ObjectData obj = objects[objectID];
-
-    if ((obj.alphaMode & 3u) == 2u) return;
+    ObjectData obj = objects[gID];
+    
+    bool isMasked = ((obj.alphaMode & 3u) == 2u);
 
     vec4 sphere = obj.boundingSphere;
     mat4 model  = obj.modelMatrix;
@@ -75,66 +96,98 @@ void main() {
     float maxScale = sqrt(max(max(sqX, sqY), sqZ));
     float worldRadius = sphere.w * maxScale;
 
-    uint cascadeMask = 0u;
+    bool visibleInAnyCascade = false;
 
-    for (uint c = 0u; c < 3u; c++) {
-        bool visible = true;
+    if (push.cullFlags == 0) {
+        visibleInAnyCascade = true;
+    } else {
+        for (uint c = 0u; c < 3u; c++) {
+            bool visible = true;
+            for (uint p = 0u; p < 6u; p++) {
+                vec4 plane = s_cascadePlanes[c * 6u + p];
+                if (dot(plane.xyz, worldCenter) + plane.w < -worldRadius) {
+                    visible = false;
+                    break;
+                }
+            }
 
-        for (uint p = 0u; p < 6u; p++) {
-            vec4 plane = cascadePlanes[c * 6u + p];
-            if (dot(plane.xyz, worldCenter) + plane.w < -worldRadius) {
-                visible = false;
+            if (visible) {
+                visibleInAnyCascade = true;
                 break;
             }
         }
-
-        if (visible) {
-            mat4 vp = cascadeViewProj[c];
-            vec4 clipCenter = vp * vec4(worldCenter, 1.0);
-            if (clipCenter.w > 0.0) {
-                float projectedRadiusNDC = (worldRadius * abs(vp[1][1])) / clipCenter.w;
-                float MIN_NDC_RADIUS = 0.0005 * pow(4.0, float(c));
-                if (projectedRadiusNDC < MIN_NDC_RADIUS) {
-                    visible = false;
-                }
-            }
-        }
-
-        if (visible) {
-            cascadeMask |= (1u << c);
-        }
     }
 
-    for (uint c = 0; c < 3; c++) {
-        bool visibleInCascade = (cascadeMask & (1u << c)) != 0u;
+    uint taskWgCount = visibleInAnyCascade ? ((obj.meshletCount + 31u) / 32u) : 0u;
 
-        #ifdef GL_KHR_shader_subgroup_arithmetic
-        uint ballot    = visibleInCascade ? 1u : 0u;
-        uint offset    = subgroupExclusiveAdd(ballot);
-        uint waveCount = subgroupAdd(ballot);
+    #ifdef GL_KHR_shader_subgroup_arithmetic
+    uint visibleFlag = visibleInAnyCascade ? 1u : 0u;
+    uint waveObjCount = subgroupAdd(visibleFlag);
+    uint waveObjOffset = subgroupExclusiveAdd(visibleFlag);
 
-        uint waveBase;
-        if (subgroupElect()) {
-            if (waveCount > 0u) {
-                waveBase = atomicAdd(drawCounts[c], waveCount);
+    uint opaqueTaskWgCount = (!isMasked) ? taskWgCount : 0u;
+    uint maskedTaskWgCount = isMasked ? taskWgCount : 0u;
+
+    uint waveOpaqueTaskCount = subgroupAdd(opaqueTaskWgCount);
+    uint waveOpaqueTaskOffset = subgroupExclusiveAdd(opaqueTaskWgCount);
+
+    uint waveMaskedTaskCount = subgroupAdd(maskedTaskWgCount);
+    uint waveMaskedTaskOffset = subgroupExclusiveAdd(maskedTaskWgCount);
+
+    uint waveObjBase = 0u;
+    uint waveTaskBase = 0u;
+    uint waveMaskedTaskBase = 0u;
+
+    if (subgroupElect()) {
+        if (waveObjCount > 0u) {
+            waveObjBase = atomicAdd(visibleObjectCount, waveObjCount);
+        }
+        if (waveOpaqueTaskCount > 0u) {
+            waveTaskBase = atomicAdd(taskDispatchX, waveOpaqueTaskCount);
+        }
+        if (waveMaskedTaskCount > 0u) {
+            waveMaskedTaskBase = atomicAdd(maskedTaskDispatchX, waveMaskedTaskCount);
+        }
+    }
+    
+    waveObjBase = subgroupBroadcast(waveObjBase, subgroupBallotFindLSB(subgroupBallot(true)));
+    waveTaskBase = subgroupBroadcast(waveTaskBase, subgroupBallotFindLSB(subgroupBallot(true)));
+    waveMaskedTaskBase = subgroupBroadcast(waveMaskedTaskBase, subgroupBallotFindLSB(subgroupBallot(true)));
+
+    if (visibleInAnyCascade) {
+        visibleObjects[waveObjBase + waveObjOffset] = gID;
+        uint startSlot = isMasked ? (waveMaskedTaskBase + waveMaskedTaskOffset) : (waveTaskBase + waveOpaqueTaskOffset);
+        for (uint i = 0u; i < taskWgCount; i++) {
+            if (isMasked) {
+                maskedTaskWorkgroups[startSlot + i].objectID = gID;
+                maskedTaskWorkgroups[startSlot + i].baseMeshletIndex = i * 32u;
+            } else {
+                taskWorkgroups[startSlot + i].objectID = gID;
+                taskWorkgroups[startSlot + i].baseMeshletIndex = i * 32u;
             }
         }
-        waveBase = subgroupBroadcastFirst(waveBase);
-
-        if (visibleInCascade) {
-            VkDrawIndexedIndirectCommand cmd = blueprint;
-            cmd.instanceCount = 1;
-            cmd.firstInstance = objectID;
-            compactedCommands[c * push.objectCapacity + waveBase + offset] = cmd;
-        }
-        #else
-        if (visibleInCascade) {
-            uint slot = atomicAdd(drawCounts[c], 1u);
-            VkDrawIndexedIndirectCommand cmd = blueprint;
-            cmd.instanceCount = 1;
-            cmd.firstInstance = objectID;
-            compactedCommands[c * push.objectCapacity + slot] = cmd;
-        }
-        #endif
     }
+    #else
+    if (visibleInAnyCascade) {
+        uint slot = atomicAdd(visibleObjectCount, 1u);
+        visibleObjects[slot] = gID;
+        
+        uint startSlot;
+        if (isMasked) {
+            startSlot = atomicAdd(maskedTaskDispatchX, taskWgCount);
+        } else {
+            startSlot = atomicAdd(taskDispatchX, taskWgCount);
+        }
+        
+        for (uint i = 0u; i < taskWgCount; i++) {
+            if (isMasked) {
+                maskedTaskWorkgroups[startSlot + i].objectID = gID;
+                maskedTaskWorkgroups[startSlot + i].baseMeshletIndex = i * 32u;
+            } else {
+                taskWorkgroups[startSlot + i].objectID = gID;
+                taskWorkgroups[startSlot + i].baseMeshletIndex = i * 32u;
+            }
+        }
+    }
+    #endif
 }

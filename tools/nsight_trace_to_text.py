@@ -110,6 +110,47 @@ class ExtractedData:
     format_info: list = field(default_factory=list)
     present_modes: list = field(default_factory=list)
     all_categorized_strings: dict = field(default_factory=dict)
+    layout_info: dict = field(default_factory=dict)
+
+
+# ─── Layout File Parsing ──────────────────────────────────────────────────────
+
+def parse_layout_file(layout_path: Path) -> dict:
+    """Parse Nsight .layout JSON file if present next to trace file."""
+    if not layout_path.exists():
+        return {}
+    import json
+    try:
+        with open(layout_path, 'r', encoding='utf-8', errors='replace') as f:
+            data = json.load(f)
+
+        def extract_keys(obj):
+            keys = []
+            if isinstance(obj, dict):
+                if 'key' in obj and isinstance(obj['key'], str):
+                    keys.append(obj['key'])
+                for v in obj.values():
+                    keys.extend(extract_keys(v))
+            elif isinstance(obj, list):
+                for item in obj:
+                    keys.extend(extract_keys(item))
+            return keys
+
+        keys = sorted(set(extract_keys(data)))
+        fg = data.get('warp_flame_graph_view', {})
+        visible_range = (fg.get('visibleRangeStart'), fg.get('visibleRangeEnd'))
+        el = data.get('warp_event_list_view', {}).get('event_list_expanded', [])
+        expanded_indices = [item['Index'] for item in el if isinstance(item, dict) and 'Index' in item]
+
+        return {
+            'layout_file': layout_path.name,
+            'captured_metrics': keys,
+            'visible_range': visible_range,
+            'expanded_events': expanded_indices,
+        }
+    except Exception:
+        return {}
+
 
 
 # ─── Header Parsing ───────────────────────────────────────────────────────────
@@ -246,33 +287,39 @@ def parse_metadata_section(data: bytes) -> tuple:
             return m.group().decode('ascii', errors='replace').strip()
         return ""
 
-    # Parse profiling header
-    prof_str = data[56:200].decode('ascii', errors='replace')
-    m = re.search(r'Sample duration\s*=\s*(\d+\w+)', prof_str)
+    # Parse profiling header across wider region
+    prof_region = data[:50000].decode('ascii', errors='replace')
+    m = re.search(r'Sample duration\s*=\s*(\d+[a-z]+)', prof_region)
     if m:
         profiling_meta.sample_duration = m.group(1)
-    m = re.search(r'Warp State\s*(%?)', prof_str)
+    else:
+        m = re.search(r'Sample dur[^\n\r=]*=\s*(\d+[a-z]+)', prof_region)
+        if m:
+            profiling_meta.sample_duration = m.group(1)
+
+    m = re.search(r'Warp State\s*(%?)', prof_region)
     if m:
         profiling_meta.warp_state_info = "Warp State sampling enabled"
 
-    interval_str = data[100:250].decode('ascii', errors='replace')
-    m = re.search(r'(?:Sampling |ing )?Interval\s*=\s*(\d+)', interval_str)
+    m = re.search(r'(?:Sampling\s+|ing\s+)?Interval\s*=\s*(\d+)', prof_region)
     if m:
         profiling_meta.sampling_interval = m.group(1) + " cycles"
-    m = re.search(r'PMA Buffer Size \(MB\)\s*=\s*(\d+)', interval_str)
+
+    m = re.search(r'PMA Buffer Size \(MB\)\s*=\s*(\d+)', prof_region)
     if m:
         profiling_meta.pma_buffer_size = m.group(1) + " MB"
+
+    metadata_region = data[:50000]
 
     # System info extraction with byte-level search
     system_info.computer_name = find_value_after(b'Computer Name', metadata_region)
     system_info.gpu_device = find_value_after(b'Device', metadata_region, 60)
 
-    # More robust extraction using the readable strings we found earlier
+    # More robust extraction using readable strings
     all_strings = []
     for m_obj in re.finditer(rb'[\x20-\x7e]{3,200}', metadata_region):
         all_strings.append((m_obj.start(), m_obj.group().decode('ascii', errors='replace')))
 
-    # Build a key-value map from adjacent strings
     for i, (pos, s) in enumerate(all_strings):
         s_lower = s.lower().strip()
         next_val = all_strings[i + 1][1] if i + 1 < len(all_strings) else ""
@@ -280,7 +327,6 @@ def parse_metadata_section(data: bytes) -> tuple:
         if 'computer name' in s_lower:
             system_info.computer_name = next_val
         elif s_lower.startswith('operating') or 'operating' in s_lower:
-            # Look for Windows version nearby
             for j in range(i + 1, min(i + 3, len(all_strings))):
                 if 'windows' in all_strings[j][1].lower():
                     system_info.operating_system = all_strings[j][1]
@@ -288,18 +334,16 @@ def parse_metadata_section(data: bytes) -> tuple:
         elif 'build' in s_lower and not system_info.os_build:
             system_info.os_build = next_val
         elif 'processor' in s_lower:
-            # The processor string often has embedded control chars
-            proc_region = metadata_region[pos:pos + 100]
+            proc_region = metadata_region[pos:pos + 120]
             proc_strings = re.findall(rb'[\x20-\x7e]{5,80}', proc_region)
             for ps in proc_strings[1:]:
                 decoded = ps.decode('ascii', errors='replace').strip()
-                if 'amd' in decoded.lower() or 'intel' in decoded.lower() or 'ryzen' in decoded.lower():
-                    system_info.processor = decoded.strip('"').strip()
+                if any(k in decoded.lower() for k in ['amd', 'intel', 'ryzen', 'core']):
+                    system_info.processor = decoded.strip('"').strip(' $')
                     break
         elif 'ram usage' in s_lower:
             system_info.ram_usage = next_val
         elif s_lower.strip() == 'device' and not system_info.gpu_device:
-            # Find the GPU name (NVIDIA/AMD/Intel)
             for j in range(i + 1, min(i + 4, len(all_strings))):
                 val = all_strings[j][1]
                 if any(k in val for k in ['NVIDIA', 'AMD', 'Intel', 'GeForce', 'Radeon']):
@@ -316,7 +360,6 @@ def parse_metadata_section(data: bytes) -> tuple:
         elif 'bytes demoted' in s_lower:
             system_info.bytes_demoted = next_val
         elif 'product' in s_lower and not capture_settings.product_version:
-            # Find version string
             for j in range(i + 1, min(i + 3, len(all_strings))):
                 val = all_strings[j][1]
                 if re.search(r'\d{4}\.\d', val):
@@ -339,21 +382,22 @@ def parse_metadata_section(data: bytes) -> tuple:
         elif 'gpu clocks' in s_lower:
             capture_settings.gpu_clocks = next_val
 
-    # Extract executable path
-    exe_match = re.search(rb'[A-Z]:\\[^\x00]{10,200}\.exe', metadata_region)
+    # Clean executable path matching
+    exe_match = re.search(rb'[A-Z]:\\[A-Za-z0-9_ \-\\]+\.exe', metadata_region)
     if exe_match:
         capture_settings.executable_path = exe_match.group().decode('ascii', errors='replace')
-
-    # If we didn't find it, try the less strict version
-    if not capture_settings.executable_path:
-        path_match = re.search(rb'[A-Z]:\\[\x20-\x7e]{10,200}', metadata_region)
+    else:
+        path_match = re.search(rb'[A-Z]:\\[\x20-\x7e]{10,200}\.exe', metadata_region)
         if path_match:
             capture_settings.executable_path = path_match.group().decode('ascii', errors='replace')
+
 
     return system_info, capture_settings, profiling_meta
 
 
 # ─── Comprehensive String Extraction & Categorization ──────────────────────────
+
+PNG_NOISE_TOKENS = {'IDAT', 'IHDR', 'PLTE', 'GAMA', 'PHYS', 'TIME', 'BKGD', 'CHRM', 'SRGB', 'ICCP', 'TEXT', 'ZTXT', 'ITXT', 'IEND'}
 
 def extract_and_categorize_strings(data: bytes) -> dict:
     """Extract all readable strings from the binary and categorize them."""
@@ -370,27 +414,30 @@ def extract_and_categorize_strings(data: bytes) -> dict:
 
         entry = (pos, s)
 
-        # Categorize
         s_upper = s.upper()
         s_lower = s.lower()
 
+        # Filter PNG chunk noise
+        if any(s_upper.startswith(p) for p in PNG_NOISE_TOKENS) or s_upper in PNG_NOISE_TOKENS:
+            continue
+
         # Vulkan API calls
-        if re.match(r'^vk[A-Z]', s):
+        if re.match(r'^vk[A-Z][A-Za-z0-9]+$', s) and len(s) >= 5:
             categories['vulkan_api_calls'].append(entry)
         # Vulkan enums/constants
-        elif s.startswith('VK_') or s.startswith('VkPipeline') or s.startswith('VkImage') or s.startswith('VkFence') or s.startswith('Vk'):
+        elif s.startswith('VK_') or s.startswith('VkPipeline') or s.startswith('VkImage') or s.startswith('VkFence') or (s.startswith('Vk') and len(s) > 5 and s[2].isupper()):
             categories['vulkan_enums'].append(entry)
         # Pipeline stages
         elif 'PIPELINE_STAGE' in s_upper or 'STAGE_2_' in s_upper:
             categories['pipeline_stages'].append(entry)
         # Access flags
-        elif 'ACCESS_2' in s_upper or 'ACCESS' in s_upper and ('READ' in s_upper or 'WRITE' in s_upper):
+        elif 'ACCESS_2' in s_upper or ('ACCESS' in s_upper and ('READ' in s_upper or 'WRITE' in s_upper)):
             categories['access_flags'].append(entry)
         # Image layouts
-        elif 'IMAGE_LAYOUT' in s_upper or 'LAYOUT' in s_upper and 'OPTIMAL' in s_upper:
+        elif 'IMAGE_LAYOUT' in s_upper or ('LAYOUT' in s_upper and 'OPTIMAL' in s_upper):
             categories['image_layouts'].append(entry)
         # VK formats
-        elif 'VK_FORMAT' in s_upper or 'FORMAT_' in s_upper and ('SRGB' in s_upper or 'UNORM' in s_upper or 'UINT' in s_upper or 'SFLOAT' in s_upper):
+        elif 'VK_FORMAT' in s_upper or ('FORMAT_' in s_upper and ('SRGB' in s_upper or 'UNORM' in s_upper or 'UINT' in s_upper or 'SFLOAT' in s_upper)):
             categories['format_info'].append(entry)
         # Present modes
         elif 'PRESENT_MODE' in s_upper or 'PRESENT_SRC' in s_upper:
@@ -406,7 +453,7 @@ def extract_and_categorize_strings(data: bytes) -> dict:
         elif 'Semaphore' in s or 'semaphore' in s_lower or 'fence' in s_lower:
             categories['synchronization'].append(entry)
         # Shader info
-        elif any(k in s_upper for k in ['SHADER', 'VERTEX', 'FRAGMENT', 'FRAG', 'COMPUTE', 'MESH']):
+        elif any(k in s_upper for k in ['VK_SHADER_', 'VERTEX_SHADER', 'FRAGMENT_SHADER', 'COMPUTE_SHADER', 'MESH_SHADER', 'TASK_SHADER']):
             categories['shader_info'].append(entry)
         # Descriptor/binding info
         elif any(k in s for k in ['Descriptor', 'BindPoint', 'BIND_POINT', 'firstSet', 'DescriptorSets']):
@@ -418,41 +465,34 @@ def extract_and_categorize_strings(data: bytes) -> dict:
         elif 'NVTX' in s_upper or 'Domain' in s or 'Marker' in s:
             categories['nvtx_markers'].append(entry)
         # Handles (hex addresses)
-        elif re.match(r'^0x[0-9a-f]{8,16}$', s) or re.match(r'^[0-9a-f]{5,8}$', s):
+        elif re.match(r'^0x[0-9a-fA-F]{8,16}$', s):
             categories['resource_handles'].append(entry)
         # System/process info
         elif s.endswith('.exe') or s.endswith('.dll'):
-            # Filter out bare ".exe" / ".dll" entries
             name_part = s[:-4] if len(s) > 4 else ''
             if name_part and any(c.isalnum() for c in name_part):
                 categories['processes'].append(entry)
-        # File paths — must have drive letter or meaningful directory structure
-        elif ':\\' in s:
-            # Windows path — always meaningful
+        # File paths
+        elif ':\\' in s and len(s) > 6:
             categories['file_paths'].append(entry)
         elif '/' in s and len(s) > 10:
-            # Unix-style path or URL — filter out random binary with slash chars
             alpha_ratio = sum(1 for c in s if c.isalpha()) / len(s)
             if alpha_ratio > 0.5:
                 categories['file_paths'].append(entry)
         # Profiling/counter related
-        elif any(k in s_lower for k in ['sample', 'warp', 'metric', 'counter', 'interval', 'duration', 'sm ', 'pma']):
+        elif any(k in s_lower for k in ['sample duration', 'warp state', 'metric', 'counter', 'interval', 'pma buffer']):
             categories['profiling_data'].append(entry)
         # Swapchain
         elif any(k in s_lower for k in ['swapchain', 'present']):
             categories['swapchain_info'].append(entry)
         # Parameter names (API call parameters)
-        elif re.match(r'^[a-z][A-Za-z]+$', s) and len(s) >= 5:
+        elif re.match(r'^[a-z][A-Za-z0-9]{4,30}$', s) and not s.startswith('vk'):
             categories['api_parameters'].append(entry)
         # Data types
         elif s in ('uint32_t', 'uint64_t', 'int32_t', 'float', 'const', 'void*'):
             categories['data_types'].append(entry)
-        # Named constants — strict filter to avoid PNG chunks and random binary noise
-        elif re.match(r'^[A-Z][A-Z_0-9]+$', s) and len(s) >= 4:
-            # Only keep if it looks like a real constant:
-            # - Contains underscore (e.g., ALL_COMMANDS, ONLY_OPTIMAL)
-            # - Is a known Vulkan/GPU abbreviation
-            # - Has 6+ chars (short ones are usually binary noise)
+        # Named constants — strict filter
+        elif re.match(r'^[A-Z][A-Z0-9_]{3,40}$', s):
             known_prefixes = ('VK_', 'ALL_', 'DRAW_', 'ONLY_', 'DEPTH_', 'COLOR_',
                               'BOTTOM_', 'TOP_', 'TRANSFER', 'UNDEFINED', 'GRAPHICS',
                               'COMPUTE', 'PRESENT', 'STENCIL', 'OPTIMAL', 'GENERAL',
@@ -460,14 +500,15 @@ def extract_and_categorize_strings(data: bytes) -> dict:
                               'EARLY_', 'LATE_')
             has_underscore = '_' in s
             is_known = any(s.startswith(p) for p in known_prefixes)
-            is_long_enough = len(s) >= 6
-            if has_underscore or is_known or (is_long_enough and s.isalpha()):
+            # Avoid single trailing underscore noise like 'DW_Q', 'SS_Q'
+            if not s.endswith('_Q') and not s.endswith('_') and (has_underscore or is_known):
                 categories['named_constants'].append(entry)
-        # Everything else that's meaningful — filter out short garbage
-        elif len(s) >= 6 and sum(1 for c in s if c.isalpha()) >= 3:
+        # Meaningful strings
+        elif len(s) >= 6 and sum(1 for c in s if c.isalpha()) >= 4 and not re.search(r'[^a-zA-Z0-9_\-\.\:\/\\]', s):
             categories['other_strings'].append(entry)
 
     return dict(categories)
+
 
 
 # ─── API Call Reconstruction ───────────────────────────────────────────────────
@@ -527,46 +568,41 @@ def reconstruct_api_calls(data: bytes) -> list:
     seen_offsets = set()
 
     # Method 1: Find all vk* function calls via regex
-    vk_pattern = rb'vk[A-Z][A-Za-z0-9]{2,50}'
+    vk_pattern = rb'vk[A-Z][A-Za-z0-9]{3,50}'
     for m in re.finditer(vk_pattern, data):
         func_name = m.group().decode('ascii')
         pos = m.start()
 
-        # Skip if this is just a partial fragment of a known function or too short
-        if len(func_name) < 5:
-            continue
+        # Skip if mangled or not a valid Vulkan API function signature
+        if func_name not in KNOWN_VK_FUNCTIONS:
+            if not re.match(r'^vk(?:Cmd|Create|Destroy|Allocate|Free|Queue|Update|Bind|Get|Acquire)[A-Z0-9][a-zA-Z0-9_]{2,}$', func_name):
+                continue
 
-        # Extract the context around this call (parameters, values)
+
         context_start = pos
-        context_end = min(pos + 600, len(data))
+        context_end = min(pos + 400, len(data))
         context = data[context_start:context_end]
 
-        # Extract readable strings in this context
         params = []
-        for pm in re.finditer(rb'[\x20-\x7e]{3,100}', context):
+        for pm in re.finditer(rb'[\x20-\x7e]{3,80}', context):
             param_str = pm.group().decode('ascii', errors='replace').strip()
-            if param_str and param_str != func_name:
+            if param_str and param_str != func_name and not param_str.startswith('vk'):
                 params.append(param_str)
 
         api_calls.append({
             'name': func_name,
             'offset': pos,
-            'parameters': params[:30],
+            'parameters': params[:20],
         })
         seen_offsets.add(pos)
 
-    # Method 2: Search for known function names that might be partially encoded
-    # Look for key command fragments
+    # Method 2: Search for known key command fragments
     key_fragments = [
         (rb'Barrier2', 'vkCmdPipelineBarrier2'),
         (rb'DescriptorSets', 'vkCmdBindDescriptorSets'),
         (rb'DrawIndexedIndirectCount', 'vkCmdDrawIndexedIndirectCount'),
         (rb'DrawIndirectCount', 'vkCmdDrawIndirectCount'),
-        (rb'edIndirectCount', 'vkCmdDrawIndexedIndirectCount'),
-        (rb'edIndirecti', 'vkCmdDrawIndexedIndirect'),
-        (rb'DRAW_INDIREC', 'vkCmdDrawIndirect*'),
         (rb'FillBuffer', 'vkCmdFillBuffer'),
-        (rb'BFilla', 'vkCmdFillBuffer'),
         (rb'Dispatch', 'vkCmdDispatch'),
         (rb'PresentKHR', 'vkQueuePresentKHR'),
         (rb'BeginRender', 'vkCmdBeginRendering'),
@@ -576,44 +612,38 @@ def reconstruct_api_calls(data: bytes) -> list:
     for pattern, inferred_name in key_fragments:
         for m in re.finditer(pattern, data):
             pos = m.start()
-            # Skip if we already have an API call near this offset
             if any(abs(pos - seen_pos) < 100 for seen_pos in seen_offsets):
                 continue
 
-            context = data[max(0, pos - 50):min(pos + 400, len(data))]
+            context = data[max(0, pos - 50):min(pos + 300, len(data))]
             params = []
             for pm in re.finditer(rb'[\x20-\x7e]{3,80}', context):
                 param_str = pm.group().decode('ascii', errors='replace').strip()
-                if param_str:
+                if param_str and not param_str.startswith('vk'):
                     params.append(param_str)
 
             api_calls.append({
                 'name': inferred_name,
                 'offset': pos,
-                'parameters': params[:20],
+                'parameters': params[:15],
             })
             seen_offsets.add(pos)
 
-    # Sort by offset
     api_calls.sort(key=lambda x: x['offset'])
-
     return api_calls
 
 
 # ─── Process List Extraction ──────────────────────────────────────────────────
 
-def extract_process_list(data: bytes) -> list:
-    """Extract running process names from the trace (typically in the NVTX/system section)."""
-    processes = set()
 
-    # Find .exe patterns
+def extract_process_list(data: bytes) -> list:
+    """Extract running process names from the trace."""
+    processes = set()
     for m in re.finditer(rb'[\x20-\x7e]{2,50}\.exe', data):
         proc = m.group().decode('ascii', errors='replace').strip()
-        # Clean up leading garbage
         clean = re.sub(r'^[^a-zA-Z]+', '', proc)
         if clean and len(clean) > 4:
             processes.add(clean)
-
     return sorted(processes)
 
 
@@ -626,17 +656,13 @@ def extract_nvtx_data(data: bytes) -> dict:
         'markers': [],
         'ranges': [],
     }
-
-    # Find NVTX Domain names
     for m in re.finditer(rb'(?:Default )?NVTX Domain[\x00-\xff]{0,5}([\x20-\x7e]{3,50})', data):
         domain = m.group(0).decode('ascii', errors='replace')
         nvtx_info['domains'].append(domain)
 
-    # Find any frame markers
     for m in re.finditer(rb'(\d+) Frames', data):
         nvtx_info['markers'].append(m.group().decode('ascii'))
 
-    # Find ApplicationFrame references
     for m in re.finditer(rb'ApplicationFrame[\x20-\x7e]*', data):
         nvtx_info['ranges'].append(m.group().decode('ascii', errors='replace'))
 
@@ -648,7 +674,7 @@ def extract_nvtx_data(data: bytes) -> dict:
 def generate_output(extracted: ExtractedData, verbosity: str, input_path: str) -> str:
     """Generate the comprehensive AI-readable text output."""
     lines = []
-    w = lines.append  # shorthand
+    w = lines.append
 
     w("=" * 100)
     w("NVIDIA NSIGHT GRAPHICS GPU TRACE — COMPREHENSIVE AI-READABLE EXTRACTION")
@@ -743,11 +769,32 @@ def generate_output(extracted: ExtractedData, verbosity: str, input_path: str) -
     w("    - High 'Stall: Not Selected' → Low occupancy / register pressure")
     w("")
 
+    # ── Section 3.5: Layout File Hardware Metrics ──
+    if extracted.layout_info:
+        w("=" * 100)
+        w("SECTION 3.5: CAPTURED GPU HARDWARE METRICS & TIMELINE TRACKS (from .layout)")
+        w("=" * 100)
+        w("")
+        w(f"  Layout File:            {extracted.layout_info.get('layout_file')}")
+        vr = extracted.layout_info.get('visible_range', (None, None))
+        if vr and vr[0] is not None:
+            w(f"  Visible Timeline Range: {vr[0]:,} to {vr[1]:,} ns/cycles")
+        exp = extracted.layout_info.get('expanded_events', [])
+        if exp:
+            w(f"  Expanded Event Indices: {', '.join(str(i) for i in exp[:20])}")
+        metrics = extracted.layout_info.get('captured_metrics', [])
+        if metrics:
+            w(f"  Captured Hardware Metrics & Timeline Tracks ({len(metrics)} tracks):")
+            for m in metrics:
+                w(f"    - {m}")
+        w("")
+
     # ── Section 4: Vulkan Swapchain & Presentation ──
     w("=" * 100)
     w("SECTION 4: VULKAN SWAPCHAIN & PRESENTATION")
     w("=" * 100)
     w("")
+
     cats = extracted.all_categorized_strings
     formats = cats.get('format_info', [])
     presents = cats.get('present_modes', [])
@@ -778,7 +825,6 @@ def generate_output(extracted: ExtractedData, verbosity: str, input_path: str) -
 
     api_calls = extracted.vulkan_api_calls
     if api_calls:
-        # Group by function name
         call_counts = defaultdict(int)
         for call in api_calls:
             call_counts[call['name']] += 1
@@ -958,24 +1004,9 @@ def generate_output(extracted: ExtractedData, verbosity: str, input_path: str) -
         w("  No process list extracted.")
     w("")
 
-    # ── Section 11: Resource Handles ──
-    if verbosity == 'verbose':
-        w("=" * 100)
-        w("SECTION 11: RESOURCE HANDLES (GPU object addresses)")
-        w("=" * 100)
-        w("")
-
-        handles = cats.get('resource_handles', [])
-        if handles:
-            w(f"  Total unique handles found: {len(handles)}")
-            w("")
-            for _, s in handles[:200]:
-                w(f"    {s}")
-        w("")
-
-    # ── Section 12: File Paths ──
+    # ── Section 11: File Paths ──
     w("=" * 100)
-    w(f"SECTION {'12' if verbosity == 'verbose' else '11'}: FILE PATHS & CONFIGURATION")
+    w("SECTION 11: FILE PATHS & CONFIGURATION")
     w("=" * 100)
     w("")
 
@@ -988,9 +1019,9 @@ def generate_output(extracted: ExtractedData, verbosity: str, input_path: str) -
                 seen.add(s)
     w("")
 
-    # ── Section 13: Named Constants & Enums ──
+    # ── Section 12: Named Constants & Enums ──
     w("=" * 100)
-    w(f"SECTION {'13' if verbosity == 'verbose' else '12'}: VULKAN ENUMS & NAMED CONSTANTS")
+    w("SECTION 12: VULKAN ENUMS & NAMED CONSTANTS")
     w("=" * 100)
     w("")
 
@@ -1015,37 +1046,6 @@ def generate_output(extracted: ExtractedData, verbosity: str, input_path: str) -
                 seen.add(s)
     w("")
 
-    # ── Section: Profiling Data Strings ──
-    if verbosity in ('normal', 'verbose'):
-        prof_data = cats.get('profiling_data', [])
-        if prof_data:
-            sec_num = 14 if verbosity == 'verbose' else 13
-            w("=" * 100)
-            w(f"SECTION {sec_num}: PROFILING & COUNTER DATA STRINGS")
-            w("=" * 100)
-            w("")
-            seen = set()
-            for _, s in prof_data:
-                if s not in seen:
-                    w(f"    {s}")
-                    seen.add(s)
-            w("")
-
-    # ── Section: API Parameter Names ──
-    if verbosity == 'verbose':
-        params = cats.get('api_parameters', [])
-        if params:
-            w("=" * 100)
-            w("SECTION 15: API PARAMETER NAMES")
-            w("=" * 100)
-            w("")
-            seen = set()
-            for _, s in params:
-                if s not in seen:
-                    w(f"    {s}")
-                    seen.add(s)
-            w("")
-
     # ── Final Summary Statistics ──
     w("=" * 100)
     w("EXTRACTION SUMMARY & STATISTICS")
@@ -1060,29 +1060,64 @@ def generate_output(extracted: ExtractedData, verbosity: str, input_path: str) -
         w(f"    {cat:<35s} {len(items):>6d}")
     w("")
 
-    # ── Binary Data Regions ──
-    w("=" * 100)
-    w("BINARY DATA REGIONS (for reference)")
-    w("=" * 100)
-    w("")
-    w(f"  Header region:         0x{0:08x} - 0x{56:08x} ({56} bytes)")
-    w(f"  Metadata region:       0x{56:08x} - 0x{min(10000, extracted.header.file_size):08x}")
-    if extracted.header.api_call_offset:
-        w(f"  API call region:       0x{extracted.header.api_call_offset:08x} - ~0x{min(extracted.header.api_call_offset + 2000000, extracted.header.file_size):08x}")
-    w(f"  Profiling data region: ~0x{8000000:08x} - 0x{extracted.header.file_size:08x}")
-    w(f"  Total file size:       0x{extracted.header.file_size:08x} ({extracted.header.file_size:,} bytes)")
-    w("")
-    w("  Note: The profiling data region contains packed binary warp state sampling")
-    w("  data, hardware performance counters, and SM utilization metrics. These are")
-    w("  in a proprietary NVIDIA binary format and require Nsight Graphics GUI for")
-    w("  full interpretation. The sampling data includes per-SM warp state histograms")
-    w("  collected at the configured sampling interval.")
-    w("")
-
     w("=" * 100)
     w("END OF EXTRACTION")
     w("=" * 100)
 
+    return "\n".join(lines)
+
+
+# ─── Diff Comparison ───────────────────────────────────────────────────────────
+
+
+
+def generate_diff_output(file1: str, file2: str) -> str:
+    """Compare two Nsight trace analysis files side-by-side."""
+    lines = []
+    w = lines.append
+    w("=" * 100)
+    w("NSIGHT GPU TRACE DIFF COMPARISON SUMMARY")
+    w("=" * 100)
+    w(f"  File A: {os.path.basename(file1)}")
+    w(f"  File B: {os.path.basename(file2)}")
+    w("")
+
+    def load_counts(path):
+        counts = defaultdict(int)
+        if not os.path.exists(path):
+            return counts
+        with open(path, 'r', encoding='utf-8', errors='replace') as f:
+            in_table = False
+            for line in f:
+                if 'API Call Summary:' in line:
+                    in_table = True
+                    continue
+                if in_table and '=====' in line:
+                    break
+                if in_table and line.strip() and not line.startswith('Function'):
+                    parts = line.split()
+                    if len(parts) >= 2 and parts[-1].isdigit():
+                        func = parts[0]
+                        counts[func] = int(parts[-1])
+        return counts
+
+    c1 = load_counts(file1)
+    c2 = load_counts(file2)
+    all_funcs = sorted(set(c1.keys()) | set(c2.keys()))
+
+    w(f"  {'Function':<50s} {'File A':>10s} {'File B':>10s} {'Diff':>10s}")
+    w(f"  {'-'*50} {'-'*10} {'-'*10} {'-'*10}")
+    for func in all_funcs:
+        v1 = c1[func]
+        v2 = c2[func]
+        diff = v2 - v1
+        diff_str = f"{diff:+d}" if diff != 0 else "0"
+        w(f"  {func:<50s} {v1:>10d} {v2:>10d} {diff_str:>10s}")
+
+    w("")
+    w("=" * 100)
+    w("END OF DIFF COMPARISON")
+    w("=" * 100)
     return "\n".join(lines)
 
 
@@ -1096,13 +1131,15 @@ def main():
 Examples:
   python nsight_trace_to_text.py trace.ngfx-gputrace
   python nsight_trace_to_text.py trace.ngfx-gputrace --output analysis.txt
+  python nsight_trace_to_text.py trace.ngfx-gputrace --diff other_analysis.txt
   python nsight_trace_to_text.py trace.ngfx-gputrace --verbosity verbose
         """
     )
-    parser.add_argument("input", help="Path to .ngfx-gputrace file")
+    parser.add_argument("input", help="Path to .ngfx-gputrace file or previous analysis text file")
     parser.add_argument("--output", "-o", help="Output text file path (default: <input>_analysis.txt)")
     parser.add_argument("--verbosity", "-v", choices=["summary", "normal", "verbose"],
                         default="normal", help="Output verbosity level (default: normal)")
+    parser.add_argument("--diff", help="Path to second trace analysis file to diff against input")
 
     args = parser.parse_args()
 
@@ -1110,6 +1147,18 @@ Examples:
     if not input_path.exists():
         print(f"ERROR: File not found: {input_path}", file=sys.stderr)
         sys.exit(1)
+
+    if args.diff:
+        diff_path = Path(args.diff)
+        if not diff_path.exists():
+            print(f"ERROR: Diff target not found: {diff_path}", file=sys.stderr)
+            sys.exit(1)
+        output_text = generate_diff_output(str(input_path), str(diff_path))
+        output_path = Path(args.output) if args.output else input_path.with_name(input_path.stem + "_diff.txt")
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(output_text)
+        print(f"Diff output written to {output_path}")
+        return
 
     # Default output path
     if args.output:
@@ -1139,7 +1188,15 @@ Examples:
     print(f"Extracting NVTX data...")
     nvtx_data = extract_nvtx_data(data)
 
+    layout_file = input_path.with_name(input_path.name + ".layout")
+    if not layout_file.exists():
+        layout_file = input_path.with_suffix('.layout')
+    if layout_file.exists():
+        print(f"Parsing layout file ({layout_file.name})...")
+        extracted.layout_info = parse_layout_file(layout_file)
+
     print(f"Generating output ({args.verbosity} verbosity)...")
+
     output_text = generate_output(extracted, args.verbosity, str(input_path))
 
     print(f"Writing to {output_path}...")
@@ -1152,3 +1209,4 @@ Examples:
 
 if __name__ == "__main__":
     main()
+

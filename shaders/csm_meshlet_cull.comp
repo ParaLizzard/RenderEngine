@@ -1,0 +1,141 @@
+#version 460
+
+#extension GL_KHR_shader_subgroup_arithmetic : enable
+#extension GL_KHR_shader_subgroup_basic : enable
+#extension GL_KHR_shader_subgroup_ballot : enable
+
+layout(local_size_x = 256) in;
+
+struct Meshlet {
+    float center_x;
+    float center_y;
+    float center_z;
+    float radius;
+    uint cone_axis_cutoff;
+    uint vertexOffset;
+    uint indexOffset;
+    uint vertexCount;
+    uint triangleCount;
+};
+
+struct ObjectData {
+    mat4 modelMatrix;
+    mat4 normalMatrix;
+    vec4 boundingSphere;
+    uint baseMeshlet;
+    uint meshletCount;
+    uint alphaMode;
+    uint padding1;
+};
+
+layout(set = 0, binding = 1) uniform SceneUbo {
+    vec4 cameraPosition;
+    vec4 directionalLight;
+    mat4 lightViewProj[3];
+    vec4 cascadesSplits;
+    float maxReflectionLod;
+    uint blueNoiseTexIndex;
+    vec2 padding;
+} sceneUbo;
+
+layout(std430, set = 0, binding = 5) readonly buffer ObjectBuffer { ObjectData objects[]; };
+layout(std430, set = 0, binding = 8) readonly buffer MeshletBuffer { Meshlet meshlets[]; };
+
+layout(std430, set = 1, binding = 1) readonly buffer VisibleObjectBuffer { uint visibleObjects[]; };
+layout(std430, set = 1, binding = 4) writeonly buffer VisibleMeshletBuffer { uvec2 visibleMeshlets[]; };
+layout(std430, set = 1, binding = 5) buffer TriangleDispatchCommandBuffer {
+    uint dispatchX;
+    uint dispatchY;
+    uint dispatchZ;
+};
+layout(std430, set = 1, binding = 8) readonly buffer CascadeDataBuffer {
+    mat4 cascadeViewProj[3];
+    vec4 cascadePlanes[18];
+};
+
+layout(push_constant) uniform PushConsts {
+    uint objectCount;
+    uint actualObjectCount;
+    uint cullFlags;
+} push;
+
+void main() {
+    uint visibleObjectIndex = gl_WorkGroupID.x;
+    if (visibleObjectIndex >= push.actualObjectCount) return;
+
+    uint objectID = visibleObjects[visibleObjectIndex];
+    ObjectData obj = objects[objectID];
+
+    float sqX = dot(obj.modelMatrix[0].xyz, obj.modelMatrix[0].xyz);
+    float sqY = dot(obj.modelMatrix[1].xyz, obj.modelMatrix[1].xyz);
+    float sqZ = dot(obj.modelMatrix[2].xyz, obj.modelMatrix[2].xyz);
+    float maxScale = sqrt(max(max(sqX, sqY), sqZ));
+    vec3 lightDir = normalize(-sceneUbo.directionalLight.xyz);
+
+    for (uint i = gl_LocalInvocationID.x; i < obj.meshletCount; i += gl_WorkGroupSize.x) {
+        uint meshletID = obj.baseMeshlet + i;
+        Meshlet m = meshlets[meshletID];
+
+        vec3 localCenter = vec3(m.center_x, m.center_y, m.center_z);
+        vec3 worldCenter = (obj.modelMatrix * vec4(localCenter, 1.0)).xyz;
+        float worldRadius = m.radius * maxScale;
+
+        bool visible = false;
+
+        if (push.cullFlags == 0) {
+            visible = true;
+        } else {
+            for (uint c = 0u; c < 3u; c++) {
+                bool visibleInCascade = true;
+                for (uint p = 0u; p < 6u; p++) {
+                    vec4 plane = cascadePlanes[c * 6u + p];
+                    if (dot(plane.xyz, worldCenter) + plane.w < -worldRadius) {
+                        visibleInCascade = false;
+                        break;
+                    }
+                }
+                if (visibleInCascade) {
+                    visible = true;
+                    break;
+                }
+            }
+
+            if (visible) {
+                bool doubleSided = (obj.alphaMode & 4u) != 0u;
+                vec4 cone = unpackSnorm4x8(m.cone_axis_cutoff);
+                float cone_cutoff = cone.w;
+
+                if (!doubleSided && cone_cutoff < 0.99) {
+                    vec3 cone_axis_world = normalize(mat3(obj.normalMatrix) * cone.xyz);
+                    if (dot(cone_axis_world, lightDir) >= cone_cutoff) {
+                        visible = false;
+                    }
+                }
+            }
+        }
+
+        #ifdef GL_KHR_shader_subgroup_arithmetic
+        uint visibleFlag = visible ? 1u : 0u;
+        uint waveVisibleCount = subgroupAdd(visibleFlag);
+        uint waveVisibleOffset = subgroupExclusiveAdd(visibleFlag);
+        
+        uint waveVisibleBase = 0u;
+        if (subgroupElect()) {
+            if (waveVisibleCount > 0u) {
+                waveVisibleBase = atomicAdd(dispatchX, waveVisibleCount);
+            }
+        }
+        waveVisibleBase = subgroupBroadcast(waveVisibleBase, subgroupBallotFindLSB(subgroupBallot(true)));
+        
+        if (visible) {
+            uint localIdx = waveVisibleBase + waveVisibleOffset;
+            visibleMeshlets[localIdx] = uvec2(objectID, i);
+        }
+        #else
+        if (visible) {
+            uint localIdx = atomicAdd(dispatchX, 1u);
+            visibleMeshlets[localIdx] = uvec2(objectID, i);
+        }
+        #endif
+    }
+}

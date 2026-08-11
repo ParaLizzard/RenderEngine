@@ -41,6 +41,11 @@ namespace Engine {
 
         std::array<VkDescriptorSetLayoutBinding, 13> bindings {};
 
+        VkShaderStageFlags meshStages = 0;
+        if (device.isMeshShaderSupported()) {
+            meshStages = VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT;
+        }
+
         // Binding 0: Material SSBO
         bindings[0].binding = 0;
         bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -51,7 +56,7 @@ namespace Engine {
         bindings[1].binding = 1;
         bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         bindings[1].descriptorCount = 1;
-        bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+        bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT | meshStages;
 
         // Binding 2: Irradiance Map (Cube)
         bindings[2].binding = 2;
@@ -71,11 +76,6 @@ namespace Engine {
         bindings[4].descriptorCount = 1;
         bindings[4].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
 
-        VkShaderStageFlags meshStages = 0;
-        if (device.isMeshShaderSupported()) {
-            meshStages = VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT;
-        }
-
         // Binding 5: ObjectBuffer
         bindings[5].binding = 5;
         bindings[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -92,7 +92,7 @@ namespace Engine {
         bindings[7].binding = 7;
         bindings[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         bindings[7].descriptorCount = 1;
-        bindings[7].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+        bindings[7].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | meshStages;
 
         // Binding 8: MeshletBuffer
         bindings[8].binding = 8;

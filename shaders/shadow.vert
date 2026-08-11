@@ -1,9 +1,25 @@
 #version 460
-#extension GL_EXT_nonuniform_qualifier : enable
-#extension GL_ARB_shader_viewport_layer_array : require
-#extension GL_EXT_multiview : enable
+#extension GL_EXT_shader_8bit_storage : require
 
-layout(location = 0) in vec3 inPosition;
+layout(push_constant) uniform PushConsts {
+    uint cascadeIndex;
+} push;
+
+struct PositionData {
+    float x, y, z;
+};
+
+struct Meshlet {
+    float center_x;
+    float center_y;
+    float center_z;
+    float radius;
+    uint cone_axis_cutoff;
+    uint vertexOffset;
+    uint indexOffset;
+    uint vertexCount;
+    uint triangleCount;
+};
 
 struct ObjectData {
     mat4 modelMatrix;
@@ -25,16 +41,38 @@ layout(set = 0, binding = 1) uniform SceneUbo {
     vec2 padding;
 } sceneUbo;
 
-// Set 0: ResourceHeap
-layout(set = 0, binding = 5) readonly buffer ObjectDataBuffer {
-    ObjectData objects[];
-} objectData;
+// Set 0: MegaBuffer geometry
+layout(set = 0, binding = 5) readonly buffer ObjectBuffer { ObjectData objects[]; };
+layout(set = 0, binding = 6) readonly buffer VertexBuffer { PositionData positions[]; };
+layout(set = 0, binding = 8) readonly buffer MeshletBuffer { Meshlet meshlets[]; };
+layout(set = 0, binding = 9) readonly buffer MeshletVertexMap { uint meshletVertices[]; };
+layout(set = 0, binding = 10) readonly buffer MeshletTriangleMap { uint meshletTriangleWords[]; };
+
+uint getTriangleByte(uint byteOffset) {
+    uint word = meshletTriangleWords[byteOffset / 4u];
+    uint shift = (byteOffset % 4u) * 8u;
+    return (word >> shift) & 0xFFu;
+}
+
+// Set 1: Pass/Cull storage
+layout(set = 1, binding = 3) readonly buffer CompactedIndexBuffer { uint syntheticIndices[]; };
 
 void main() {
-    uint objectIndex = uint(gl_InstanceIndex);
-    uint viewIndex = uint(gl_ViewIndex);
+    uint syntheticIndex = syntheticIndices[gl_VertexIndex];
 
-    mat4 model = objectData.objects[objectIndex].modelMatrix;
-    mat4 lightViewProj = sceneUbo.lightViewProj[viewIndex];
-    gl_Position = lightViewProj * (model * vec4(inPosition, 1.0));
+    uint objectID            = syntheticIndex >> 22u;
+    uint localMeshletID      = (syntheticIndex >> 9u) & 0x1FFFu;
+    uint triangleIndexOffset = syntheticIndex & 0x1FFu;
+
+    uint meshletID = objects[objectID].baseMeshlet + localMeshletID;
+    Meshlet m = meshlets[meshletID];
+
+    uint localTriByte   = getTriangleByte(m.indexOffset + triangleIndexOffset);
+    uint globalVertexID = meshletVertices[m.vertexOffset + localTriByte];
+
+    PositionData pd = positions[globalVertexID];
+
+    uint viewIndex = push.cascadeIndex;
+    mat4 model = objects[objectID].modelMatrix;
+    gl_Position = sceneUbo.lightViewProj[viewIndex] * (model * vec4(pd.x, pd.y, pd.z, 1.0));
 }

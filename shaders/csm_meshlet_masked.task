@@ -1,0 +1,147 @@
+#version 460
+#extension GL_EXT_mesh_shader : require
+#extension GL_KHR_shader_subgroup_ballot : require
+#extension GL_KHR_shader_subgroup_arithmetic : require
+
+layout(local_size_x = 32) in;
+
+layout(push_constant) uniform PushConsts {
+    uint cascadeIndex;
+} push;
+
+struct ObjectData {
+    mat4 modelMatrix;
+    mat4 normalMatrix;
+    vec4 boundingSphere;
+    uint baseMeshlet;
+    uint meshletCount;
+    uint alphaMode;
+    uint padding1;
+};
+
+struct Meshlet {
+    float center_x;
+    float center_y;
+    float center_z;
+    float radius;
+    uint cone_axis_cutoff;
+    uint vertexOffset;
+    uint indexOffset;
+    uint vertexCount;
+    uint triangleCount;
+};
+
+layout(set = 0, binding = 1) uniform SceneUbo {
+    vec4 cameraPosition;
+    vec4 directionalLight;
+    mat4 lightViewProj[3];
+    vec4 cascadesSplits;
+    float maxReflectionLod;
+    uint blueNoiseTexIndex;
+    vec2 padding;
+} sceneUbo;
+
+layout(std430, set = 0, binding = 5) readonly buffer ObjectBuffer {
+    ObjectData objects[];
+};
+
+layout(std430, set = 0, binding = 8) readonly buffer MeshletBuffer {
+    Meshlet meshlets[];
+};
+
+struct TaskWorkgroup {
+    uint objectID;
+    uint baseMeshletIndex;
+};
+
+layout(std430, set = 1, binding = 9) readonly buffer MaskedTaskWorkgroupBuffer {
+    TaskWorkgroup taskWorkgroups[];
+};
+
+layout(std430, set = 1, binding = 8) readonly buffer CascadeDataBuffer {
+    mat4 cascadeViewProj[3];
+    vec4 cascadePlanes[18];
+    vec4 cameraForward;
+};
+
+struct Payload {
+    uint objectID;
+    uint meshletIndices[32];
+};
+
+taskPayloadSharedEXT Payload payload;
+
+shared ObjectData s_obj;
+shared float s_maxScale;
+shared vec4 s_cascadePlanes[18];
+
+void main() {
+    uint ti = gl_LocalInvocationID.x;
+    uint wg = gl_WorkGroupID.x;
+    
+    TaskWorkgroup twg = taskWorkgroups[wg];
+    uint objectID = twg.objectID;
+    uint localMeshletIdx = twg.baseMeshletIndex + ti;
+
+    if (ti < 18u) {
+        s_cascadePlanes[ti] = cascadePlanes[ti];
+    }
+
+    if (ti == 0) {
+        s_obj = objects[objectID];
+        float sqX = dot(s_obj.modelMatrix[0].xyz, s_obj.modelMatrix[0].xyz);
+        float sqY = dot(s_obj.modelMatrix[1].xyz, s_obj.modelMatrix[1].xyz);
+        float sqZ = dot(s_obj.modelMatrix[2].xyz, s_obj.modelMatrix[2].xyz);
+        s_maxScale = sqrt(max(max(sqX, sqY), sqZ));
+    }
+    barrier();
+
+    bool visible = false;
+    vec3 lightDir = normalize(-sceneUbo.directionalLight.xyz);
+
+    if (localMeshletIdx < s_obj.meshletCount) {
+        uint globalMeshletID = s_obj.baseMeshlet + localMeshletIdx;
+        Meshlet m = meshlets[globalMeshletID];
+        
+        bool lightBackfacing = false;
+        bool doubleSided = (s_obj.alphaMode & 4u) != 0u;
+        vec4 cone = unpackSnorm4x8(m.cone_axis_cutoff);
+        float cone_cutoff = cone.w;
+
+        if (!doubleSided && cone_cutoff < 0.99) {
+            vec3 cone_axis_world = normalize(mat3(s_obj.normalMatrix) * cone.xyz);
+            if (dot(cone_axis_world, lightDir) >= cone_cutoff) {
+                lightBackfacing = true;
+            }
+        }
+
+        if (!lightBackfacing) {
+            vec3 localCenter = vec3(m.center_x, m.center_y, m.center_z);
+            vec3 worldCenter = (s_obj.modelMatrix * vec4(localCenter, 1.0)).xyz;
+            float worldRadius = m.radius * s_maxScale;
+
+            uint c = push.cascadeIndex;
+            visible = true;
+            for (uint p = 0u; p < 6u; p++) {
+                vec4 plane = s_cascadePlanes[c * 6u + p];
+                if (dot(plane.xyz, worldCenter) + plane.w < -worldRadius) {
+                    visible = false;
+                    break;
+                }
+            }
+        }
+    }
+    
+    uvec4 ballot = subgroupBallot(visible);
+    uint count = subgroupBallotBitCount(ballot);
+    uint offset = subgroupBallotExclusiveBitCount(ballot);
+
+    if (visible) {
+        payload.meshletIndices[offset] = localMeshletIdx;
+    }
+    
+    if (ti == 0) {
+        payload.objectID = objectID;
+        EmitMeshTasksEXT(count, 1, 1);
+    }
+}

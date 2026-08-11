@@ -11,7 +11,7 @@
 
 namespace Engine {
     SsaoPassNode::SsaoPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap):
-        device(device), renderer(renderer), megaBuffer(megaBuffer), resourceHeap(resourceHeap)
+        RenderPassNode("SSAO Pass"), device(device), renderer(renderer), megaBuffer(megaBuffer), resourceHeap(resourceHeap)
     {
         try {
             createNoiseTexture();
