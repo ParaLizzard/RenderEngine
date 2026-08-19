@@ -277,6 +277,7 @@ set(ENGINE_LIB_SOURCES
         src/Core/Exception.h
         src/Core/CoreDefines.h
         src/Core/types.h
+        src/Core/Hash.h
 )
 
 add_library(RenderEngineLib STATIC ${ENGINE_LIB_SOURCES})
