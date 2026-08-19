@@ -1,4 +1,6 @@
 #version 460
+#extension GL_GOOGLE_include_directive : enable
+#include "hiz_cull.glsl"
 
 layout(local_size_x_id = 0, local_size_x = 256) in;
 
@@ -9,7 +11,7 @@ struct ObjectData {
     uint baseMeshlet;
     uint meshletCount;
     uint alphaMode;
-    uint padding1;
+    uint materialId;
 };
 
 layout(set = 0, binding = 1) uniform SceneUbo {
@@ -29,8 +31,6 @@ layout(std430, set = 0, binding = 5) readonly buffer ObjectBuffer {
     ObjectData objects[];
 };
 
-// --- CullPass Local Buffers (set = 1) ---
-
 layout(std430, set = 1, binding = 0) buffer DispatchCommandBuffer {
     uint dispatchX;
     uint dispatchY;
@@ -41,78 +41,121 @@ layout(std430, set = 1, binding = 1) buffer VisibleObjectBuffer {
     uint visibleObjects[];
 };
 
+layout(set = 1, binding = 8) uniform sampler2D hizPyramid;
+
+layout(std430, set = 1, binding = 9) buffer CandidateDispatchCommandBuffer {
+    uint candidateDispatchX;
+    uint candidateDispatchY;
+    uint candidateDispatchZ;
+};
+
+layout(std430, set = 1, binding = 10) buffer CandidateObjectBuffer {
+    uint candidateObjects[];
+};
+
 layout(push_constant) uniform PushConsts {
+    mat4 view;
+    vec4 projParams;
+    vec4 hizParams;
+    vec2 screenParams;
     uint cullFlags;
-    uint objectCount; // total Meshlets
-    uint actualObjectCount; // real objects
+    uint objectCount;
+    uint actualObjectCount;
     uint objectCapacity;
     uint clipPlaneCount;
     uint targetAlphaMode;
+    uint phase;
+    uint pad;
 } push;
 
 const float SUBPIXEL_THRESHOLD = 0.0005;
 
 void main() {
-    uint objectID = gl_GlobalInvocationID.x;
-    if (objectID >= push.actualObjectCount) return;
+    uint invocationID = gl_GlobalInvocationID.x;
 
-    ObjectData obj = objects[objectID];
+    if (push.phase == 0u) {
+        if (invocationID >= push.actualObjectCount) return;
+        uint objectID = invocationID;
+        ObjectData obj = objects[objectID];
 
-    if (obj.meshletCount == 0 || (obj.alphaMode & 3u) == 2) {
-        return;
-    }
+        if (obj.meshletCount == 0 || (obj.alphaMode & 3u) != push.targetAlphaMode) {
+            return;
+        }
 
-    // 1. Calculate World Space Sphere
-    vec4 sphere = obj.boundingSphere;
-    vec3 localCenter = sphere.xyz;
-    vec3 worldCenter = (obj.modelMatrix * vec4(localCenter, 1.0)).xyz;
-    
-    // Scale radius by object transform
-    float sqX = dot(obj.modelMatrix[0].xyz, obj.modelMatrix[0].xyz);
-    float sqY = dot(obj.modelMatrix[1].xyz, obj.modelMatrix[1].xyz);
-    float sqZ = dot(obj.modelMatrix[2].xyz, obj.modelMatrix[2].xyz);
-    float maxScale = sqrt(max(max(sqX, sqY), sqZ));
-    float worldRadius = sphere.w * maxScale;
+        vec4 sphere = obj.boundingSphere;
+        vec3 localCenter = sphere.xyz;
+        vec3 worldCenter = (obj.modelMatrix * vec4(localCenter, 1.0)).xyz;
+        
+        float sqX = dot(obj.modelMatrix[0].xyz, obj.modelMatrix[0].xyz);
+        float sqY = dot(obj.modelMatrix[1].xyz, obj.modelMatrix[1].xyz);
+        float sqZ = dot(obj.modelMatrix[2].xyz, obj.modelMatrix[2].xyz);
+        float maxScale = sqrt(max(max(sqX, sqY), sqZ));
+        float worldRadius = sphere.w * maxScale;
 
-    // --- Debug Flags ---
-    bool enableFrustumCull = true;
-    bool enableContributionCull = true;
-    // -------------------
-
-    // 2. Frustum Culling
-    bool visible = true;
-    if (enableFrustumCull) {
-        for (uint i = 0u; i < push.clipPlaneCount; i++) {
-            if (dot(sceneUbo.frustumPlanes[i].xyz, worldCenter) + sceneUbo.frustumPlanes[i].w < -worldRadius) {
-                visible = false;
-                break;
+        bool inFrustum = true;
+        if ((push.cullFlags & 1u) != 0u) {
+            for (uint i = 0u; i < push.clipPlaneCount; i++) {
+                if (dot(sceneUbo.frustumPlanes[i].xyz, worldCenter) + sceneUbo.frustumPlanes[i].w < -worldRadius) {
+                    inFrustum = false;
+                    break;
+                }
             }
         }
-    }
 
-    // 3. Contribution Culling
-    if (visible && enableContributionCull) {
-        vec3 camToCenter = worldCenter - sceneUbo.cameraPos.xyz;
-        float dist = length(camToCenter);
-        if (dist > worldRadius) {
-            float projRadius = (worldRadius / dist) * abs(sceneUbo.cameraPos.w);
-            if (projRadius < SUBPIXEL_THRESHOLD) {
-                visible = false;
+        if (!inFrustum) return;
+
+        if ((push.cullFlags & 2u) != 0u) {
+            vec3 camToCenter = worldCenter - sceneUbo.cameraPos.xyz;
+            float dist = length(camToCenter);
+            if (dist > worldRadius) {
+                float projRadius = (worldRadius / dist) * abs(sceneUbo.cameraPos.w);
+                if (projRadius < SUBPIXEL_THRESHOLD) {
+                    return;
+                }
             }
         }
-    }
-    
-    if (push.cullFlags == 0) {
-        visible = true;
-    }
 
-    if (visible) {
-        uint slot = atomicAdd(dispatchX, 1);
-        visibleObjects[slot] = objectID;
+        bool occluded = false;
+        if ((push.cullFlags & 4u) != 0u) {
+            vec3 centerView = (push.view * vec4(worldCenter, 1.0)).xyz;
+            occluded = isSphereOccludedHiZ(hizPyramid, centerView, worldRadius, push.projParams, push.hizParams, push.screenParams);
+        }
+
+        if (!occluded || push.cullFlags == 0u) {
+            uint slot = atomicAdd(dispatchX, 1);
+            visibleObjects[slot] = objectID;
+        } else {
+            uint candSlot = atomicAdd(candidateDispatchX, 1);
+            candidateObjects[candSlot] = objectID;
+        }
+    } else {
+        if (invocationID >= candidateDispatchX) return;
+        uint objectID = candidateObjects[invocationID];
+        ObjectData obj = objects[objectID];
+
+        vec4 sphere = obj.boundingSphere;
+        vec3 localCenter = sphere.xyz;
+        vec3 worldCenter = (obj.modelMatrix * vec4(localCenter, 1.0)).xyz;
+
+        float sqX = dot(obj.modelMatrix[0].xyz, obj.modelMatrix[0].xyz);
+        float sqY = dot(obj.modelMatrix[1].xyz, obj.modelMatrix[1].xyz);
+        float sqZ = dot(obj.modelMatrix[2].xyz, obj.modelMatrix[2].xyz);
+        float maxScale = sqrt(max(max(sqX, sqY), sqZ));
+        float worldRadius = sphere.w * maxScale;
+
+        vec3 centerView = (push.view * vec4(worldCenter, 1.0)).xyz;
+        bool occluded = isSphereOccludedHiZ(hizPyramid, centerView, worldRadius, push.projParams, push.hizParams, push.screenParams);
+
+        if (!occluded) {
+            uint slot = atomicAdd(dispatchX, 1);
+            visibleObjects[slot] = objectID;
+        }
     }
 
     if (gl_GlobalInvocationID.x == 0) {
         dispatchY = 1;
         dispatchZ = 1;
+        candidateDispatchY = 1;
+        candidateDispatchZ = 1;
     }
 }

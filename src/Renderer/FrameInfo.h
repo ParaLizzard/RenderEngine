@@ -6,8 +6,12 @@
 #include "Scene/GameObject.h"
 #include "System/Input/InputManager.h"
 
-#define SHADOW_MAP_SIZE 2048
+#define SHADOW_ATLAS_WIDTH 2048
+#define SHADOW_ATLAS_HEIGHT 3072
 #define SHADOW_MAP_CASCADES 3
+#define SHADOW_CASCADE0_SIZE 2048
+#define SHADOW_CASCADE1_SIZE 1024
+#define SHADOW_CASCADE2_SIZE 1024
 
 namespace Engine {
     class JobSystem;
@@ -40,7 +44,13 @@ namespace Engine {
 
         glm::mat4 cullViewProj;
         glm::vec3 cullCameraPos;
+        glm::mat4 cullView{1.0f};
         bool cullEnabled = true;
+        bool firstFrame = false;
+        glm::vec2 subpixelJitter{0.0f, 0.0f};
+        glm::mat4 curViewProj{1.0f};
+        int debugViewMode = 0;
+        int debugHiZMipLevel = 0;
     };
 
     struct SceneUbo

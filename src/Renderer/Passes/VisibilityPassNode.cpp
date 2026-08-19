@@ -9,8 +9,9 @@ namespace Engine {
                                            Renderer &renderer,
                                            Model &megaBuffer,
                                            CullPassNode &cullPass,
-                                           ResourceHeap &resourceHeap):
-        RenderPassNode("Visibility Pass"), device(device), renderer(renderer), megaBuffer(megaBuffer), cullPass(cullPass), resourceHeap(resourceHeap)
+                                           ResourceHeap &resourceHeap,
+                                           uint32_t phase):
+        RenderPassNode(phase == 0 ? "Visibility Pass Phase 1" : "Visibility Pass Phase 2"), device(device), renderer(renderer), megaBuffer(megaBuffer), cullPass(cullPass), resourceHeap(resourceHeap), phase(phase)
     {
         createPipelineLayout();
         createPipeline();
@@ -46,10 +47,16 @@ namespace Engine {
     {
         VkExtent2D currentExtent = renderer.getSwapChain().getSwapChainExtent();
 
-        renderGraph.createTransientImage("VisBuffer",
-                                         VK_FORMAT_R32G32_UINT,
-                                         currentExtent);
-        renderGraph.createTransientImage("VelocityBuffer", VK_FORMAT_R16G16_SFLOAT, currentExtent);
+        if (phase == 0) {
+            renderGraph.createTransientImage("VisBuffer",
+                                             VK_FORMAT_R32G32_UINT,
+                                             currentExtent);
+            renderGraph.createTransientImage("VelocityBuffer",
+                                             VK_FORMAT_R16G16_SFLOAT,
+                                             currentExtent,
+                                             1,
+                                             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+        }
 
         if (!device.isMeshShaderSupported()) {
             renderGraph.readBuffer("CompactedIndexBuffer",
@@ -86,23 +93,64 @@ namespace Engine {
             VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
     }
 
+    void VisibilityPassNode::registerResources(RenderGraph &graph, const FrameInfo &frameInfo)
+    {
+        if (phase == 0) {
+            VkExtent2D currentExtent = frameInfo.extent;
+            graph.registerPhysicalImage("DepthImage",
+                                        renderer.getSwapChain().getDepthImage(),
+                                        renderer.getSwapChain().getDepthImageView(),
+                                        renderer.getSwapChain().getDepthFormat(),
+                                        currentExtent,
+                                        VK_IMAGE_LAYOUT_UNDEFINED);
+        }
+    }
+
+    void VisibilityPassNode::updateResources(RenderGraph &graph, const FrameInfo &frameInfo)
+    {
+        if (phase == 0) {
+            VkExtent2D currentExtent = frameInfo.extent;
+            graph.updateImageHandle("DepthImage",
+                                    renderer.getSwapChain().getDepthImage(),
+                                    renderer.getSwapChain().getDepthImageView(),
+                                    currentExtent);
+        }
+    }
+
     void VisibilityPassNode::execute(VkCommandBuffer &cmd, FrameInfo &frameInfo)
     {
         uint32_t currentFrame = renderer.getFrameIndex();
 
+        glm::mat4 proj = frameInfo.camera->getProjection();
+        VkExtent2D hizExt = { std::bit_ceil(frameInfo.extent.width), std::bit_ceil(frameInfo.extent.height) };
+        uint32_t totalMips = std::bit_width(std::max(hizExt.width, hizExt.height));
+
         VisibilityPushConstants pushConsts{};
-        pushConsts.cullFlags          = frameInfo.cullEnabled ? 1 : 0;
+        pushConsts.view               = frameInfo.cullView;
+        pushConsts.projParams         = glm::vec4(proj[0][0], proj[1][1], proj[2][2], proj[3][2]);
+        pushConsts.hizParams          = glm::vec4((frameInfo.extent.width * 0.5f) / hizExt.width,
+                                                  (frameInfo.extent.height * 0.5f) / hizExt.height,
+                                                  static_cast<float>(totalMips),
+                                                  frameInfo.camera->getNearClip());
+        pushConsts.screenParams       = glm::vec2(static_cast<float>(frameInfo.extent.width), static_cast<float>(frameInfo.extent.height));
+        pushConsts.cullFlags          = 0;
+        if (frameInfo.cullEnabled) pushConsts.cullFlags |= 1u;
+        if (frameInfo.cullEnabled) pushConsts.cullFlags |= 2u;
+        if (frameInfo.cullEnabled && !frameInfo.firstFrame && phase == 1) pushConsts.cullFlags |= 4u;
         pushConsts.objectCount        = megaBuffer.getMeshletCount();
         pushConsts.actualObjectCount  = static_cast<uint32_t>(frameInfo.gameObjects->size());
         pushConsts.objectCapacity     = Config::MAX_SCENE_OBJECTS;
         pushConsts.clipPlaneCount     = 6;
         pushConsts.isMeshShader       = device.isMeshShaderSupported() ? 1 : 0;
+        pushConsts.phase              = phase;
+
+        VkAttachmentLoadOp loadOp = (phase == 0) ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
 
         VkRenderingAttachmentInfo colorAttachment {};
         colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
         colorAttachment.imageView = frameInfo.renderGraph->getImageView("VisBuffer");
         colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        colorAttachment.loadOp = loadOp;
         colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         colorAttachment.clearValue.color.uint32[0] = 0;
         colorAttachment.clearValue.color.uint32[1] = 0;
@@ -111,7 +159,7 @@ namespace Engine {
         velocityAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
         velocityAttachment.imageView = frameInfo.renderGraph->getImageView("VelocityBuffer");
         velocityAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        velocityAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        velocityAttachment.loadOp = loadOp;
         velocityAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         velocityAttachment.clearValue.color.float32[0] = 0.0f;
         velocityAttachment.clearValue.color.float32[1] = 0.0f;
@@ -120,10 +168,9 @@ namespace Engine {
         depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
         depthAttachment.imageView = renderer.getSwapChain().getDepthImageView();
         depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depthAttachment.loadOp = loadOp;
         depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         depthAttachment.clearValue.depthStencil = {1.0f, 0};
-
 
         std::array attachments { colorAttachment, velocityAttachment };
         VkRenderingInfo renderingInfo {};
@@ -194,17 +241,15 @@ namespace Engine {
         vkCmdBindDescriptorSets(cmd,
                                 VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 maskedPipelineLayout,
-                                0, 2, maskedSets,
-                                0, nullptr);
-
-        VkShaderStageFlags maskedStages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-        if (device.isMeshShaderSupported()) {
-            maskedStages |= VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_TASK_BIT_EXT;
-        }
+                                0,
+                                2,
+                                maskedSets,
+                                0,
+                                nullptr);
 
         vkCmdPushConstants(cmd,
                            maskedPipelineLayout,
-                           maskedStages,
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0,
                            sizeof(VisibilityPushConstants),
                            &pushConsts);
@@ -239,7 +284,9 @@ namespace Engine {
         pipelineLayoutInfo.setLayoutCount = 2;
         pipelineLayoutInfo.pSetLayouts = layouts;
 
-        vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &pipelineLayout);
+        if (vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
+            throw std::runtime_error("VisibilityPassNode: failed to create pipeline layout");
+        }
     }
 
     void VisibilityPassNode::createPipeline()
@@ -451,13 +498,8 @@ namespace Engine {
 
     void VisibilityPassNode::createMaskedPipeline()
     {
-        VkShaderStageFlags stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-        if (device.isMeshShaderSupported()) {
-            stageFlags |= VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_TASK_BIT_EXT;
-        }
-
         VkPushConstantRange pushConstantRange {};
-        pushConstantRange.stageFlags = stageFlags;
+        pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
         pushConstantRange.offset = 0;
         pushConstantRange.size = sizeof(VisibilityPushConstants);
 
@@ -507,7 +549,7 @@ namespace Engine {
         rasterizer.sType       = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
         rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
         rasterizer.lineWidth   = 1.0f;
-        rasterizer.cullMode    = VK_CULL_MODE_NONE;
+        rasterizer.cullMode    = VK_CULL_MODE_BACK_BIT;
         rasterizer.frontFace   = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 
         VkPipelineMultisampleStateCreateInfo multisampling {};
@@ -566,5 +608,4 @@ namespace Engine {
         vkDestroyShaderModule(device.getDevice(), vertModule, nullptr);
         vkDestroyShaderModule(device.getDevice(), fragModule, nullptr);
     }
-
-} // namespace Engine
+}

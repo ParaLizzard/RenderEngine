@@ -34,43 +34,27 @@ namespace Engine {
 
     std::vector<VkVertexInputAttributeDescription> Model::VertexPosition::getAttributeDescriptions()
     {
-        std::vector<VkVertexInputAttributeDescription> attributeDescriptions(6);
+        std::vector<VkVertexInputAttributeDescription> attributeDescriptions(4);
 
-        // Location 0: Position (Binding 0)
         attributeDescriptions[0].binding = 0;
         attributeDescriptions[0].location = 0;
         attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
         attributeDescriptions[0].offset = offsetof(VertexPosition, position);
 
-        // Location 1: Color (Binding 1)
         attributeDescriptions[1].binding = 1;
         attributeDescriptions[1].location = 1;
-        attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attributeDescriptions[1].offset = offsetof(VertexAttribute, color);
+        attributeDescriptions[1].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+        attributeDescriptions[1].offset = offsetof(VertexAttribute, tangent_lo);
 
-        // Location 2: Normal (Binding 1)
         attributeDescriptions[2].binding = 1;
         attributeDescriptions[2].location = 2;
-        attributeDescriptions[2].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attributeDescriptions[2].offset = offsetof(VertexAttribute, normal);
+        attributeDescriptions[2].format = VK_FORMAT_R16G16_SFLOAT;
+        attributeDescriptions[2].offset = offsetof(VertexAttribute, uv);
 
-        // Location 3: UV (Binding 1)
         attributeDescriptions[3].binding = 1;
         attributeDescriptions[3].location = 3;
-        attributeDescriptions[3].format = VK_FORMAT_R32G32_SFLOAT;
-        attributeDescriptions[3].offset = offsetof(VertexAttribute, uv);
-
-        // Location 4: Tangent (Binding 1)
-        attributeDescriptions[4].binding = 1;
-        attributeDescriptions[4].location = 4;
-        attributeDescriptions[4].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-        attributeDescriptions[4].offset = offsetof(VertexAttribute, tangent);
-
-        // Location 5: texture ID (Binding 1)
-        attributeDescriptions[5].binding = 1;
-        attributeDescriptions[5].location = 5;
-        attributeDescriptions[5].format = VK_FORMAT_R32_UINT;
-        attributeDescriptions[5].offset = offsetof(VertexAttribute, texId);
+        attributeDescriptions[3].format = VK_FORMAT_R16G16_SFLOAT;
+        attributeDescriptions[3].offset = offsetof(VertexAttribute, normal_oct);
 
         return attributeDescriptions;
     }

@@ -21,20 +21,11 @@ namespace Engine {
         glm::mat4 view;
         glm::vec3 cameraPos;
         glm::uint enableSSAO;
-        glm::uint debugMode; // 0 = Standard PBR, 1 = Per-Triangle, 2 = Per-Meshlet
+        glm::uint debugMode;
         float ssaoStrength;
-    };
-
-    struct WorldData
-    {
-        glm::vec3 worldPos;
-        float pad;
-    };
-
-    struct GPUMeshInfo
-    {
-        uint32_t firstIndex;
-        int32_t vertexOffset;
+        glm::vec2 jitterOffset;
+        glm::vec2 resolution;
+        glm::vec2 rcpResolution;
     };
 
     class MaterialPassNode: public RenderPassNode
@@ -52,26 +43,13 @@ namespace Engine {
         MaterialPassNode &operator=(const MaterialPassNode &) = delete;
 
         void setup(RenderGraphBuilder &renderGraph) override;
+        void registerResources(RenderGraph &graph, const FrameInfo &frameInfo) override;
+        void updateResources(RenderGraph &graph, const FrameInfo &frameInfo) override;
         void execute(VkCommandBuffer &cmd, FrameInfo &frameInfo) override;
         void resolve(RenderGraph &graph, const FrameInfo &frameInfo) override;
 
-        [[nodiscard]] VkBuffer getPackedNormalBuffer(size_t frameIndex) const
-        {
-            return packedNormalBuffers[frameIndex]->getBuffer();
-        }
-        [[nodiscard]] VkBuffer getPackedRadianceBuffer(size_t frameIndex) const
-        {
-            return packedRadianceBuffers[frameIndex]->getBuffer();
-        }
-
-        [[nodiscard]] VkBuffer getWorldPositionBuffer(uint32_t frameIndex) const
-        {
-            return worldPositionBuffers[frameIndex]->getBuffer();
-        }
-
         void markSceneDirty() override
         {
-            meshInfoDirty = true;
         }
 
     private:
@@ -96,17 +74,6 @@ namespace Engine {
         VkSampler nearestSampler = VK_NULL_HANDLE;
         VkSampler shadowSampler {VK_NULL_HANDLE};
         VkSampler hardwareShadowSampler {VK_NULL_HANDLE};
-
-        std::vector<std::unique_ptr<Buffer>> meshBuffers;
-        std::vector<std::unique_ptr<Buffer>> packedNormalBuffers;
-        std::vector<std::unique_ptr<Buffer>> packedRadianceBuffers;
-        std::vector<std::unique_ptr<Buffer>> worldPositionBuffers;
-
-        uint32_t lastWidth = 0;
-        uint32_t lastHeight = 0;
-
-        std::vector<GPUMeshInfo> cachedMeshInfos;
-        bool meshInfoDirty = true;
-        int framesToUpdate = 0;
     };
 } // namespace Engine
+

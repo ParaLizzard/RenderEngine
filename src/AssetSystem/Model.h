@@ -20,6 +20,7 @@ namespace Engine {
             int32_t vertexOffset = 0;
             uint32_t baseMeshlet = 0;
             uint32_t meshletCount = 0;
+            uint32_t materialIndex = 0;
         };
 
 #pragma pack(push, 4)
@@ -49,11 +50,10 @@ namespace Engine {
 
         struct VertexAttribute
         {
-            glm::vec3 color {};
-            glm::vec3 normal {};
-            glm::vec2 uv {};
-            glm::vec4 tangent {};
-            uint32_t texId {0};
+            uint32_t tangent_lo {};
+            uint32_t tangent_hi {};
+            uint32_t uv {};
+            uint32_t normal_oct {};
         };
 
         Model(Device &device);

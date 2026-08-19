@@ -35,15 +35,21 @@ void InputManager::ProcessEvent(const InputEvent &evt)
         nextFrame[evt.data.keyboard.key].value = 0.0f;
         break;
     case InputEventType::MouseButtonDown:
-        nextFrame[evt.data.keyboard.key].pressed = true;
-        nextFrame[evt.data.keyboard.key].value = 0.0f;
+        mouseNextFrame[evt.data.mouseButton.button].pressed = true;
+        mouseNextFrame[evt.data.mouseButton.button].value = 1.0f;
         break;
     case InputEventType::MouseButtonUp:
-        nextFrame[evt.data.keyboard.key].released = true;
-        nextFrame[evt.data.keyboard.key].value = 0.0f;
+        mouseNextFrame[evt.data.mouseButton.button].released = true;
+        mouseNextFrame[evt.data.mouseButton.button].value = 0.0f;
         break;
-
-        // other
+    case InputEventType::MouseMove:
+        accumulatedMouseDelta.x += static_cast<float>(evt.data.mouseMotion.deltaX);
+        accumulatedMouseDelta.y += static_cast<float>(evt.data.mouseMotion.deltaY);
+        mousePosition.x = static_cast<float>(evt.data.mouseMotion.x);
+        mousePosition.y = static_cast<float>(evt.data.mouseMotion.y);
+        break;
+    default:
+        break;
     }
 }
 
@@ -53,6 +59,15 @@ void InputManager::SwapFrames() {
         source.pressed = false;
         source.released = false;
     }
+
+    mouseCurrentFrame = mouseNextFrame;
+    for (auto& [button, source] : mouseNextFrame) {
+        source.pressed = false;
+        source.released = false;
+    }
+
+    mouseDelta = accumulatedMouseDelta;
+    accumulatedMouseDelta = glm::vec2(0.0f);
 }
 
 void InputManager::OnOSKeyDown(KeyCode key) {
@@ -81,6 +96,21 @@ bool InputManager::IsKeyJustPressed(KeyCode key) {
 
 bool InputManager::IsKeyJustReleased(KeyCode key) {
     return currentFrame[key].released;
+}
+
+bool InputManager::IsMouseButtonHeld(MouseButton button) {
+    auto it = mouseCurrentFrame.find(button);
+    return it != mouseCurrentFrame.end() && it->second.value > 0.5f;
+}
+
+bool InputManager::IsMouseButtonJustPressed(MouseButton button) {
+    auto it = mouseCurrentFrame.find(button);
+    return it != mouseCurrentFrame.end() && it->second.pressed;
+}
+
+bool InputManager::IsMouseButtonJustReleased(MouseButton button) {
+    auto it = mouseCurrentFrame.find(button);
+    return it != mouseCurrentFrame.end() && it->second.released;
 }
 
 } // namespace Engine

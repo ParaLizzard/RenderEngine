@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 
 #include "Vulkan/Buffer.h"
 #include "Renderer/RenderPassNode.h"
@@ -12,25 +13,32 @@ namespace Engine {
     class GameObject;
     struct ComputePushConstants
     {
+        glm::mat4 view;
+        glm::vec4 projParams;
+        glm::vec4 hizParams;
+        glm::vec2 screenParams;
         uint32_t cullFlags;
         uint32_t objectCount;
         uint32_t actualObjectCount;
         uint32_t objectCapacity;
         uint32_t clipPlaneCount;
         uint32_t targetAlphaMode;
+        uint32_t phase;
+        uint32_t pad;
     };
 
     class CullPassNode: public RenderPassNode
     {
     public:
-        CullPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap);
+        CullPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap, uint32_t phase = 0, CullPassNode *parentCullPass = nullptr);
         ~CullPassNode();
-
 
         CullPassNode(const CullPassNode &) = delete;
         CullPassNode &operator=(const CullPassNode &) = delete;
 
         void setup(RenderGraphBuilder &renderGraph) override;
+        void registerResources(RenderGraph &graph, const FrameInfo &frameInfo) override;
+        void updateResources(RenderGraph &graph, const FrameInfo &frameInfo) override;
         void execute(VkCommandBuffer &cmd, FrameInfo &frameInfo) override;
         void resolve(RenderGraph &graph, const FrameInfo &frameInfo) override;
 
@@ -76,7 +84,6 @@ namespace Engine {
             return maskedSingleIndirectCommandBuffers[currentFrame]->getBuffer();
         }
 
-
         [[nodiscard]] void* getSingleIndirectCommandMapped(uint32_t frameIdx) const
         {
             return singleIndirectCommandBuffers[frameIdx]->getMappedMemory();
@@ -106,6 +113,24 @@ namespace Engine {
             return static_cast<uint32_t>(maskedIndirectCommandsArray.size());
         }
 
+        [[nodiscard]] VkBuffer getCandidateDispatchCommandBuffer(uint32_t frameIdx) const
+        {
+            return gpuCandidateDispatchCommandBuffers[frameIdx]->getBuffer();
+        }
+        [[nodiscard]] VkBuffer getCandidateObjectBuffer(uint32_t frameIdx) const
+        {
+            return gpuCandidateObjectBuffers[frameIdx]->getBuffer();
+        }
+        [[nodiscard]] VkBuffer getMaskedCandidateDispatchCommandBuffer(uint32_t frameIdx) const
+        {
+            return gpuMaskedCandidateDispatchCommandBuffers[frameIdx]->getBuffer();
+        }
+        [[nodiscard]] VkBuffer getMaskedCandidateObjectBuffer(uint32_t frameIdx) const
+        {
+            return gpuMaskedCandidateObjectBuffers[frameIdx]->getBuffer();
+        }
+
+        [[nodiscard]] uint32_t getPhase() const { return phase; }
         [[nodiscard]] const glm::mat4& getActiveCullViewProj() const { return activeCullViewProj; }
         [[nodiscard]] const glm::vec3& getActiveCullCameraPos() const { return activeCullCameraPos; }
 
@@ -116,6 +141,8 @@ namespace Engine {
         Model &megaBuffer;
         Renderer &renderer;
         ResourceHeap &resourceHeap;
+        uint32_t phase = 0;
+        CullPassNode *parentCullPass = nullptr;
 
         VkPipeline objectCullPipeline {VK_NULL_HANDLE};
         VkPipeline taskSubmitPipeline {VK_NULL_HANDLE};
@@ -141,12 +168,16 @@ namespace Engine {
         std::vector<std::unique_ptr<Buffer>> gpuDispatchCommandBuffers;
         std::vector<std::unique_ptr<Buffer>> gpuVisibleObjectBuffers;
         
-        
         std::vector<std::unique_ptr<Buffer>> triangleDispatchCommandBuffers;
         std::vector<std::unique_ptr<Buffer>> visibleMeshletBuffers;
 
         std::vector<std::unique_ptr<Buffer>> taskWorkgroupBuffers;
         std::vector<std::unique_ptr<Buffer>> taskDispatchCommandBuffers;
+
+        std::vector<std::unique_ptr<Buffer>> gpuCandidateDispatchCommandBuffers;
+        std::vector<std::unique_ptr<Buffer>> gpuCandidateObjectBuffers;
+        std::vector<std::unique_ptr<Buffer>> gpuMaskedCandidateDispatchCommandBuffers;
+        std::vector<std::unique_ptr<Buffer>> gpuMaskedCandidateObjectBuffers;
 
         std::vector<const GameObject *> maskedDraws;
         std::vector<VkDrawIndexedIndirectCommand> maskedIndirectCommandsArray;
@@ -164,7 +195,9 @@ namespace Engine {
         bool sceneDirty = true;
         int framesToUpdate = 0;
 
+        VkSampler hizSampler {VK_NULL_HANDLE};
+        glm::mat4 activeCullView{1.0f};
         glm::mat4 activeCullViewProj{1.0f};
         glm::vec3 activeCullCameraPos{0.0f};
     };
-} // namespace Engine
+}

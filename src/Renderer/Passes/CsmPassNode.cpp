@@ -116,7 +116,7 @@ namespace Engine {
             taskWorkgroupBuffers[i] =
                 std::make_unique<Buffer>(device,
                                          sizeof(uint32_t) * 2,
-                                         Config::MAX_SCENE_OBJECTS * 10,
+                                         Config::MAX_SCENE_OBJECTS * 10 * SHADOW_MAP_CASCADES,
                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                          VMA_MEMORY_USAGE_GPU_ONLY,
                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -124,7 +124,7 @@ namespace Engine {
 
             taskDispatchCommandBuffers[i] =
                 std::make_unique<Buffer>(device,
-                                         sizeof(VkDispatchIndirectCommand),
+                                         sizeof(VkDispatchIndirectCommand) * SHADOW_MAP_CASCADES,
                                          1,
                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                          VMA_MEMORY_USAGE_GPU_ONLY,
@@ -134,7 +134,7 @@ namespace Engine {
             maskedTaskWorkgroupBuffers[i] =
                 std::make_unique<Buffer>(device,
                                          sizeof(uint32_t) * 2,
-                                         Config::MAX_SCENE_OBJECTS * 10,
+                                         Config::MAX_SCENE_OBJECTS * 10 * SHADOW_MAP_CASCADES,
                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                          VMA_MEMORY_USAGE_GPU_ONLY,
                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -142,7 +142,7 @@ namespace Engine {
 
             maskedTaskDispatchCommandBuffers[i] =
                 std::make_unique<Buffer>(device,
-                                         sizeof(VkDispatchIndirectCommand),
+                                         sizeof(VkDispatchIndirectCommand) * SHADOW_MAP_CASCADES,
                                          1,
                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                          VMA_MEMORY_USAGE_GPU_ONLY,
@@ -175,12 +175,6 @@ namespace Engine {
 
     CsmPassNode::~CsmPassNode()
     {
-        if (csmArrayView != VK_NULL_HANDLE)
-            vkDestroyImageView(device.getDevice(), csmArrayView, nullptr);
-        for (uint32_t c = 0; c < SHADOW_MAP_CASCADES; ++c) {
-            if (cascadeViews[c] != VK_NULL_HANDLE)
-                vkDestroyImageView(device.getDevice(), cascadeViews[c], nullptr);
-        }
         if (objectDescriptorPool != VK_NULL_HANDLE)
             vkDestroyDescriptorPool(device.getDevice(), objectDescriptorPool, nullptr);
         if (objectSetLayout != VK_NULL_HANDLE)
@@ -215,12 +209,12 @@ namespace Engine {
 
     void CsmPassNode::setup(RenderGraphBuilder &renderGraph)
     {
-        VkExtent2D mapExtent = {SHADOW_MAP_SIZE, SHADOW_MAP_SIZE};
+        VkExtent2D mapExtent = {SHADOW_ATLAS_WIDTH, SHADOW_ATLAS_HEIGHT};
         renderGraph.createTransientImage(
             "CsmImage",
             Config::USE_D16_SHADOW_MAPS ? VK_FORMAT_D16_UNORM : VK_FORMAT_D32_SFLOAT,
             mapExtent,
-            SHADOW_MAP_CASCADES,
+            1,
             VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
         );
 
@@ -381,10 +375,19 @@ namespace Engine {
                 VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT));
 
             if (device.isMeshShaderSupported()) {
-                VkDispatchIndirectCommand taskDispatchCmd{0, 1, 1};
-                vkCmdUpdateBuffer(cmd, taskDispatchCommandBuffers[currentFrame]->getBuffer(), 0, sizeof(VkDispatchIndirectCommand), &taskDispatchCmd);
+                VkDispatchIndirectCommand taskDispatchCmd[SHADOW_MAP_CASCADES] = {
+                    {0, 1, 1},
+                    {0, 1, 1},
+                    {0, 1, 1}
+                };
+                vkCmdUpdateBuffer(cmd, taskDispatchCommandBuffers[currentFrame]->getBuffer(), 0, sizeof(taskDispatchCmd), taskDispatchCmd);
+                vkCmdUpdateBuffer(cmd, maskedTaskDispatchCommandBuffers[currentFrame]->getBuffer(), 0, sizeof(taskDispatchCmd), taskDispatchCmd);
                 transferBarriers.push_back(VkUtils::bufferBarrier(
                     taskDispatchCommandBuffers[currentFrame]->getBuffer(), 0, VK_WHOLE_SIZE,
+                    VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT));
+                transferBarriers.push_back(VkUtils::bufferBarrier(
+                    maskedTaskDispatchCommandBuffers[currentFrame]->getBuffer(), 0, VK_WHOLE_SIZE,
                     VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
                     VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT));
             } else {
@@ -420,6 +423,7 @@ namespace Engine {
             compPc.objectCount = megaBuffer.getMeshletCount();
             compPc.actualObjectCount = totalObjects;
             compPc.cullFlags = frameInfo.cullEnabled ? 1 : 0;
+            compPc.maxTaskWgsPerCascade = Config::MAX_SCENE_OBJECTS * 10;
             vkCmdPushConstants(cmd, computePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(CsmCullPushConstants), &compPc);
 
             if (frameInfo.renderGraph) frameInfo.renderGraph->pushProfileMarker(cmd, "CSM Compute Pre-pass");
@@ -479,6 +483,7 @@ namespace Engine {
 
         VkRenderingAttachmentInfo depthAttachment {};
         depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        depthAttachment.imageView = frameInfo.renderGraph->getImageView("CsmImage");
         depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
         depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -487,7 +492,7 @@ namespace Engine {
         VkRenderingInfo renderingInfo {};
         renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
         renderingInfo.renderArea.offset = {0, 0};
-        renderingInfo.renderArea.extent = {SHADOW_MAP_SIZE, SHADOW_MAP_SIZE};
+        renderingInfo.renderArea.extent = {SHADOW_ATLAS_WIDTH, SHADOW_ATLAS_HEIGHT};
         renderingInfo.viewMask = 0;
         renderingInfo.layerCount = 1;
         renderingInfo.colorAttachmentCount = 0;
@@ -495,83 +500,51 @@ namespace Engine {
 
         if (frameInfo.renderGraph) frameInfo.renderGraph->pushProfileMarker(cmd, "CSM Render Pass");
 
+        vkCmdBeginRendering(cmd, &renderingInfo);
+
+        const VkViewport viewports[SHADOW_MAP_CASCADES] = {
+            {0.0f, 0.0f, static_cast<float>(SHADOW_CASCADE0_SIZE), static_cast<float>(SHADOW_CASCADE0_SIZE), 0.0f, 1.0f},
+            {0.0f, 2048.0f, static_cast<float>(SHADOW_CASCADE1_SIZE), static_cast<float>(SHADOW_CASCADE1_SIZE), 0.0f, 1.0f},
+            {1024.0f, 2048.0f, static_cast<float>(SHADOW_CASCADE2_SIZE), static_cast<float>(SHADOW_CASCADE2_SIZE), 0.0f, 1.0f}
+        };
+
+        const VkRect2D scissors[SHADOW_MAP_CASCADES] = {
+            {{0, 0}, {SHADOW_CASCADE0_SIZE, SHADOW_CASCADE0_SIZE}},
+            {{0, 2048}, {SHADOW_CASCADE1_SIZE, SHADOW_CASCADE1_SIZE}},
+            {{1024, 2048}, {SHADOW_CASCADE2_SIZE, SHADOW_CASCADE2_SIZE}}
+        };
+
         for (uint32_t c = 0; c < SHADOW_MAP_CASCADES; ++c) {
-            depthAttachment.imageView = cascadeViews[c];
-            
-            vkCmdBeginRendering(cmd, &renderingInfo);
-
-            VkViewport viewport {};
-            viewport.x = 0.0f;
-            viewport.y = 0.0f;
-            viewport.width = static_cast<float>(SHADOW_MAP_SIZE);
-            viewport.height = static_cast<float>(SHADOW_MAP_SIZE);
-            viewport.minDepth = 0.0f;
-            viewport.maxDepth = 1.0f;
-            vkCmdSetViewport(cmd, 0, 1, &viewport);
-
-            VkRect2D scissor {};
-            scissor.offset = {0, 0};
-            scissor.extent = {SHADOW_MAP_SIZE, SHADOW_MAP_SIZE};
-            vkCmdSetScissor(cmd, 0, 1, &scissor);
+            vkCmdSetViewport(cmd, 0, 1, &viewports[c]);
+            vkCmdSetScissor(cmd, 0, 1, &scissors[c]);
 
             VkDescriptorSet bindlessSet = resourceHeap.getDescriptorSet(currentFrame);
             VkDescriptorSet sets[] = {bindlessSet, objectDescriptorSets[currentFrame]};
 
             if (totalObjects > 0) {
+                CsmMeshPushConstants meshPc { c, Config::MAX_SCENE_OBJECTS * 10 };
                 if (device.isMeshShaderSupported()) {
                     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipeline);
                     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipelineLayout, 0, 2, sets, 0, nullptr);
-                    vkCmdPushConstants(cmd, meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT, 0, sizeof(uint32_t), &c);
-                    pfn_vkCmdDrawMeshTasksIndirectEXT(cmd, taskDispatchCommandBuffers[currentFrame]->getBuffer(), 0, 1, sizeof(VkDispatchIndirectCommand));
+                    vkCmdPushConstants(cmd, meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT, 0, sizeof(CsmMeshPushConstants), &meshPc);
+                    VkDeviceSize indirectOffset = c * sizeof(VkDispatchIndirectCommand);
+                    pfn_vkCmdDrawMeshTasksIndirectEXT(cmd, taskDispatchCommandBuffers[currentFrame]->getBuffer(), indirectOffset, 1, sizeof(VkDispatchIndirectCommand));
                 } else {
                     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
                     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 2, sets, 0, nullptr);
-                    vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT, 0, sizeof(uint32_t), &c);
+                    vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT, 0, sizeof(CsmMeshPushConstants), &meshPc);
                     vkCmdDrawIndirect(cmd, singleIndirectCommandBuffers[currentFrame]->getBuffer(), 0, 1, sizeof(VkDrawIndirectCommand));
                 }
             }
-
-            vkCmdEndRendering(cmd);
         }
+
+        vkCmdEndRendering(cmd);
         if (frameInfo.renderGraph) frameInfo.renderGraph->popProfileMarker(cmd);
     }
 
     void CsmPassNode::resolve(RenderGraph &graph, const FrameInfo &frameInfo)
     {
         RenderPassNode::resolve(graph, frameInfo);
-
-        VkImage currentImage = graph.getImage("CsmImage");
-        if (currentImage != VK_NULL_HANDLE && currentImage != csmImageCache) {
-            if (csmArrayView != VK_NULL_HANDLE) {
-                vkDestroyImageView(device.getDevice(), csmArrayView, nullptr);
-            }
-            for (uint32_t c = 0; c < SHADOW_MAP_CASCADES; ++c) {
-                if (cascadeViews[c] != VK_NULL_HANDLE) {
-                    vkDestroyImageView(device.getDevice(), cascadeViews[c], nullptr);
-                }
-            }
-
-            VkImageViewCreateInfo viewInfo {};
-            viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-            viewInfo.image = currentImage;
-            viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
-            viewInfo.format = Config::USE_D16_SHADOW_MAPS ? VK_FORMAT_D16_UNORM : VK_FORMAT_D32_SFLOAT;
-            viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-            viewInfo.subresourceRange.baseMipLevel = 0;
-            viewInfo.subresourceRange.levelCount = 1;
-            viewInfo.subresourceRange.baseArrayLayer = 0;
-            viewInfo.subresourceRange.layerCount = SHADOW_MAP_CASCADES;
-
-            vkCreateImageView(device.getDevice(), &viewInfo, nullptr, &csmArrayView);
-
-            for (uint32_t c = 0; c < SHADOW_MAP_CASCADES; ++c) {
-                viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-                viewInfo.subresourceRange.baseArrayLayer = c;
-                viewInfo.subresourceRange.layerCount = 1;
-                vkCreateImageView(device.getDevice(), &viewInfo, nullptr, &cascadeViews[c]);
-            }
-            csmImageCache = currentImage;
-        }
     }
 
     void CsmPassNode::createPipelineLayout()
@@ -582,7 +555,7 @@ namespace Engine {
         VkPushConstantRange pushConstantRangeCascade {};
         pushConstantRangeCascade.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT;
         pushConstantRangeCascade.offset = 0;
-        pushConstantRangeCascade.size = sizeof(uint32_t);
+        pushConstantRangeCascade.size = sizeof(CsmMeshPushConstants);
 
         VkPipelineLayoutCreateInfo pipelineLayoutInfo {};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -1139,7 +1112,12 @@ namespace Engine {
 
             glm::mat4 shadowMatrix = lightOrthoMatrix * lightViewMatrix;
             glm::vec4 shadowOrigin = shadowMatrix * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
-            float shadowMapSize = static_cast<float>(SHADOW_MAP_SIZE);
+            const float cascadeSizes[SHADOW_MAP_CASCADES] = {
+                static_cast<float>(SHADOW_CASCADE0_SIZE),
+                static_cast<float>(SHADOW_CASCADE1_SIZE),
+                static_cast<float>(SHADOW_CASCADE2_SIZE)
+            };
+            float shadowMapSize = cascadeSizes[i];
             glm::vec2 shadowOffset = glm::vec2(shadowOrigin.x, shadowOrigin.y) * (shadowMapSize / 2.0f);
             glm::vec2 roundedOffset = glm::round(shadowOffset);
             glm::vec2 subTexelOffset = roundedOffset - shadowOffset;

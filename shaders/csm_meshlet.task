@@ -7,6 +7,7 @@ layout(local_size_x = 32) in;
 
 layout(push_constant) uniform PushConsts {
     uint cascadeIndex;
+    uint maxTaskWgsPerCascade;
 } push;
 
 struct ObjectData {
@@ -16,7 +17,7 @@ struct ObjectData {
     uint baseMeshlet;
     uint meshletCount;
     uint alphaMode;
-    uint padding1;
+    uint materialId;
 };
 
 struct Meshlet {
@@ -32,6 +33,9 @@ struct Meshlet {
 };
 
 layout(set = 0, binding = 1) uniform SceneUbo {
+    mat4 viewProj;
+    mat4 prevViewProj;
+    vec4 frustumPlanes[6];
     vec4 cameraPosition;
     vec4 directionalLight;
     mat4 lightViewProj[3];
@@ -79,7 +83,9 @@ void main() {
     uint ti = gl_LocalInvocationID.x;
     uint wg = gl_WorkGroupID.x;
     
-    TaskWorkgroup twg = taskWorkgroups[wg];
+    uint cascadeIndex = push.cascadeIndex;
+    uint cascadeOffset = cascadeIndex * push.maxTaskWgsPerCascade;
+    TaskWorkgroup twg = taskWorkgroups[cascadeOffset + wg];
     uint objectID = twg.objectID;
     uint localMeshletIdx = twg.baseMeshletIndex + ti;
 

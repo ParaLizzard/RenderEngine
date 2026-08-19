@@ -19,6 +19,12 @@ namespace Engine {
         std::unordered_map<KeyCode, InputSource> currentFrame;
         std::unordered_map<KeyCode, InputSource> nextFrame;
 
+        std::unordered_map<MouseButton, InputSource> mouseCurrentFrame;
+        std::unordered_map<MouseButton, InputSource> mouseNextFrame;
+        glm::vec2 mouseDelta{0.0f, 0.0f};
+        glm::vec2 accumulatedMouseDelta{0.0f, 0.0f};
+        glm::vec2 mousePosition{0.0f, 0.0f};
+
         struct GamepadState {
             std::unordered_map<GamepadButton, InputSource> buttons;
             std::unordered_map<GamepadAxis, glm::vec2> axes;
@@ -44,6 +50,12 @@ namespace Engine {
         bool IsKeyHeld(KeyCode key);
         bool IsKeyJustPressed(KeyCode key);
         bool IsKeyJustReleased(KeyCode key);
+
+        bool IsMouseButtonHeld(MouseButton button);
+        bool IsMouseButtonJustPressed(MouseButton button);
+        bool IsMouseButtonJustReleased(MouseButton button);
+        glm::vec2 GetMouseDelta() const { return mouseDelta; }
+        glm::vec2 GetMousePosition() const { return mousePosition; }
 
         void ProcessEvents(intptr_t ptr) {return backend->ProcessEvents(ptr);}
     };

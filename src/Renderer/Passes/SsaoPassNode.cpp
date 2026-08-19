@@ -80,12 +80,12 @@ namespace Engine {
         VkExtent2D currentExtent = renderer.getSwapChain().getSwapChainExtent();
         VkExtent2D halfExtent = {currentExtent.width / 2, currentExtent.height / 2};
         renderGraph.createTransientImage("SsaoImage", VK_FORMAT_R8_UNORM, halfExtent, 1, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT);
+        renderGraph.createTransientImage("SsaoBlurImage", VK_FORMAT_R8_UNORM, halfExtent, 1, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT);
 
         renderGraph.readImage("DepthImage",
                               VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
                               VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                               VK_ACCESS_2_SHADER_READ_BIT);
-        renderGraph.readBuffer("PackedNormals", VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
 
         renderGraph.writeImage("SsaoImage",
                                VK_IMAGE_LAYOUT_GENERAL,
@@ -103,7 +103,6 @@ namespace Engine {
 
         VkDescriptorImageInfo depthInfo {
             colorSampler, graph.getImageView("DepthImage"), VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};
-        VkDescriptorBufferInfo normalInfo = graph.getBufferInfo("PackedNormals", i);
         VkDescriptorImageInfo noiseInfo {noiseSampler, noiseView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
         VkDescriptorBufferInfo bufferInfo = uboBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
 
@@ -112,10 +111,9 @@ namespace Engine {
 
         DescriptorWriter(*ssaoSetLayout, *descriptorPool)
             .writeImage(0, &depthInfo)
-            .writeBuffer(1, &normalInfo)
-            .writeImage(2, &noiseInfo)
-            .writeBuffer(3, &bufferInfo)
-            .writeImage(4, &ssaoWriteInfo)
+            .writeImage(1, &noiseInfo)
+            .writeBuffer(2, &bufferInfo)
+            .writeImage(3, &ssaoWriteInfo)
             .overwrite(ssaoDescriptorSets[i]);
 
         VkDescriptorImageInfo ssaoResultInfo {
@@ -237,51 +235,48 @@ namespace Engine {
 
         VkCommandBuffer cmd = device.beginSingleTimeCommands();
 
-        VkImageMemoryBarrier barrier {};
-        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.image = noiseImage;
-        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        barrier.subresourceRange.baseMipLevel = 0;
-        barrier.subresourceRange.levelCount = 1;
-        barrier.subresourceRange.baseArrayLayer = 0;
-        barrier.subresourceRange.layerCount = 1;
-        barrier.srcAccessMask = 0;
-        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        VkImageSubresourceRange range {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
-        vkCmdPipelineBarrier(cmd,
-                             VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                             VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             0,
-                             0,
-                             nullptr,
-                             0,
-                             nullptr,
-                             1,
-                             &barrier);
+        VkImageMemoryBarrier2 b1 = VkUtils::imageBarrier(
+            noiseImage,
+            VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+            VK_ACCESS_2_NONE,
+            VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+            VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            range
+        );
+
+        VkUtils::pipelineBarrier(cmd,
+                                VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+                                VK_ACCESS_2_NONE,
+                                VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                                VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                                {b1}, {});
         device.endSingleTimeCommands(cmd);
 
         stagingBuffer.copyBufferToImage(noiseImage, SSAO_NOISE_DIM, SSAO_NOISE_DIM, 1);
 
         cmd = device.beginSingleTimeCommands();
-        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
-        vkCmdPipelineBarrier(cmd,
-                             VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                             0,
-                             0,
-                             nullptr,
-                             0,
-                             nullptr,
-                             1,
-                             &barrier);
+        VkImageMemoryBarrier2 b2 = VkUtils::imageBarrier(
+            noiseImage,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+            VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+            VK_ACCESS_2_SHADER_READ_BIT,
+            range
+        );
+
+        VkUtils::pipelineBarrier(cmd,
+                                VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                                VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                                VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                                VK_ACCESS_2_SHADER_READ_BIT,
+                                {b2}, {});
         device.endSingleTimeCommands(cmd);
 
         VkSamplerCreateInfo samplerInfo {};
@@ -320,7 +315,6 @@ namespace Engine {
                              .setMaxSets(Config::MAX_FRAMES_IN_FLIGHT * 2)
                              .addPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, Config::MAX_FRAMES_IN_FLIGHT * 2)
                              .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, Config::MAX_FRAMES_IN_FLIGHT * 4)
-                             .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, Config::MAX_FRAMES_IN_FLIGHT)
                              .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, Config::MAX_FRAMES_IN_FLIGHT * 2)
                              .build();
 
@@ -350,12 +344,10 @@ namespace Engine {
 
         ssaoSetLayout =
             DescriptorSetLayout::Builder(device)
-                .addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT) // Depth
-                .addBinding(
-                    1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT) // Normal (from CompactMaterial)
-                .addBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT) // Noise
-                .addBinding(3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT) // Kernel + Matrices
-                .addBinding(4, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT) // Output
+                .addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
+                .addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
+                .addBinding(2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
+                .addBinding(3, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT)
                 .build();
 
         blurSetLayout = DescriptorSetLayout::Builder(device)

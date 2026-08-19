@@ -3,24 +3,12 @@
 layout (local_size_x = 16, local_size_y = 16) in;
 
 layout (binding = 0) uniform sampler2D samplerDepth;
-
-struct CompactMaterial {
-    uint packedNormal;
-    uint packedRadiance;
-    uint packedAO;
-    uint padding;
-};
-
-layout(std430, binding = 1) readonly buffer NormalBuffer {
-    uint packedNormals[];
-};
-
-layout (binding = 2) uniform sampler2D ssaoNoise;
+layout (binding = 1) uniform sampler2D ssaoNoise;
 
 layout (constant_id = 0) const int SSAO_KERNEL_SIZE = 32;
 layout (constant_id = 1) const float SSAO_RADIUS = 0.5;
 
-layout (binding = 3) uniform UBO
+layout (binding = 2) uniform UBO
 {
     mat4 projection;
     mat4 invProjection;
@@ -30,25 +18,40 @@ layout (binding = 3) uniform UBO
     float farPlane;
 } ubo;
 
-layout (binding = 4, r8) uniform writeonly image2D outSsao;
+layout (binding = 3, r8) uniform writeonly image2D outSsao;
 
 vec3 reconstructViewPos(vec2 uv, float depth) {
-    vec2 ndc = uv * 2.0 - 1.0;
-    float w = ubo.invProjection[2][3] * depth + ubo.invProjection[3][3];
-    vec3 viewPos;
-    viewPos.x = ubo.invProjection[0][0] * ndc.x + ubo.invProjection[2][0] * depth + ubo.invProjection[3][0];
-    viewPos.y = ubo.invProjection[1][1] * ndc.y + ubo.invProjection[2][1] * depth + ubo.invProjection[3][1];
-    viewPos.z = ubo.invProjection[2][2] * depth + ubo.invProjection[3][2];
-    return viewPos / w;
+    vec4 clip = vec4(uv * 2.0 - 1.0, depth, 1.0);
+    vec4 view = ubo.invProjection * clip;
+    return view.xyz / view.w;
 }
 
-vec3 decodeOctNormal(uint packedNormal) {
-    vec2 f = vec2(packedNormal & 0xFFu, (packedNormal >> 8u) & 0xFFu) / 255.0 * 2.0 - 1.0;
-    vec3 n = vec3(f.x, f.y, 1.0 - abs(f.x) - abs(f.y));
-    float t = max(-n.z, 0.0);
-    n.x += n.x >= 0.0 ? -t : t;
-    n.y += n.y >= 0.0 ? -t : t;
-    return normalize(n);
+float reconstructViewZ(float depth, vec4 zParams) {
+    return (zParams.x * depth + zParams.y) / (zParams.z * depth + zParams.w);
+}
+
+vec3 getNormalFromDepth(vec2 uv, vec3 posCenter, vec2 ssaoDim) {
+    vec2 step = 1.0 / ssaoDim;
+    vec2 uvR = uv + vec2(step.x, 0.0);
+    vec2 uvL = uv - vec2(step.x, 0.0);
+    vec2 uvT = uv + vec2(0.0, step.y);
+    vec2 uvB = uv - vec2(0.0, step.y);
+
+    vec3 posR = reconstructViewPos(uvR, texture(samplerDepth, uvR).r);
+    vec3 posL = reconstructViewPos(uvL, texture(samplerDepth, uvL).r);
+    vec3 posT = reconstructViewPos(uvT, texture(samplerDepth, uvT).r);
+    vec3 posB = reconstructViewPos(uvB, texture(samplerDepth, uvB).r);
+
+    vec3 dx = (abs(posR.z - posCenter.z) < abs(posL.z - posCenter.z)) ? (posR - posCenter) : (posCenter - posL);
+    vec3 dy = (abs(posT.z - posCenter.z) < abs(posB.z - posCenter.z)) ? (posT - posCenter) : (posCenter - posB);
+
+    vec3 n = cross(dy, dx);
+    if (length(n) < 1e-6) return vec3(0.0, 0.0, -1.0);
+    n = normalize(n);
+    if (dot(n, -posCenter) < 0.0) {
+        n = -n;
+    }
+    return n;
 }
 
 void main()
@@ -62,31 +65,32 @@ void main()
 
     float depth = texture(samplerDepth, inUV).r;
     
-    if (depth == 1.0) {
+    if (depth >= 0.99999) {
         imageStore(outSsao, pixelCoords, vec4(1.0));
         return;
     }
 
     vec3 fragPos = reconstructViewPos(inUV, depth);
-
-    ivec2 depthDim = textureSize(samplerDepth, 0);
-    ivec2 fullResCoords = ivec2(inUV * vec2(depthDim));
-    uint pixelIndex = fullResCoords.y * depthDim.x + fullResCoords.x;
-
-    uint packedNormal = packedNormals[pixelIndex];
-    vec3 worldNormal = decodeOctNormal(packedNormal);
-
-    vec3 normal = mat3(ubo.view) * worldNormal;
-    normal = normalize(normal);
+    vec3 normal = getNormalFromDepth(inUV, fragPos, vec2(ssaoDim));
 
     ivec2 noiseDim = textureSize(ssaoNoise, 0);
     vec2 targetDim = vec2(ssaoDim);
     vec2 noiseScale = targetDim / vec2(noiseDim);
-    vec3 randomVec = texture(ssaoNoise, inUV * noiseScale).xyz;
+    vec3 randomVec = vec3(texture(ssaoNoise, inUV * noiseScale).xy, 0.0);
+    if (length(randomVec) < 1e-4) randomVec = vec3(1.0, 0.0, 0.0);
+    else randomVec = normalize(randomVec);
 
-    vec3 tangent = normalize(randomVec - normal * dot(randomVec, normal));
+    vec3 tangent = randomVec - normal * dot(randomVec, normal);
+    if (length(tangent) < 1e-4) {
+        tangent = cross(normal, vec3(0.0, 0.0, 1.0));
+        if (length(tangent) < 1e-4) tangent = cross(normal, vec3(0.0, 1.0, 0.0));
+    }
+    tangent = normalize(tangent);
     vec3 bitangent = cross(normal, tangent);
     mat3 TBN = mat3(tangent, bitangent, normal);
+
+    vec2 projScale = vec2(ubo.projection[0][0], ubo.projection[1][1]);
+    vec4 invZParams = vec4(ubo.invProjection[2][2], ubo.invProjection[3][2], ubo.invProjection[2][3], ubo.invProjection[3][3]);
 
     float occlusion = 0.0f;
     float validSamples = 0.0f;
@@ -97,17 +101,12 @@ void main()
         vec3 samplePos = TBN * ubo.samples[i].xyz;
         samplePos = fragPos + samplePos * SSAO_RADIUS;
 
-        vec4 offset;
-        offset.x = samplePos.x * ubo.projection[0][0] + samplePos.z * ubo.projection[2][0] + ubo.projection[3][0];
-        offset.y = samplePos.y * ubo.projection[1][1] + samplePos.z * ubo.projection[2][1] + ubo.projection[3][1];
-        offset.z = samplePos.z * ubo.projection[2][2] + ubo.projection[3][2];
-        offset.w = samplePos.z * ubo.projection[2][3] + ubo.projection[3][3];
-        offset.xyz /= offset.w;
-        offset.xy = offset.xy * 0.5f + 0.5f;
+        float invZ = 1.0 / samplePos.z;
+        vec2 sampleNDC = vec2(projScale.x * samplePos.x * invZ, projScale.y * samplePos.y * invZ);
+        vec2 sampleUV = sampleNDC * 0.5f + 0.5f;
 
-        float rawSampleDepth = texture(samplerDepth, offset.xy).r;
-        vec3 sampledViewPos = reconstructViewPos(offset.xy, rawSampleDepth);
-        float sampleDepthZ = sampledViewPos.z;
+        float rawSampleDepth = texture(samplerDepth, sampleUV).r;
+        float sampleDepthZ = reconstructViewZ(rawSampleDepth, invZParams);
 
         float rangeCheck = smoothstep(0.0, 1.0, 1.0 - (abs(fragPos.z - sampleDepthZ) / SSAO_RADIUS));
 

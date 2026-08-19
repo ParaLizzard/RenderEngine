@@ -47,13 +47,28 @@ namespace Engine {
         registeredPasses.push_back(std::move(info));
     }
 
+    void RenderGraph::registerPassResources(const FrameInfo &frameInfo)
+    {
+        for (const PassExecutionInfo &pass : registeredPasses) {
+            pass.passNode->registerResources(*this, frameInfo);
+        }
+    }
+
+    void RenderGraph::updatePassResources(const FrameInfo &frameInfo)
+    {
+        for (const PassExecutionInfo &pass : registeredPasses) {
+            pass.passNode->updateResources(*this, frameInfo);
+        }
+    }
+
     void RenderGraph::registerPhysicalImage(const std::string &name,
                                             VkImage image,
                                             VkImageView view,
                                             VkFormat format,
                                             VkExtent2D extent,
                                             VkImageLayout initialLayout,
-                                            uint32_t arrayLayers)
+                                            uint32_t arrayLayers,
+                                            uint32_t mipLevels)
     {
         GraphImage g {};
         g.image = image;
@@ -62,6 +77,7 @@ namespace Engine {
         g.extent = extent;
         g.layout = initialLayout;
         g.arrayLayers = arrayLayers;
+        g.mipLevels = mipLevels;
         g.lastAccessMask = VK_ACCESS_2_NONE;
         g.lastStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
 
@@ -535,7 +551,7 @@ namespace Engine {
         transientImageUsages.push_back({name, format, extent,arrayLayers, usage, clearValue});
     }
 
-    void RenderGraph::updateImageHandle(const std::string &name, VkImage image, VkImageView view, VkExtent2D extent)
+    void RenderGraph::updateImageHandle(const std::string &name, VkImage image, VkImageView view, VkExtent2D extent, uint32_t mipLevels)
     {
         auto it = imageRegistry.find(name);
         if (it != imageRegistry.end()) {
@@ -550,6 +566,7 @@ namespace Engine {
             it->second.image = image;
             it->second.imageView = view;
             it->second.extent = extent;
+            it->second.mipLevels = mipLevels;
         }
     }
 

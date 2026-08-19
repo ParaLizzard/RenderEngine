@@ -22,25 +22,17 @@ namespace Engine {
     {
         globalPool = DescriptorPool::Builder(device)
                      .setMaxSets(Config::MAX_FRAMES_IN_FLIGHT)
-                     .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, Config::MAX_FRAMES_IN_FLIGHT * 8)
                      .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, Config::MAX_FRAMES_IN_FLIGHT * 4)
                      .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, Config::MAX_FRAMES_IN_FLIGHT)
                      .setPoolFlags(VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT)
                      .build();
 
-
         globalSetLayout = DescriptorSetLayout::Builder(device)
-                          .addBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
                           .addBinding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
-                          .addBinding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
-                          .addBinding(5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
-                          .addBinding(6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
                           .addBinding(9, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT)
                           .addBinding(10, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
-                          .addBinding(11, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
                           .addBinding(12, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
                           .addBinding(13, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
-                          .addBinding(14, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
                           .build();
 
         VkSamplerCreateInfo samplerInfo{};
@@ -51,7 +43,6 @@ namespace Engine {
         samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        //samplerInfo.mipLodBias = -0.75f;
         samplerInfo.anisotropyEnable = VK_TRUE;
         samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
         samplerInfo.maxAnisotropy = device.getMaxAnisotropy();
@@ -68,9 +59,9 @@ namespace Engine {
         nearestSamplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         nearestSamplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         nearestSamplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        nearestSamplerInfo.anisotropyEnable = VK_TRUE;
+        nearestSamplerInfo.anisotropyEnable = VK_FALSE;
         nearestSamplerInfo.maxLod = VK_LOD_CLAMP_NONE;
-        nearestSamplerInfo.maxAnisotropy = device.getMaxAnisotropy();
+        nearestSamplerInfo.maxAnisotropy = 1.0f;
         nearestSamplerInfo.pNext = VK_NULL_HANDLE;
         if (vkCreateSampler(device.getDevice(), &nearestSamplerInfo, nullptr, &nearestSampler) != VK_SUCCESS) {
             throw std::runtime_error("MaterialPassNode: Failed to create nearest texture sampler");
@@ -95,51 +86,6 @@ namespace Engine {
         shadowSamplerInfo.compareOp = VK_COMPARE_OP_LESS;
         if (vkCreateSampler(device.getDevice(), &shadowSamplerInfo, nullptr, &hardwareShadowSampler) != VK_SUCCESS) {
             throw std::runtime_error("MaterialPassNode: Failed to create hardware shadow sampler");
-        }
-
-        VkExtent2D extent = renderer.getSwapChain().getSwapChainExtent();
-        lastWidth = extent.width;
-        lastHeight = extent.height;
-        uint32_t initialPixelCount = lastWidth * lastHeight;
-
-        meshBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        worldPositionBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        packedNormalBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        packedRadianceBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-
-        for (size_t i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
-            meshBuffers[i] =
-                std::make_unique<Buffer>(device,
-                                         sizeof(GPUMeshInfo),
-                                         Config::MAX_SCENE_OBJECTS,
-                                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                         VMA_MEMORY_USAGE_CPU_TO_GPU,
-                                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                         0);
-
-            worldPositionBuffers[i] = std::make_unique<Buffer>(device,
-                                                               sizeof(WorldData),
-                                                               initialPixelCount,
-                                                               VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                                               VMA_MEMORY_USAGE_GPU_ONLY,
-                                                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                                               0);
-
-            packedNormalBuffers[i] = std::make_unique<Buffer>(device,
-                                                              sizeof(uint32_t),
-                                                              initialPixelCount,
-                                                              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                                              VMA_MEMORY_USAGE_GPU_ONLY,
-                                                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                                              0);
-
-            packedRadianceBuffers[i] = std::make_unique<Buffer>(device,
-                                                                sizeof(uint32_t),
-                                                                initialPixelCount,
-                                                                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                                                VMA_MEMORY_USAGE_GPU_ONLY,
-                                                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                                                0);
         }
 
         descriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
@@ -172,10 +118,6 @@ namespace Engine {
 
     void MaterialPassNode::setup(RenderGraphBuilder &renderGraph)
     {
-
-        renderGraph.readBuffer("CompactedIndexBuffer",
-                               VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-                               VK_ACCESS_2_SHADER_READ_BIT);
         renderGraph.readImage("VisBuffer",
                               VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
                               VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
@@ -184,26 +126,12 @@ namespace Engine {
                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                               VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                               VK_ACCESS_2_SHADER_READ_BIT);
-        VkExtent2D currentExtent = renderer.getSwapChain().getSwapChainExtent();
-        VkExtent2D halfExtent = {currentExtent.width / 2, currentExtent.height / 2};
-        renderGraph.createTransientImage("SsaoBlurImage", VK_FORMAT_R8_UNORM, halfExtent, 1, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT);
-
-        renderGraph.readImage("DepthImage",
-                              VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-                              VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-                              VK_ACCESS_2_SHADER_READ_BIT);
         renderGraph.readImage("SsaoBlurImage",
                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                               VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                               VK_ACCESS_2_SHADER_READ_BIT);
 
-        renderGraph.writeBuffer("PackedNormals", VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
-        renderGraph.writeBuffer(
-            "PackedRadiances",
-            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-            VK_ACCESS_2_SHADER_WRITE_BIT);
-        renderGraph.writeBuffer("WorldPosition", VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
-
+        VkExtent2D currentExtent = renderer.getSwapChain().getSwapChainExtent();
         renderGraph.createTransientImage("FinalRender",
                                          VK_FORMAT_R16G16B16A16_SFLOAT,
                                          currentExtent,
@@ -215,38 +143,30 @@ namespace Engine {
                                VK_ACCESS_2_SHADER_WRITE_BIT);
     }
 
+    void MaterialPassNode::registerResources(RenderGraph &graph, const FrameInfo &frameInfo)
+    {
+        uint32_t currentFrame = frameInfo.frameIndex;
+
+        graph.registerPhysicalBuffer("MaterialSSBO",
+                                     resourceHeap.getMaterialBufferInfo(currentFrame).buffer,
+                                     resourceHeap.getMaterialBufferInfo(currentFrame).range,
+                                     VK_PIPELINE_STAGE_2_HOST_BIT,
+                                     VK_ACCESS_2_HOST_WRITE_BIT);
+    }
+
+    void MaterialPassNode::updateResources(RenderGraph &graph, const FrameInfo &frameInfo)
+    {
+        uint32_t currentFrame = frameInfo.frameIndex;
+
+        graph.updateBufferHandle("MaterialSSBO",
+                                 resourceHeap.getMaterialBufferInfo(currentFrame).buffer,
+                                 resourceHeap.getMaterialBufferSize());
+    }
+
     void MaterialPassNode::execute(VkCommandBuffer &cmd, FrameInfo &frameInfo)
     {
         uint32_t currentFrame = renderer.getFrameIndex();
         VkExtent2D extent = renderer.getSwapChain().getSwapChainExtent();
-
-        if (meshInfoDirty) {
-            cachedMeshInfos.clear();
-            cachedMeshInfos.resize(frameInfo.gameObjects->size());
-
-            for (size_t i = 0; i < frameInfo.gameObjects->size(); i++) {
-                const auto &obj = (*frameInfo.gameObjects)[i];
-                if (obj.subMesh.indexCount == 0) continue;
-                if (obj.alphaMode == AlphaMode::Blend) continue;
-
-                GPUMeshInfo info{};
-                info.firstIndex = obj.subMesh.firstIndex;
-                info.vertexOffset = obj.subMesh.vertexOffset;
-
-                cachedMeshInfos[i] = info;
-            }
-            meshInfoDirty = false;
-            framesToUpdate = Config::MAX_FRAMES_IN_FLIGHT;
-        }
-
-        if (framesToUpdate > 0 && !cachedMeshInfos.empty()) {
-            meshBuffers[currentFrame]->writeToBuffer(
-                cachedMeshInfos.data(),
-                cachedMeshInfos.size() * sizeof(GPUMeshInfo),
-                0);
-            meshBuffers[currentFrame]->flush(VK_WHOLE_SIZE, 0);
-            framesToUpdate--;
-        }
 
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
 
@@ -254,12 +174,8 @@ namespace Engine {
         VkDescriptorSet sets[] = {bindlessSet, descriptorSets[currentFrame]};
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 0, 2, sets, 0, nullptr);
 
-
-        glm::mat4 projection = frameInfo.camera->getProjection();
         glm::mat4 view = frameInfo.camera->getView();
-
-        glm::mat4 clipMatrix = glm::mat4(1.0f);
-        glm::mat4 viewProjection = clipMatrix * projection * view;
+        glm::mat4 viewProjection = frameInfo.curViewProj;
 
         static uint32_t currentDebugMode = 0;
 
@@ -283,6 +199,9 @@ namespace Engine {
         pc.enableSSAO = frameInfo.enableSSAO ? 1 : 0;
         pc.debugMode = currentDebugMode;
         pc.ssaoStrength = Config::SSAO_STRENGTH;
+        pc.jitterOffset = frameInfo.subpixelJitter;
+        pc.resolution = {static_cast<float>(extent.width), static_cast<float>(extent.height)};
+        pc.rcpResolution = {1.0f / static_cast<float>(extent.width), 1.0f / static_cast<float>(extent.height)};
 
         vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(MaterialPushConstants), &pc);
 
@@ -293,52 +212,9 @@ namespace Engine {
 
     void MaterialPassNode::resolve(RenderGraph &graph, const FrameInfo &frameInfo)
     {
-        VkExtent2D extent = renderer.getSwapChain().getSwapChainExtent();
-        if (extent.width != lastWidth || extent.height != lastHeight) {
-            lastWidth = extent.width;
-            lastHeight = extent.height;
-            uint32_t pixelCount = lastWidth * lastHeight;
-
-            for (size_t i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
-                worldPositionBuffers[i] = std::make_unique<Buffer>(device,
-                                                                   sizeof(WorldData),
-                                                                   pixelCount,
-                                                                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                                                   VMA_MEMORY_USAGE_GPU_ONLY,
-                                                                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                                                   0);
-                packedNormalBuffers[i] = std::make_unique<Buffer>(device,
-                                                                  sizeof(uint32_t),
-                                                                  pixelCount,
-                                                                  VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                                                  VMA_MEMORY_USAGE_GPU_ONLY,
-                                                                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                                                  0);
-                packedRadianceBuffers[i] = std::make_unique<Buffer>(device,
-                                                                    sizeof(uint32_t),
-                                                                    pixelCount,
-                                                                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                                                    VMA_MEMORY_USAGE_GPU_ONLY,
-                                                                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                                                    0);
-            }
-        }
-
         uint32_t currentFrame = frameInfo.frameIndex;
-        VkDeviceSize normalBufferSize = static_cast<VkDeviceSize>(lastWidth) * lastHeight * sizeof(uint32_t);
-        VkDeviceSize radianceBufferSize = static_cast<VkDeviceSize>(lastWidth) * lastHeight * sizeof(uint32_t);
-        VkDeviceSize worldPosBufferSize = static_cast<VkDeviceSize>(lastWidth) * lastHeight * sizeof(WorldData);
-
-        graph.updateBufferHandle("PackedNormals", packedNormalBuffers[currentFrame]->getBuffer(), normalBufferSize);
-        graph.updateBufferHandle("PackedRadiances", packedRadianceBuffers[currentFrame]->getBuffer(), radianceBufferSize);
-        graph.updateBufferHandle("WorldPosition", worldPositionBuffers[currentFrame]->getBuffer(), worldPosBufferSize);
 
         RenderPassNode::resolve(graph, frameInfo);
-
-        VkDescriptorImageInfo depthImageInfo{};
-        depthImageInfo.imageView = graph.getImageView("DepthImage");
-        depthImageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-        depthImageInfo.sampler = sampler;
 
         VkDescriptorImageInfo visBufferInfo{};
         visBufferInfo.imageView = graph.getImageView("VisBuffer");
@@ -364,26 +240,12 @@ namespace Engine {
         csmHardwareInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         csmHardwareInfo.sampler = hardwareShadowSampler;
 
-        VkDescriptorBufferInfo meshBufferInfo = meshBuffers[currentFrame]->descriptorInfo(VK_WHOLE_SIZE, 0);
-        VkDescriptorBufferInfo normalBufferInfo = packedNormalBuffers[currentFrame]->descriptorInfo(VK_WHOLE_SIZE, 0);
-        VkDescriptorBufferInfo radianceBufferInfo = packedRadianceBuffers[currentFrame]->descriptorInfo(VK_WHOLE_SIZE, 0);
-        VkDescriptorBufferInfo positionBufferInfo = worldPositionBuffers[currentFrame]->descriptorInfo(VK_WHOLE_SIZE, 0);
-        VkDescriptorBufferInfo compactedBufferInfo{};
-        compactedBufferInfo.buffer = cullPass.getCompactedIndexBuffer(currentFrame);
-        compactedBufferInfo.offset = 0;
-        compactedBufferInfo.range = VK_WHOLE_SIZE;
         DescriptorWriter(*globalSetLayout, *globalPool)
-            .writeBuffer(2, &meshBufferInfo)
             .writeImage(3, &visBufferInfo)
-            .writeImage(4, &depthImageInfo)
-            .writeBuffer(5, &normalBufferInfo)
-            .writeBuffer(6, &positionBufferInfo)
             .writeImage(9, &finalRenderInfo)
             .writeImage(10, &ssaoInfo)
-            .writeBuffer(11, &radianceBufferInfo)
             .writeImage(12, &csmInfo)
             .writeImage(13, &csmHardwareInfo)
-            .writeBuffer(14, &compactedBufferInfo)
             .overwrite(descriptorSets[currentFrame]);
     }
 
@@ -399,7 +261,7 @@ namespace Engine {
 
         VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInfo.setLayoutCount = 2; // set 0: Bindless textures/materials, set 1: Pass-specific storage
+        pipelineLayoutInfo.setLayoutCount = 2;
         pipelineLayoutInfo.pSetLayouts = layouts;
         pipelineLayoutInfo.pushConstantRangeCount = 1;
         pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
@@ -420,17 +282,29 @@ namespace Engine {
         computeStageInfo.module = compModule;
         computeStageInfo.pName = "main";
 
-        VkSpecializationMapEntry specEntry{};
-        specEntry.constantID = 0;
-        specEntry.offset = 0;
-        specEntry.size = sizeof(uint32_t);
+        struct MaterialSpecData {
+            uint32_t enablePCSS;
+            uint32_t pcfSamplesC0;
+            uint32_t pcfSamplesC1;
+            uint32_t pcfSamplesC2;
+        } specData = {
+            Config::ENABLE_PCSS,
+            Config::PCF_SAMPLES_CASCADE_0,
+            Config::PCF_SAMPLES_CASCADE_1,
+            Config::PCF_SAMPLES_CASCADE_2
+        };
 
-        uint32_t enablePCSS = Config::ENABLE_PCSS;
+        std::array<VkSpecializationMapEntry, 4> specEntries{};
+        specEntries[0] = {0, offsetof(MaterialSpecData, enablePCSS), sizeof(uint32_t)};
+        specEntries[1] = {1, offsetof(MaterialSpecData, pcfSamplesC0), sizeof(uint32_t)};
+        specEntries[2] = {2, offsetof(MaterialSpecData, pcfSamplesC1), sizeof(uint32_t)};
+        specEntries[3] = {3, offsetof(MaterialSpecData, pcfSamplesC2), sizeof(uint32_t)};
+
         VkSpecializationInfo specInfo{};
-        specInfo.mapEntryCount = 1;
-        specInfo.pMapEntries = &specEntry;
-        specInfo.dataSize = sizeof(uint32_t);
-        specInfo.pData = &enablePCSS;
+        specInfo.mapEntryCount = static_cast<uint32_t>(specEntries.size());
+        specInfo.pMapEntries = specEntries.data();
+        specInfo.dataSize = sizeof(MaterialSpecData);
+        specInfo.pData = &specData;
 
         computeStageInfo.pSpecializationInfo = &specInfo;
 
@@ -446,3 +320,4 @@ namespace Engine {
         vkDestroyShaderModule(device.getDevice(), compModule, nullptr);
     }
 } // namespace Engine
+

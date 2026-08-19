@@ -3,69 +3,35 @@
 layout(location = 0) in vec2 inUV;
 layout(location = 0) out vec4 outColor;
 
-struct CompactMaterial {
-    uint packedNormal;
-    uint packedRadiance;
-    uint packedAO;
-    uint padding;
-};
-
 layout(push_constant) uniform Constants {
     vec2 resolution;
 } pc;
 
 layout(set = 0, binding = 0) uniform sampler2D inputImage;
 
-vec3 ACESFilm(vec3 x) {
-    float a = 2.51f;
-    float b = 0.03f;
-    float c = 2.43f;
-    float d = 0.59f;
-    float e = 0.14f;
-    return clamp((x*(a*x+b))/(x*(c*x+d)+e), 0.0, 1.0);
+float fxaaLuma(vec3 rgb) {
+    return sqrt(clamp(dot(rgb, vec3(0.299, 0.587, 0.114)), 0.0, 1.0));
 }
 
-/*vec4 sampleSceneColor(vec2 uv) {
-    ivec2 coords = ivec2(uv * pc.resolution);
-    coords = clamp(coords, ivec2(0), ivec2(pc.resolution) - 1);
-
-    uint index = coords.y * int(pc.resolution.x) + coords.x;
-    //uint packedCol = materials[index].packedRadiance;
-
-    return texture(inputImage, uv);
-}*/
-
-
-vec4 sampleSceneColor(vec2 uv) {
-    vec4 color = texture(inputImage, uv);
-
-    // Tonemap the HDR color to LDR Linear SDR
-    color.rgb = ACESFilm(color.rgb);
-
-    return color;
+vec3 sampleColor(vec2 uv) {
+    return texture(inputImage, uv).rgb;
 }
 
-// Standard FXAA 3.11 Quality Parameters
-const float FXAA_SUBPIX = 0.75;
-const float FXAA_EDGE_THRESHOLD = 0.125;
 const float FXAA_EDGE_THRESHOLD_MIN = 0.0312;
+const float FXAA_EDGE_THRESHOLD_MAX = 0.063;
+const float FXAA_SUBPIX_QUALITY = 0.75;
 
-const int FXAA_SEARCH_STEPS = 5;
-const float FXAA_SEARCH_OFFSETS[5] = float[](1.0, 1.5, 2.0, 4.0, 12.0);
+const int EXTRA_STEPS = 12;
+const float SEARCH_STEPS[12] = float[](1.0, 1.0, 1.0, 1.0, 1.0, 1.5, 2.0, 2.0, 2.0, 2.0, 4.0, 8.0);
 
-float fxaaLuma(vec4 color) {
-    vec3 gammaCol = sqrt(clamp(color.rgb, 0.0, 1.0));
-    return dot(gammaCol, vec3(0.299, 0.587, 0.114));
-}
-
-vec4 applyFXAA(vec2 uv, vec2 rcpFrame) {
-    vec4 colorCenter = sampleSceneColor(uv);
+vec3 applyFXAA(vec2 uv, vec2 rcpFrame) {
+    vec3 colorCenter = sampleColor(uv);
     float lumaM = fxaaLuma(colorCenter);
 
-    float lumaS = fxaaLuma(sampleSceneColor(uv + vec2( 0.0,  1.0) * rcpFrame));
-    float lumaE = fxaaLuma(sampleSceneColor(uv + vec2( 1.0,  0.0) * rcpFrame));
-    float lumaN = fxaaLuma(sampleSceneColor(uv + vec2( 0.0, -1.0) * rcpFrame));
-    float lumaW = fxaaLuma(sampleSceneColor(uv + vec2(-1.0,  0.0) * rcpFrame));
+    float lumaS = fxaaLuma(sampleColor(uv + vec2( 0.0,  1.0) * rcpFrame));
+    float lumaE = fxaaLuma(sampleColor(uv + vec2( 1.0,  0.0) * rcpFrame));
+    float lumaN = fxaaLuma(sampleColor(uv + vec2( 0.0, -1.0) * rcpFrame));
+    float lumaW = fxaaLuma(sampleColor(uv + vec2(-1.0,  0.0) * rcpFrame));
 
     float maxSM = max(lumaS, lumaM);
     float minSM = min(lumaS, lumaM);
@@ -76,24 +42,23 @@ vec4 applyFXAA(vec2 uv, vec2 rcpFrame) {
 
     float rangeMax = max(maxWN, maxESM);
     float rangeMin = min(minWN, minESM);
-    float rangeMaxScaled = rangeMax * FXAA_EDGE_THRESHOLD;
     float range = rangeMax - rangeMin;
-    float rangeMaxClamped = max(FXAA_EDGE_THRESHOLD_MIN, rangeMaxScaled);
-    if(range < rangeMaxClamped) {
+
+    if (range < max(FXAA_EDGE_THRESHOLD_MIN, rangeMax * FXAA_EDGE_THRESHOLD_MAX)) {
         return colorCenter;
     }
 
-    float lumaNW = fxaaLuma(sampleSceneColor(uv + vec2(-1.0, -1.0) * rcpFrame));
-    float lumaSE = fxaaLuma(sampleSceneColor(uv + vec2( 1.0,  1.0) * rcpFrame));
-    float lumaNE = fxaaLuma(sampleSceneColor(uv + vec2( 1.0, -1.0) * rcpFrame));
-    float lumaSW = fxaaLuma(sampleSceneColor(uv + vec2(-1.0,  1.0) * rcpFrame));
+    float lumaNW = fxaaLuma(sampleColor(uv + vec2(-1.0, -1.0) * rcpFrame));
+    float lumaSE = fxaaLuma(sampleColor(uv + vec2( 1.0,  1.0) * rcpFrame));
+    float lumaNE = fxaaLuma(sampleColor(uv + vec2( 1.0, -1.0) * rcpFrame));
+    float lumaSW = fxaaLuma(sampleColor(uv + vec2(-1.0,  1.0) * rcpFrame));
 
     float lumaNS = lumaN + lumaS;
     float lumaWE = lumaW + lumaE;
-    float subpixRcpRange = 1.0 / range;
     float subpixNSWE = lumaNS + lumaWE;
     float edgeHorz1 = (-2.0 * lumaM) + lumaNS;
     float edgeVert1 = (-2.0 * lumaM) + lumaWE;
+
     float lumaNESE = lumaNE + lumaSE;
     float lumaNWNE = lumaNW + lumaNE;
     float edgeHorz2 = (-2.0 * lumaE) + lumaNESE;
@@ -108,88 +73,96 @@ vec4 applyFXAA(vec2 uv, vec2 rcpFrame) {
     float edgeHorz = abs(edgeHorz3) + edgeHorz4;
     float edgeVert = abs(edgeVert3) + edgeVert4;
 
-    float subpixNWSWNESE = lumaNWSW + lumaNESE;
-    float lengthSign = rcpFrame.x;
     bool horzSpan = edgeHorz >= edgeVert;
-    float subpixA = subpixNSWE * 2.0 + subpixNWSWNESE;
-    if(!horzSpan) lumaN = lumaW;
-    if(!horzSpan) lumaS = lumaE;
-    if(horzSpan) lengthSign = rcpFrame.y;
-    float subpixB = (subpixA * (1.0 / 12.0)) - lumaM;
 
-    float gradientN = lumaN - lumaM;
-    float gradientS = lumaS - lumaM;
-    float lumaNN = lumaN + lumaM;
-    float lumaSS = lumaS + lumaM;
-    bool pairN = abs(gradientN) >= abs(gradientS);
-    float gradient = max(abs(gradientN), abs(gradientS));
+    float luma1 = horzSpan ? lumaN : lumaW;
+    float luma2 = horzSpan ? lumaS : lumaE;
 
-    if(pairN) lengthSign = -lengthSign;
-    float subpixC = clamp(abs(subpixB) * subpixRcpRange, 0.0, 1.0);
+    float gradient1 = luma1 - lumaM;
+    float gradient2 = luma2 - lumaM;
 
-    vec2 posB = uv;
-    vec2 offNP = horzSpan ? vec2(rcpFrame.x, 0.0) : vec2(0.0, rcpFrame.y);
+    bool is1Steeper = abs(gradient1) >= abs(gradient2);
+    float gradientScaled = 0.25 * max(abs(gradient1), abs(gradient2));
 
-    if(!horzSpan) posB.x += lengthSign * 0.5;
-    if( horzSpan) posB.y += lengthSign * 0.5;
+    float stepLength = horzSpan ? rcpFrame.y : rcpFrame.x;
+    float lumaLocalAverage = 0.0;
 
-    vec2 posN = posB - offNP * FXAA_SEARCH_OFFSETS[0];
-    vec2 posP = posB + offNP * FXAA_SEARCH_OFFSETS[0];
-
-    float subpixD = ((-2.0) * subpixC) + 3.0;
-    float subpixE = subpixC * subpixC;
-
-    if(!pairN) lumaNN = lumaSS;
-    float gradientScaled = gradient * 0.25;
-    float lumaMM = lumaM - lumaNN * 0.5;
-    float subpixF = subpixD * subpixE;
-    bool lumaMLTZero = lumaMM < 0.0;
-    float lumaEndN = fxaaLuma(sampleSceneColor(posN)) - lumaNN * 0.5;
-    float lumaEndP = fxaaLuma(sampleSceneColor(posP)) - lumaNN * 0.5;
-    bool doneN = abs(lumaEndN) >= gradientScaled;
-    bool doneP = abs(lumaEndP) >= gradientScaled;
-
-    for (int i = 1; i < FXAA_SEARCH_STEPS; ++i) {
-        if (!doneN) posN -= offNP * FXAA_SEARCH_OFFSETS[i];
-        if (!doneP) posP += offNP * FXAA_SEARCH_OFFSETS[i];
-
-        if (doneN && doneP) break;
-
-        if (!doneN) lumaEndN = fxaaLuma(sampleSceneColor(posN)) - lumaNN * 0.5;
-        if (!doneP) lumaEndP = fxaaLuma(sampleSceneColor(posP)) - lumaNN * 0.5;
-
-        doneN = abs(lumaEndN) >= gradientScaled;
-        doneP = abs(lumaEndP) >= gradientScaled;
+    if (is1Steeper) {
+        stepLength = -stepLength;
+        lumaLocalAverage = 0.5 * (luma1 + lumaM);
+    } else {
+        lumaLocalAverage = 0.5 * (luma2 + lumaM);
     }
 
-    float dstN = horzSpan ? (uv.x - posN.x) : (uv.y - posN.y);
-    float dstP = horzSpan ? (posP.x - uv.x) : (posP.y - uv.y);
-    bool goodSpanN = (lumaEndN < 0.0) != lumaMLTZero;
-    bool goodSpanP = (lumaEndP < 0.0) != lumaMLTZero;
-    float spanLength = (dstP + dstN);
-    float spanLengthRcp = 1.0 / spanLength;
+    vec2 currentUv = uv;
+    if (horzSpan) {
+        currentUv.y += stepLength * 0.5;
+    } else {
+        currentUv.x += stepLength * 0.5;
+    }
 
-    bool directionN = dstN < dstP;
-    float dstMin = min(dstN, dstP);
-    bool goodSpan = directionN ? goodSpanN : goodSpanP;
+    vec2 offset = horzSpan ? vec2(rcpFrame.x, 0.0) : vec2(0.0, rcpFrame.y);
 
-    float subpixG = subpixF * subpixF;
-    float pixelOffset = (dstMin * (-spanLengthRcp)) + 0.5;
-    float subpixH = subpixG * FXAA_SUBPIX;
+    vec2 uvP = currentUv + offset;
+    vec2 uvN = currentUv - offset;
 
-    float pixelOffsetGood = goodSpan ? pixelOffset : 0.0;
-    float pixelOffsetSubpix = max(pixelOffsetGood, subpixH);
+    float lumaEndP = fxaaLuma(sampleColor(uvP)) - lumaLocalAverage;
+    float lumaEndN = fxaaLuma(sampleColor(uvN)) - lumaLocalAverage;
 
-    vec2 posFinal = uv;
-    if(!horzSpan) posFinal.x += pixelOffsetSubpix * lengthSign;
-    if( horzSpan) posFinal.y += pixelOffsetSubpix * lengthSign;
+    bool doneP = abs(lumaEndP) >= gradientScaled;
+    bool doneN = abs(lumaEndN) >= gradientScaled;
 
-    return sampleSceneColor(posFinal);
+    if (!doneP) uvP += offset * SEARCH_STEPS[0];
+    if (!doneN) uvN -= offset * SEARCH_STEPS[0];
+
+    for (int i = 1; i < EXTRA_STEPS; i++) {
+        if (!doneP) {
+            lumaEndP = fxaaLuma(sampleColor(uvP)) - lumaLocalAverage;
+            doneP = abs(lumaEndP) >= gradientScaled;
+            if (!doneP) uvP += offset * SEARCH_STEPS[i];
+        }
+        if (!doneN) {
+            lumaEndN = fxaaLuma(sampleColor(uvN)) - lumaLocalAverage;
+            doneN = abs(lumaEndN) >= gradientScaled;
+            if (!doneN) uvN -= offset * SEARCH_STEPS[i];
+        }
+        if (doneP && doneN) break;
+    }
+
+    float distanceP = horzSpan ? (uvP.x - uv.x) : (uvP.y - uv.y);
+    float distanceN = horzSpan ? (uv.x - uvN.x) : (uv.y - uvN.y);
+
+    bool isDirection1 = distanceP < distanceN;
+    float distanceFinal = min(distanceP, distanceN);
+
+    float edgeThickness = distanceP + distanceN;
+
+    float pixelOffset = -distanceFinal / edgeThickness + 0.5;
+
+    bool isLumaCenterSmaller = lumaM < lumaLocalAverage;
+    bool correctVariation = ((isDirection1 ? lumaEndP : lumaEndN) < 0.0) != isLumaCenterSmaller;
+
+    float finalOffset = correctVariation ? pixelOffset : 0.0;
+
+    float lumaAverage = (1.0 / 12.0) * (2.0 * (lumaNS + lumaWE) + lumaNWSW + lumaNESE);
+    float subPixelOffset1 = clamp(abs(lumaAverage - lumaM) / range, 0.0, 1.0);
+    float subPixelOffset2 = (-2.0 * subPixelOffset1 + 3.0) * subPixelOffset1 * subPixelOffset1;
+    float subPixelOffsetFinal = subPixelOffset2 * subPixelOffset2 * FXAA_SUBPIX_QUALITY;
+
+    finalOffset = max(finalOffset, subPixelOffsetFinal);
+
+    vec2 finalUv = uv;
+    if (horzSpan) {
+        finalUv.y += finalOffset * stepLength;
+    } else {
+        finalUv.x += finalOffset * stepLength;
+    }
+
+    return sampleColor(finalUv);
 }
 
-void main(){
+void main() {
     vec2 rcpFrame = 1.0 / pc.resolution;
-    outColor = applyFXAA(inUV, rcpFrame);
-
-    //outColor = vec4(inUV.x, inUV.y, 0.0, 1.0);
+    vec3 color = applyFXAA(inUV, rcpFrame);
+    outColor = vec4(color, 1.0);
 }

@@ -3,6 +3,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 #include "Vulkan/VkUtils.h"
+#include "Core/EngineConfig.h"
+
+#include <algorithm>
 
 namespace Engine {
     void Texture::updateDescriptor()
@@ -198,7 +201,7 @@ namespace Engine {
                                                .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
                                                .mipLodBias = 0.0f,
                                                .anisotropyEnable = VK_TRUE,
-                                               .maxAnisotropy = device->getMaxAnisotropy(),
+                                               .maxAnisotropy = std::min(Config::MATERIAL_MAX_ANISOTROPY, device->getMaxAnisotropy()),
                                                .compareOp = VK_COMPARE_OP_NEVER,
                                                .minLod = 0.0f,
                                                .maxLod = (float)mipLevels,
@@ -431,7 +434,7 @@ namespace Engine {
     samplerInfo.mipLodBias = 0.0f;
 
     samplerInfo.anisotropyEnable = VK_TRUE;
-    samplerInfo.maxAnisotropy = device->getMaxAnisotropy();
+    samplerInfo.maxAnisotropy = std::min(Config::MATERIAL_MAX_ANISOTROPY, device->getMaxAnisotropy());
 
     if (vkCreateSampler(device->getDevice(), &samplerInfo, nullptr, &sampler) != VK_SUCCESS) {
         throw std::runtime_error("Texture: failed to create texture sampler!");
@@ -578,7 +581,7 @@ namespace Engine {
         .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
         .mipLodBias = 0.0f,
         .anisotropyEnable = VK_TRUE,
-        .maxAnisotropy = device->getMaxAnisotropy(),
+        .maxAnisotropy = std::min(Config::MATERIAL_MAX_ANISOTROPY, device->getMaxAnisotropy()),
         .compareOp = VK_COMPARE_OP_NEVER,
         .minLod = 0.0f,
         .maxLod = static_cast<float>(mipLevels),
@@ -807,7 +810,7 @@ namespace Engine {
                                                .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
                                                .mipLodBias = 0.0f,
                                                .anisotropyEnable = VK_TRUE,
-                                               .maxAnisotropy = device->getMaxAnisotropy(),
+                                               .maxAnisotropy = std::min(Config::MATERIAL_MAX_ANISOTROPY, device->getMaxAnisotropy()),
                                                .compareOp = VK_COMPARE_OP_NEVER,
                                                .minLod = 0.0f,
                                                .maxLod = (float)mipLevels,
@@ -937,7 +940,7 @@ namespace Engine {
                                                .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
                                                .mipLodBias = 0.0f,
                                                .anisotropyEnable = VK_TRUE,
-                                               .maxAnisotropy = device->getMaxAnisotropy(),
+                                               .maxAnisotropy = std::min(Config::MATERIAL_MAX_ANISOTROPY, device->getMaxAnisotropy()),
                                                .compareOp = VK_COMPARE_OP_NEVER,
                                                .minLod = 0.0f,
                                                .maxLod = (float)mipLevels,
@@ -1133,7 +1136,7 @@ namespace Engine {
                                                .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
                                                .mipLodBias = 0.0f,
                                                .anisotropyEnable = VK_TRUE,
-                                               .maxAnisotropy = device->getMaxAnisotropy(),
+                                               .maxAnisotropy = std::min(Config::MATERIAL_MAX_ANISOTROPY, device->getMaxAnisotropy()),
                                                .compareOp = VK_COMPARE_OP_NEVER,
                                                .minLod = 0.0f,
                                                .maxLod = static_cast<float>(mipLevels),

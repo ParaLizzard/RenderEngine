@@ -59,11 +59,24 @@ FetchContent_Declare(
         GIT_TAG        v0.22
 )
 
-FetchContent_MakeAvailable(glfw ktx fastgltf stb meshoptimizer)
+FetchContent_Declare(
+        ffx_spd
+        GIT_REPOSITORY https://github.com/GPUOpen-Effects/FidelityFX-SPD.git
+        GIT_TAG        master
+)
+
+FetchContent_MakeAvailable(glfw ktx fastgltf stb meshoptimizer ffx_spd)
 
 # stb is header-only — expose it as an INTERFACE target so we can link it cleanly
 add_library(stb INTERFACE)
 target_include_directories(stb INTERFACE "${stb_SOURCE_DIR}")
+
+# FidelityFX SPD is header-only — expose it as an INTERFACE target
+add_library(ffx_spd INTERFACE)
+target_include_directories(ffx_spd INTERFACE
+        "${ffx_spd_SOURCE_DIR}/ffx-spd"
+        "${ffx_spd_SOURCE_DIR}"
+)
 
 # ---------------------------------------------------------------------------
 # Vulkan + glslc
@@ -124,6 +137,8 @@ foreach(SHADER_SRC ${SHADER_SOURCES})
             -O
             -MD -MF "${DEP_REL}"
             -I "${INCLUDE_REL}"
+            -I "${ffx_spd_SOURCE_DIR}/ffx-spd"
+            -I "${ffx_spd_SOURCE_DIR}"
             --target-env=vulkan1.3
             "${SRC_REL}"
             -o "${OUT_REL}"
@@ -197,6 +212,8 @@ set(RENDERER_SOURCES
 set(PASSES_SOURCES
         src/Renderer/Passes/FxaaPassNode.h
         src/Renderer/Passes/FxaaPassNode.cpp
+        src/Renderer/Passes/TonemapPassNode.h
+        src/Renderer/Passes/TonemapPassNode.cpp
         src/Renderer/Passes/SsaoPassNode.cpp
         src/Renderer/Passes/SsaoPassNode.h
         src/Renderer/Passes/VisibilityPassNode.cpp
@@ -211,6 +228,8 @@ set(PASSES_SOURCES
         src/Renderer/Passes/TransformUpdatePassNode.h
         src/Renderer/Passes/TaaPassNode.cpp
         src/Renderer/Passes/TaaPassNode.h
+        src/Renderer/Passes/HiZPassNode.cpp
+        src/Renderer/Passes/HiZPassNode.h
 )
 
 set(SCENE_SOURCES
@@ -272,6 +291,7 @@ target_link_libraries(RenderEngineLib PUBLIC
         fastgltf
         stb
         meshoptimizer
+        ffx_spd
 )
 
 # ---------------------------------------------------------------------------

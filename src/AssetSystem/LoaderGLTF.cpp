@@ -3,8 +3,17 @@
 #include "Threading/JobSystem.h"
 #include <iostream>
 #include <stb_image.h>
+#include <glm/gtc/packing.hpp>
 
 namespace Engine {
+    static inline glm::vec2 encodeOctNormalVec2(glm::vec3 n)
+    {
+        float len = std::abs(n.x) + std::abs(n.y) + std::abs(n.z);
+        if (len > 1e-6f) n /= len;
+        glm::vec2 res = n.z >= 0.0f ? glm::vec2(n.x, n.y) : (glm::vec2(1.0f) - glm::abs(glm::vec2(n.y, n.x))) * glm::sign(glm::vec2(n.x, n.y));
+        return res * 0.5f + 0.5f;
+    }
+
     std::future<ParsedGLTF> LoaderGLTF::loadAsync(JobSystem &jobSystem, const std::filesystem::path &filePath)
     {
         return jobSystem.enqueue([&jobSystem, filePath]() {
@@ -291,59 +300,48 @@ namespace Engine {
                     parsedPrim.positions.resize(posAccessor.count);
                     parsedPrim.attributes.resize(posAccessor.count);
 
-                    // --- BASE VERTEX DATA (Positions & Defaults) ---
                     fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(
                         asset,
                         posAccessor,
                         [&](fastgltf::math::fvec3 p, std::size_t idx) {
                             parsedPrim.positions[idx].position = glm::vec3(p.x(), -p.y(), p.z());
-                            parsedPrim.attributes[idx].color = glm::vec3(1.0f);
-                            parsedPrim.attributes[idx].normal = glm::vec3(0.0f, 1.0f, 0.0f);
-                            parsedPrim.attributes[idx].tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
-                            parsedPrim.attributes[idx].uv = glm::vec2(0.0f);
+                            glm::vec2 enc = encodeOctNormalVec2(glm::vec3(0.0f, 1.0f, 0.0f));
+                            parsedPrim.attributes[idx].tangent_lo = glm::packHalf2x16(glm::vec2(1.0f, 0.0f));
+                            parsedPrim.attributes[idx].tangent_hi = glm::packHalf2x16(glm::vec2(0.0f, 1.0f));
+                            parsedPrim.attributes[idx].uv = glm::packHalf2x16(glm::vec2(0.0f));
+                            parsedPrim.attributes[idx].normal_oct = glm::packHalf2x16(enc);
                         });
 
-                    // --- UVS ---
                     auto uvIt = prim.findAttribute("TEXCOORD_0");
                     if (uvIt != prim.attributes.end()) {
                         fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec2>(
                             asset,
                             asset.accessors[uvIt->accessorIndex],
                             [&](fastgltf::math::fvec2 uv, std::size_t idx) {
-                                parsedPrim.attributes[idx].uv = glm::vec2(uv.x(), uv.y());
+                                parsedPrim.attributes[idx].uv = glm::packHalf2x16(glm::vec2(uv.x(), uv.y()));
                             });
                     }
 
-                    // --- NORMALS ---
                     auto normalIt = prim.findAttribute("NORMAL");
                     if (normalIt != prim.attributes.end()) {
                         fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(
                             asset,
                             asset.accessors[normalIt->accessorIndex],
                             [&](fastgltf::math::fvec3 n, std::size_t idx) {
-                                parsedPrim.attributes[idx].normal = glm::vec3(n.x(), -n.y(), n.z());
+                                parsedPrim.attributes[idx].normal_oct = glm::packHalf2x16(
+                                    encodeOctNormalVec2(glm::vec3(n.x(), -n.y(), n.z())));
                             });
                     }
 
-                    // --- TANGENTS ---
                     auto tangentIt = prim.findAttribute("TANGENT");
                     if (tangentIt != prim.attributes.end()) {
                         fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(
                             asset,
                             asset.accessors[tangentIt->accessorIndex],
                             [&](fastgltf::math::fvec4 t, std::size_t idx) {
-                                parsedPrim.attributes[idx].tangent = glm::vec4(t.x(), -t.y(), t.z(), t.w());
-                            });
-                    }
-
-                    // --- VERTEX COLORS ---
-                    auto colorIt = prim.findAttribute("COLOR_0");
-                    if (colorIt != prim.attributes.end()) {
-                        fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(
-                            asset,
-                            asset.accessors[colorIt->accessorIndex],
-                            [&](fastgltf::math::fvec4 c, std::size_t idx) {
-                                parsedPrim.attributes[idx].color = glm::vec3(c.x(), c.y(), c.z());
+                                glm::vec4 tv = glm::vec4(t.x(), -t.y(), t.z(), t.w());
+                                parsedPrim.attributes[idx].tangent_lo = glm::packHalf2x16(glm::vec2(tv.x, tv.y));
+                                parsedPrim.attributes[idx].tangent_hi = glm::packHalf2x16(glm::vec2(tv.z, tv.w));
                             });
                     }
 
@@ -476,9 +474,6 @@ namespace Engine {
                     std::vector<Model::VertexPosition> positions = prim.positions;
                     std::vector<Model::VertexAttribute> attributes = prim.attributes;
 
-                    for (auto &v: attributes)
-                        v.texId = globalMatID;
-
                     glm::vec3 minAABB = glm::vec3(std::numeric_limits<float>::max());
                     glm::vec3 maxAABB = glm::vec3(std::numeric_limits<float>::lowest());
                     for (const auto &v: positions) {
@@ -494,6 +489,7 @@ namespace Engine {
 
                     if (p == 0) {
                         obj.subMesh = megaBuffer.registerMesh(positions, attributes, prim.indices);
+                        obj.subMesh.materialIndex = globalMatID;
                         obj.alphaMode = mode;
                         obj.doubleSided = isDoubleSided;
                         obj.boundingSphere = boundingSphere;
@@ -503,6 +499,7 @@ namespace Engine {
                         child.transform = TransformComponent{};
 
                         child.subMesh = megaBuffer.registerMesh(positions, attributes, prim.indices);
+                        child.subMesh.materialIndex = globalMatID;
                         child.alphaMode = mode;
                         child.doubleSided = isDoubleSided;
                         child.boundingSphere = boundingSphere;

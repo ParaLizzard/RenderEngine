@@ -27,15 +27,13 @@ struct ObjectData {
     uint baseMeshlet;
     uint meshletCount;
     uint alphaMode;
-    uint padding1;
+    uint materialId;
 };
 
 struct VertexAttribute {
-    float colorR, colorG, colorB;
-    float normalX, normalY, normalZ;
-    float uvX, uvY;
-    float tangentX, tangentY, tangentZ, tangentW;
-    uint  texId;
+    vec4 tangent;
+    vec2 uv;
+    vec2 normal_oct;
 };
 
 layout(set = 0, binding = 1) uniform SceneUbo {
@@ -61,12 +59,18 @@ layout(set = 0, binding = 10) readonly buffer MeshletTriangleMap { uint8_t meshl
 layout(set = 1, binding = 3) readonly buffer CompactedIndexBuffer { uint syntheticIndices[]; };
 
 layout(push_constant) uniform PushConstants {
+    mat4 view;
+    vec4 projParams;
+    vec4 hizParams;
+    vec2 screenParams;
     uint cullFlags;
     uint objectCount;
     uint actualObjectCount;
     uint objectCapacity;
     uint clipPlaneCount;
     uint isMeshShader;
+    uint phase;
+    uint pad;
 } pc;
 
 void main() {
@@ -87,7 +91,7 @@ void main() {
 
     outInstanceID = objectID;
     outSyntheticIndex = syntheticIndex;
-    outUV = vec2(attr.uvX, attr.uvY);
+    outUV = attr.uv;
 
     mat4 model = objects[objectID].modelMatrix;
     vec4 worldPos = model * vec4(pd.x, pd.y, pd.z, 1.0);

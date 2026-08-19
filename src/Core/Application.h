@@ -22,16 +22,20 @@
 #include "Renderer/Passes/CullPassNode.h"
 #include "Renderer/Passes/TransformUpdatePassNode.h"
 #include "Renderer/Passes/FxaaPassNode.h"
+#include "Renderer/Passes/TonemapPassNode.h"
 #include "Renderer/Passes/MaterialPassNode.h"
 #include "Renderer/Passes/SsaoPassNode.h"
+#include "Renderer/Passes/TaaPassNode.h"
 #include "Renderer/Passes/VisibilityPassNode.h"
 #include "Renderer/Passes/CsmPassNode.h"
+#include "Renderer/Passes/HiZPassNode.h"
+
 namespace Engine {
     class Application
     {
     public:
-        static constexpr int WIDTH = 800;
-        static constexpr int HEIGHT = 600;
+        static constexpr int WIDTH = 3840;
+        static constexpr int HEIGHT = 2120;
 
         Application();
         ~Application();
@@ -69,11 +73,16 @@ namespace Engine {
         Camera camera{};
 
         TransformUpdatePassNode transformPass {device, renderer};
-        CullPassNode cullPass {device, renderer, megaBuffer, resourceHeap};
-        VisibilityPassNode visPass {device, renderer, megaBuffer, cullPass, resourceHeap};
-        CsmPassNode csmPass {device, renderer, megaBuffer, resourceHeap, cullPass};
-        MaterialPassNode materialPass {device, renderer, megaBuffer, resourceHeap, cullPass, renderGraph};
+        CullPassNode cullPassPhase1 {device, renderer, megaBuffer, resourceHeap, 0};
+        VisibilityPassNode visPassPhase1 {device, renderer, megaBuffer, cullPassPhase1, resourceHeap, 0};
+        HiZPassNode hiZPass {device, renderer, megaBuffer, resourceHeap};
+        CullPassNode cullPassPhase2 {device, renderer, megaBuffer, resourceHeap, 1, &cullPassPhase1};
+        VisibilityPassNode visPassPhase2 {device, renderer, megaBuffer, cullPassPhase2, resourceHeap, 1};
+        CsmPassNode csmPass {device, renderer, megaBuffer, resourceHeap, cullPassPhase1};
+        MaterialPassNode materialPass {device, renderer, megaBuffer, resourceHeap, cullPassPhase1, renderGraph};
         SsaoPassNode ssaoPass {device, renderer, megaBuffer, resourceHeap};
+        TaaPassNode taaPass {device, renderer, megaBuffer, resourceHeap};
+        TonemapPassNode tonemapPass {device, renderer, megaBuffer, resourceHeap};
         FxaaPassNode fxaaPass {device, renderer, megaBuffer, resourceHeap};
 
         int currentFrame;
@@ -89,8 +98,11 @@ namespace Engine {
         
         bool freezeCulling = false;
         bool cullEnabled = true;
+        glm::mat4 frozenView = glm::mat4(1.0f);
         glm::mat4 frozenViewProj = glm::mat4(1.0f);
         glm::vec3 frozenCameraPos = glm::vec3(0.0f);
+        int debugViewMode = 0;
+        int debugHiZMipLevel = 0;
         glm::mat4 prevViewProj = glm::mat4(1.0f);
         bool firstFrame = true;
     };

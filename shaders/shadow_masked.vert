@@ -29,15 +29,13 @@ struct ObjectData {
     uint baseMeshlet;
     uint meshletCount;
     uint alphaMode;
-    uint padding1;
+    uint materialId;
 };
 
 struct VertexAttribute {
-    float colorR, colorG, colorB;
-    float normalX, normalY, normalZ;
-    float uvX, uvY;
-    float tangentX, tangentY, tangentZ, tangentW;
-    uint texId;
+    vec4 tangent;
+    vec2 uv;
+    vec2 normal_oct;
 };
 
 layout(set = 0, binding = 1) uniform SceneUbo {
@@ -53,7 +51,6 @@ layout(set = 0, binding = 1) uniform SceneUbo {
     vec2 padding;
 } sceneUbo;
 
-// Set 0: MegaBuffer geometry
 layout(set = 0, binding = 5) readonly buffer ObjectBuffer { ObjectData objects[]; };
 layout(set = 0, binding = 6) readonly buffer VertexBuffer { PositionData positions[]; };
 layout(set = 0, binding = 7) readonly buffer AttributeBuffer { VertexAttribute attributes[]; };
@@ -61,7 +58,6 @@ layout(set = 0, binding = 8) readonly buffer MeshletBuffer { Meshlet meshlets[];
 layout(set = 0, binding = 9) readonly buffer MeshletVertexMap { uint meshletVertices[]; };
 layout(set = 0, binding = 10) readonly buffer MeshletTriangleMap { uint8_t meshletTriangles[]; };
 
-// Set 1: Pass/Cull storage
 layout(set = 1, binding = 3) readonly buffer CompactedIndexBuffer { uint syntheticIndices[]; };
 
 void main() {
@@ -80,8 +76,8 @@ void main() {
     PositionData pd = positions[globalVertexID];
     VertexAttribute attr = attributes[globalVertexID];
 
-    outUV         = vec2(attr.uvX, attr.uvY);
-    outMaterialID = attr.texId;
+    outUV         = attr.uv;
+    outMaterialID = objects[objectID].materialId;
 
     uint viewIndex   = push.cascadeIndex;
     mat4 model         = objects[objectID].modelMatrix;

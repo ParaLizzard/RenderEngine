@@ -10,14 +10,14 @@
 namespace Engine {
     class Renderer;
 
-    class FxaaPassNode: public RenderPassNode
+    class TonemapPassNode: public RenderPassNode
     {
     public:
-        FxaaPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap);
-        ~FxaaPassNode() override;
+        TonemapPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap);
+        ~TonemapPassNode() override;
 
-        FxaaPassNode(const FxaaPassNode &) = delete;
-        FxaaPassNode &operator=(const FxaaPassNode &) = delete;
+        TonemapPassNode(const TonemapPassNode &) = delete;
+        TonemapPassNode &operator=(const TonemapPassNode &) = delete;
 
         void setup(RenderGraphBuilder &renderGraph) override;
         void registerResources(RenderGraph &graph, const FrameInfo &frameInfo) override;
@@ -40,7 +40,5 @@ namespace Engine {
         VkDescriptorPool descriptorPool {VK_NULL_HANDLE};
         std::vector<VkDescriptorSet> descriptorSets;
         VkSampler sampler {VK_NULL_HANDLE};
-
-        std::vector<VkBuffer> cachedBuffers;
     };
-} // namespace Engine
+}

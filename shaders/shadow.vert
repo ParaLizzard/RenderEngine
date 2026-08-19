@@ -28,7 +28,7 @@ struct ObjectData {
     uint baseMeshlet;
     uint meshletCount;
     uint alphaMode;
-    uint padding1;
+    uint materialId;
 };
 
 layout(set = 0, binding = 1) uniform SceneUbo {

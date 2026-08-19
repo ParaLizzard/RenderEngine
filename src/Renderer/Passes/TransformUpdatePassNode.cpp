@@ -52,6 +52,7 @@ namespace Engine {
                 data.baseMeshlet = obj.subMesh.baseMeshlet;
                 data.meshletCount = obj.subMesh.meshletCount;
                 data.alphaMode = static_cast<uint32_t>(obj.alphaMode) | (obj.doubleSided ? 4u : 0u);
+                data.materialId = obj.subMesh.materialIndex;
                 objectDataArray.push_back(data);
             }
 
@@ -70,32 +71,32 @@ namespace Engine {
                 copyRegion.size = bufferSize;
                 vkCmdCopyBuffer(cmd, stagingBuffers[currentFrame]->getBuffer(), globalObjectBuffers[currentFrame]->getBuffer(), 1, &copyRegion);
 
-                VkBufferMemoryBarrier barrier{};
-                barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-                barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-                barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                VkBufferMemoryBarrier2 barrier{};
+                barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+                barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+                barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+
+                VkPipelineStageFlags2 dstStages = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT |
+                                                 VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT |
+                                                 VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+                if (device.isMeshShaderSupported()) {
+                    dstStages |= VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT;
+                }
+
+                barrier.dstStageMask = dstStages;
+                barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
                 barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
                 barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
                 barrier.buffer = globalObjectBuffers[currentFrame]->getBuffer();
                 barrier.offset = 0;
                 barrier.size = bufferSize;
 
-                VkPipelineStageFlags dstStages = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
-                                                 VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
-                                                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-                if (device.isMeshShaderSupported()) {
-                    dstStages |= VK_PIPELINE_STAGE_TASK_SHADER_BIT_EXT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT;
-                }
+                VkDependencyInfo depInfo{};
+                depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+                depInfo.bufferMemoryBarrierCount = 1;
+                depInfo.pBufferMemoryBarriers = &barrier;
 
-                vkCmdPipelineBarrier(
-                    cmd,
-                    VK_PIPELINE_STAGE_TRANSFER_BIT,
-                    dstStages,
-                    0,
-                    0, nullptr,
-                    1, &barrier,
-                    0, nullptr
-                );
+                vkCmdPipelineBarrier2(cmd, &depInfo);
             }
             framesToUpdate--;
         }

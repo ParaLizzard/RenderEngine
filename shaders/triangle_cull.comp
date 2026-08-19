@@ -30,7 +30,7 @@ struct ObjectData {
     uint baseMeshlet;
     uint meshletCount;
     uint alphaMode;
-    uint padding1;
+    uint materialId;
 };
 
 layout(set = 0, binding = 1) uniform SceneUbo {
@@ -74,12 +74,18 @@ layout(std430, set = 1, binding = 3) buffer CompactedIndexBuffer {
 };
 
 layout(push_constant) uniform PushConsts {
+    mat4 view;
+    vec4 projParams;
+    vec4 hizParams;
+    vec2 screenParams;
     uint cullFlags;
     uint objectCount;
     uint actualObjectCount;
     uint objectCapacity;
     uint clipPlaneCount;
     uint targetAlphaMode;
+    uint phase;
+    uint pad;
 } push;
 
 void main() {

@@ -13,12 +13,18 @@ struct ObjectData {
     uint baseMeshlet;
     uint meshletCount;
     uint alphaMode;
-    uint padding1;
+    uint materialId;
 };
 
 struct TaskWorkgroup {
     uint objectID;
     uint baseMeshletIndex;
+};
+
+struct TaskDispatchCommand {
+    uint taskDispatchX;
+    uint taskDispatchY;
+    uint taskDispatchZ;
 };
 
 layout(std430, set = 0, binding = 5) readonly buffer ObjectBuffer {
@@ -40,9 +46,7 @@ layout(std430, set = 1, binding = 6) writeonly buffer TaskWorkgroupBuffer {
 };
 
 layout(std430, set = 1, binding = 7) buffer TaskDispatchCommandBuffer {
-    uint taskDispatchX;
-    uint taskDispatchY;
-    uint taskDispatchZ;
+    TaskDispatchCommand taskDispatchCommands[3];
 };
 
 layout(std430, set = 1, binding = 8) readonly buffer CascadeDataBuffer {
@@ -56,15 +60,14 @@ layout(std430, set = 1, binding = 9) writeonly buffer MaskedTaskWorkgroupBuffer 
 };
 
 layout(std430, set = 1, binding = 10) buffer MaskedTaskDispatchCommandBuffer {
-    uint maskedTaskDispatchX;
-    uint maskedTaskDispatchY;
-    uint maskedTaskDispatchZ;
+    TaskDispatchCommand maskedTaskDispatchCommands[3];
 };
 
 layout(push_constant) uniform PushConsts {
     uint objectCount;
     uint actualObjectCount;
     uint cullFlags;
+    uint maxTaskWgsPerCascade;
 } push;
 
 shared vec4 s_cascadePlanes[18];
@@ -96,9 +99,13 @@ void main() {
     float maxScale = sqrt(max(max(sqX, sqY), sqZ));
     float worldRadius = sphere.w * maxScale;
 
+    bool visibleInCascade[3];
     bool visibleInAnyCascade = false;
 
     if (push.cullFlags == 0) {
+        visibleInCascade[0] = true;
+        visibleInCascade[1] = true;
+        visibleInCascade[2] = true;
         visibleInAnyCascade = true;
     } else {
         for (uint c = 0u; c < 3u; c++) {
@@ -110,60 +117,74 @@ void main() {
                     break;
                 }
             }
-
+            visibleInCascade[c] = visible;
             if (visible) {
                 visibleInAnyCascade = true;
-                break;
             }
         }
     }
 
-    uint taskWgCount = visibleInAnyCascade ? ((obj.meshletCount + 31u) / 32u) : 0u;
+    uint baseTaskWgCount = (obj.meshletCount + 31u) / 32u;
 
     #ifdef GL_KHR_shader_subgroup_arithmetic
     uint visibleFlag = visibleInAnyCascade ? 1u : 0u;
     uint waveObjCount = subgroupAdd(visibleFlag);
     uint waveObjOffset = subgroupExclusiveAdd(visibleFlag);
-
-    uint opaqueTaskWgCount = (!isMasked) ? taskWgCount : 0u;
-    uint maskedTaskWgCount = isMasked ? taskWgCount : 0u;
-
-    uint waveOpaqueTaskCount = subgroupAdd(opaqueTaskWgCount);
-    uint waveOpaqueTaskOffset = subgroupExclusiveAdd(opaqueTaskWgCount);
-
-    uint waveMaskedTaskCount = subgroupAdd(maskedTaskWgCount);
-    uint waveMaskedTaskOffset = subgroupExclusiveAdd(maskedTaskWgCount);
-
     uint waveObjBase = 0u;
-    uint waveTaskBase = 0u;
-    uint waveMaskedTaskBase = 0u;
 
     if (subgroupElect()) {
         if (waveObjCount > 0u) {
             waveObjBase = atomicAdd(visibleObjectCount, waveObjCount);
         }
-        if (waveOpaqueTaskCount > 0u) {
-            waveTaskBase = atomicAdd(taskDispatchX, waveOpaqueTaskCount);
-        }
-        if (waveMaskedTaskCount > 0u) {
-            waveMaskedTaskBase = atomicAdd(maskedTaskDispatchX, waveMaskedTaskCount);
-        }
     }
-    
     waveObjBase = subgroupBroadcast(waveObjBase, subgroupBallotFindLSB(subgroupBallot(true)));
-    waveTaskBase = subgroupBroadcast(waveTaskBase, subgroupBallotFindLSB(subgroupBallot(true)));
-    waveMaskedTaskBase = subgroupBroadcast(waveMaskedTaskBase, subgroupBallotFindLSB(subgroupBallot(true)));
 
     if (visibleInAnyCascade) {
         visibleObjects[waveObjBase + waveObjOffset] = gID;
-        uint startSlot = isMasked ? (waveMaskedTaskBase + waveMaskedTaskOffset) : (waveTaskBase + waveOpaqueTaskOffset);
-        for (uint i = 0u; i < taskWgCount; i++) {
+    }
+
+    uint opaqueWgCount = (!isMasked) ? baseTaskWgCount : 0u;
+    uint maskedWgCount = isMasked ? baseTaskWgCount : 0u;
+
+    for (uint c = 0u; c < 3u; c++) {
+        uint opaqueCount = visibleInCascade[c] ? opaqueWgCount : 0u;
+        uint maskedCount = visibleInCascade[c] ? maskedWgCount : 0u;
+
+        uint waveOpaqueCount = subgroupAdd(opaqueCount);
+        uint waveOpaqueOffset = subgroupExclusiveAdd(opaqueCount);
+
+        uint waveMaskedCount = subgroupAdd(maskedCount);
+        uint waveMaskedOffset = subgroupExclusiveAdd(maskedCount);
+
+        uint waveOpaqueBase = 0u;
+        uint waveMaskedBase = 0u;
+
+        if (subgroupElect()) {
+            if (waveOpaqueCount > 0u) {
+                waveOpaqueBase = atomicAdd(taskDispatchCommands[c].taskDispatchX, waveOpaqueCount);
+            }
+            if (waveMaskedCount > 0u) {
+                waveMaskedBase = atomicAdd(maskedTaskDispatchCommands[c].taskDispatchX, waveMaskedCount);
+            }
+        }
+
+        waveOpaqueBase = subgroupBroadcast(waveOpaqueBase, subgroupBallotFindLSB(subgroupBallot(true)));
+        waveMaskedBase = subgroupBroadcast(waveMaskedBase, subgroupBallotFindLSB(subgroupBallot(true)));
+
+        if (visibleInCascade[c]) {
+            uint cascadeBase = c * push.maxTaskWgsPerCascade;
             if (isMasked) {
-                maskedTaskWorkgroups[startSlot + i].objectID = gID;
-                maskedTaskWorkgroups[startSlot + i].baseMeshletIndex = i * 32u;
+                uint startSlot = cascadeBase + waveMaskedBase + waveMaskedOffset;
+                for (uint i = 0u; i < maskedWgCount; i++) {
+                    maskedTaskWorkgroups[startSlot + i].objectID = gID;
+                    maskedTaskWorkgroups[startSlot + i].baseMeshletIndex = i * 32u;
+                }
             } else {
-                taskWorkgroups[startSlot + i].objectID = gID;
-                taskWorkgroups[startSlot + i].baseMeshletIndex = i * 32u;
+                uint startSlot = cascadeBase + waveOpaqueBase + waveOpaqueOffset;
+                for (uint i = 0u; i < opaqueWgCount; i++) {
+                    taskWorkgroups[startSlot + i].objectID = gID;
+                    taskWorkgroups[startSlot + i].baseMeshletIndex = i * 32u;
+                }
             }
         }
     }
@@ -171,21 +192,25 @@ void main() {
     if (visibleInAnyCascade) {
         uint slot = atomicAdd(visibleObjectCount, 1u);
         visibleObjects[slot] = gID;
-        
-        uint startSlot;
-        if (isMasked) {
-            startSlot = atomicAdd(maskedTaskDispatchX, taskWgCount);
-        } else {
-            startSlot = atomicAdd(taskDispatchX, taskWgCount);
-        }
-        
-        for (uint i = 0u; i < taskWgCount; i++) {
+    }
+
+    for (uint c = 0u; c < 3u; c++) {
+        if (visibleInCascade[c]) {
+            uint cascadeBase = c * push.maxTaskWgsPerCascade;
             if (isMasked) {
-                maskedTaskWorkgroups[startSlot + i].objectID = gID;
-                maskedTaskWorkgroups[startSlot + i].baseMeshletIndex = i * 32u;
+                uint startSlot = atomicAdd(maskedTaskDispatchCommands[c].taskDispatchX, baseTaskWgCount);
+                uint dst = cascadeBase + startSlot;
+                for (uint i = 0u; i < baseTaskWgCount; i++) {
+                    maskedTaskWorkgroups[dst + i].objectID = gID;
+                    maskedTaskWorkgroups[dst + i].baseMeshletIndex = i * 32u;
+                }
             } else {
-                taskWorkgroups[startSlot + i].objectID = gID;
-                taskWorkgroups[startSlot + i].baseMeshletIndex = i * 32u;
+                uint startSlot = atomicAdd(taskDispatchCommands[c].taskDispatchX, baseTaskWgCount);
+                uint dst = cascadeBase + startSlot;
+                for (uint i = 0u; i < baseTaskWgCount; i++) {
+                    taskWorkgroups[dst + i].objectID = gID;
+                    taskWorkgroups[dst + i].baseMeshletIndex = i * 32u;
+                }
             }
         }
     }

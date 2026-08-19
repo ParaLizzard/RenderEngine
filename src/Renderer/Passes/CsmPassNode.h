@@ -29,15 +29,21 @@ namespace Engine {
         }
 
         void updateCascades(SceneUbo &sceneUbo, FrameInfo &frameInfo);
-        [[nodiscard]] VkImageView getCsmArrayView() const { return csmArrayView; }
 
     private:
+
+        struct CsmMeshPushConstants
+        {
+            uint32_t cascadeIndex;
+            uint32_t maxTaskWgsPerCascade;
+        };
 
         struct CsmCullPushConstants
         {
             uint32_t objectCount;
             uint32_t actualObjectCount;
             uint32_t cullFlags;
+            uint32_t maxTaskWgsPerCascade;
         };
 
         struct CascadeGpuData
@@ -93,13 +99,7 @@ namespace Engine {
         std::vector<std::unique_ptr<Buffer>> cascadeDataBuffers;
 
         glm::mat4 cascadeViewProjs[SHADOW_MAP_CASCADES];
-
-        VkImage csmImageCache = VK_NULL_HANDLE;
-        VkImageView csmArrayView = VK_NULL_HANDLE;
-        VkImageView cascadeViews[SHADOW_MAP_CASCADES] = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
-
         PFN_vkCmdDrawMeshTasksIndirectEXT pfn_vkCmdDrawMeshTasksIndirectEXT {nullptr};
-
         bool descriptorsUpdated = false;
     };
 

@@ -48,7 +48,14 @@ KNOWN_SECTIONS = [
     "renderdoc/internal/resolvedb",
     "renderdoc/internal/driver",
     "renderdoc/internal/core",
+    "renderdoc/internal/metadata",
+    "renderdoc/internal/frame_metadata",
+    "renderdoc/internal/device_memory",
+    "renderdoc/internal/initial_contents",
+    "renderdoc/internal/driver_info",
     "thumbnail",
+    "thumbnail.jpg",
+    "thumbnail.png",
 ]
 
 # Vulkan API call categories
@@ -128,7 +135,7 @@ class ResourceInfo:
 # ─── Find renderdoccmd ─────────────────────────────────────────────────────────
 
 def find_renderdoccmd(custom_path: Optional[str] = None) -> str:
-    """Locate the renderdoccmd executable."""
+    """Locate the renderdoccmd executable across system directories and Registry."""
     if custom_path:
         if os.path.isfile(custom_path):
             return custom_path
@@ -140,9 +147,33 @@ def find_renderdoccmd(custom_path: Optional[str] = None) -> str:
     if found:
         return found
 
-    # Check default locations
-    for path in DEFAULT_RENDERDOCCMD_PATHS:
-        if os.path.isfile(path):
+    # Build dynamic search paths
+    search_paths = list(DEFAULT_RENDERDOCCMD_PATHS)
+    if sys.platform == 'win32':
+        prog_files = os.environ.get("ProgramFiles", r"C:\Program Files")
+        prog_files_x86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
+        local_app = os.environ.get("LOCALAPPDATA", "")
+        search_paths.extend([
+            os.path.join(prog_files, "RenderDoc", "renderdoccmd.exe"),
+            os.path.join(prog_files_x86, "RenderDoc", "renderdoccmd.exe"),
+            os.path.join(local_app, "Programs", "RenderDoc", "renderdoccmd.exe") if local_app else "",
+        ])
+        # Try Windows Registry
+        try:
+            import winreg
+            for root_key in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+                try:
+                    with winreg.OpenKey(root_key, r"SOFTWARE\RenderDoc") as key:
+                        install_dir, _ = winreg.QueryValueEx(key, "InstallDir")
+                        if install_dir:
+                            search_paths.append(os.path.join(install_dir, "renderdoccmd.exe"))
+                except OSError:
+                    pass
+        except ImportError:
+            pass
+
+    for path in search_paths:
+        if path and os.path.isfile(path):
             return path
 
     print("ERROR: renderdoccmd.exe not found.", file=sys.stderr)
@@ -240,10 +271,24 @@ def convert_rdc_to_chrome_json(rdc_path: str, renderdoccmd: str, output_dir: str
 # ─── Extract Embedded Sections ─────────────────────────────────────────────────
 
 def extract_sections(rdc_path: str, renderdoccmd: str, output_dir: str) -> dict:
-    """Try to extract known embedded sections from the RDC."""
+    """Extract embedded sections from the RDC dynamically."""
     sections = {}
+    section_names = list(KNOWN_SECTIONS)
 
-    for section_name in KNOWN_SECTIONS:
+    # Query available sections if supported by renderdoccmd
+    try:
+        res = subprocess.run([renderdoccmd, "sections", rdc_path], capture_output=True, text=True, timeout=30)
+        if res.returncode == 0 and res.stdout:
+            for line in res.stdout.splitlines():
+                line = line.strip()
+                if line and not line.startswith("Section") and not line.startswith("="):
+                    name = line.split()[0] if line.split() else ""
+                    if name and name not in section_names:
+                        section_names.append(name)
+    except Exception:
+        pass
+
+    for section_name in section_names:
         safe_name = section_name.replace("/", "_").replace("\\", "_")
         section_file = os.path.join(output_dir, f"section_{safe_name}.bin")
 
@@ -366,7 +411,8 @@ def parse_xml_streaming(xml_path: str, verbosity: str) -> tuple:
                     elif category == 'sync':
                         stats.total_barriers += 1
                     elif category == 'renderpass':
-                        stats.total_render_passes += 1
+                        if 'Begin' in call_name:
+                            stats.total_render_passes += 1
                     elif category == 'creation':
                         stats.total_resources_created += 1
                     elif category == 'descriptor':
@@ -492,7 +538,8 @@ def parse_xml_flat(xml_path: str, verbosity: str, max_calls: int) -> tuple:
                     elif category == 'sync':
                         stats.total_barriers += 1
                     elif category == 'renderpass':
-                        stats.total_render_passes += 1
+                        if 'Begin' in call_name:
+                            stats.total_render_passes += 1
                     elif category == 'creation':
                         stats.total_resources_created += 1
                     elif category == 'submit':

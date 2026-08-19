@@ -19,7 +19,20 @@ namespace Engine {
 
     WindowWin32::WindowWin32(int width, int height, std::string title)
     {
-        // Calculate window size based on client region size
+        if (HMODULE user32 = GetModuleHandleA("user32.dll")) {
+            using SetProcessDpiAwarenessContextFn = BOOL(WINAPI *)(void*);
+            auto setContext = reinterpret_cast<SetProcessDpiAwarenessContextFn>(GetProcAddress(user32, "SetProcessDpiAwarenessContext"));
+            if (setContext) {
+                setContext(reinterpret_cast<void*>(-4));
+            } else {
+                using SetProcessDPIAwareFn = BOOL(WINAPI *)();
+                auto setAware = reinterpret_cast<SetProcessDPIAwareFn>(GetProcAddress(user32, "SetProcessDPIAware"));
+                if (setAware) {
+                    setAware();
+                }
+            }
+        }
+        
         RECT wr{};
         wr.left = 100;
         wr.right = width + wr.left;
@@ -81,6 +94,17 @@ namespace Engine {
     LRESULT WindowWin32::HandleMsg(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     {
         switch (msg) {
+        case WM_DPICHANGED: {
+            const RECT* const prcNewWindow = reinterpret_cast<RECT*>(lParam);
+            SetWindowPos(hWnd,
+                         nullptr,
+                         prcNewWindow->left,
+                         prcNewWindow->top,
+                         prcNewWindow->right - prcNewWindow->left,
+                         prcNewWindow->bottom - prcNewWindow->top,
+                         SWP_NOZORDER | SWP_NOACTIVATE);
+            return 0;
+        }
         case WM_CLOSE:
             isClosing = true;
             PostQuitMessage(0);

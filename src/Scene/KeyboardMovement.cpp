@@ -8,38 +8,29 @@
 namespace Engine {
     void KeyboardMovementController::moveInPlaneXZ(InputManager& manager, float dt, std::shared_ptr<GameObject> gameObject)
     {
-        glm::vec3 rotate {0};
-
-        if (manager.IsKeyHeld(KeyCode::Right))
-            rotate.y += 1.f;
-        if (manager.IsKeyHeld(KeyCode::Left))
-            rotate.y -= 1.f;
-        if (manager.IsKeyHeld(KeyCode::Up))
-            rotate.x -= 1.f;
-        if (manager.IsKeyHeld(KeyCode::Down))
-            rotate.x += 1.f;
-
-        if (glm::dot(rotate, rotate) > std::numeric_limits<float>::epsilon()) {
-            const glm::vec3 normalizedRotate = glm::normalize(rotate);
-            const float rotationAmount = lookSpeed * dt;
-
-            glm::quat yawQuat = glm::angleAxis(normalizedRotate.y * rotationAmount, glm::vec3(0, 1, 0));
-
-            glm::vec3 rightAxis = gameObject->transform.rotation * glm::vec3(1, 0, 0);
-            glm::quat pitchQuat = glm::angleAxis(normalizedRotate.x * rotationAmount, rightAxis);
-
-            gameObject->transform.rotation = glm::normalize(pitchQuat * yawQuat * gameObject->transform.rotation);
-
-            glm::vec3 forward = gameObject->transform.rotation * glm::vec3(0, 0, 1);
-            float currentPitch = glm::asin(glm::clamp(forward.y, -1.0f, 1.0f));
-
-            constexpr float maxPitch = glm::radians(85.0f);
-            if (glm::abs(currentPitch) > maxPitch) {
-                glm::vec3 euler = glm::eulerAngles(gameObject->transform.rotation);
-                euler.x = glm::clamp(euler.x, -maxPitch, maxPitch);
-                gameObject->transform.rotation = glm::quat(euler);
-            }
+        if (!initialized) {
+            glm::vec3 forward = gameObject->transform.rotation * glm::vec3(0.0f, 0.0f, 1.0f);
+            yaw = std::atan2(forward.x, forward.z);
+            pitch = std::asin(glm::clamp(forward.y, -1.0f, 1.0f));
+            initialized = true;
         }
+
+        if (manager.IsKeyHeld(KeyCode::Right)) yaw += lookSpeed * dt;
+        if (manager.IsKeyHeld(KeyCode::Left))  yaw -= lookSpeed * dt;
+        if (manager.IsKeyHeld(KeyCode::Up))    pitch += lookSpeed * dt;
+        if (manager.IsKeyHeld(KeyCode::Down))  pitch -= lookSpeed * dt;
+
+        glm::vec2 mouseDelta = manager.GetMouseDelta();
+        yaw += mouseDelta.x * mouseSensitivity;
+        pitch -= mouseDelta.y * mouseSensitivity;
+
+        constexpr float maxPitch = glm::radians(89.0f);
+        pitch = glm::clamp(pitch, -maxPitch, maxPitch);
+
+        glm::quat yawQuat = glm::angleAxis(yaw, glm::vec3(0.0f, 1.0f, 0.0f));
+        glm::quat pitchQuat = glm::angleAxis(pitch, glm::vec3(1.0f, 0.0f, 0.0f));
+
+        gameObject->transform.rotation = glm::normalize(yawQuat * pitchQuat);
 
         const glm::vec3 forwardDir = glm::normalize(gameObject->transform.rotation * glm::vec3(0, 0, 1));
         const glm::vec3 rightDir = glm::normalize(gameObject->transform.rotation * glm::vec3(1, 0, 0));

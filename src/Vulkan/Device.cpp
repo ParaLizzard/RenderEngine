@@ -499,16 +499,20 @@ namespace Engine {
     {
         vkEndCommandBuffer(commandBuffer);
 
-        VkSubmitInfo submitInfo {};
-        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &commandBuffer;
+        VkCommandBufferSubmitInfo cmdSubmitInfo {};
+        cmdSubmitInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+        cmdSubmitInfo.commandBuffer = commandBuffer;
+
+        VkSubmitInfo2 submitInfo2 {};
+        submitInfo2.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+        submitInfo2.commandBufferInfoCount = 1;
+        submitInfo2.pCommandBufferInfos = &cmdSubmitInfo;
 
         VkFence fence;
         VkFenceCreateInfo fenceInfo {.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
         vkCreateFence(device, &fenceInfo, nullptr, &fence);
 
-        vkQueueSubmit(graphicsQueue, 1, &submitInfo, fence);
+        vkQueueSubmit2(graphicsQueue, 1, &submitInfo2, fence);
 
         vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
         vkDestroyFence(device, fence, nullptr);

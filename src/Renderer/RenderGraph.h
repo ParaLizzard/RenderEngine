@@ -121,7 +121,8 @@ namespace Engine {
                                    VkFormat format,
                                    VkExtent2D extent,
                                    VkImageLayout initialLayout,
-                                   uint32_t arrayLayers = 1);
+                                   uint32_t arrayLayers = 1,
+                                   uint32_t mipLevels = 1);
 
         void registerPhysicalBuffer(const std::string &name,
                                     VkBuffer buffer,
@@ -129,13 +130,20 @@ namespace Engine {
                                     VkPipelineStageFlags2 initialStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
                                     VkAccessFlags2 initialAccessMask = VK_ACCESS_2_NONE);
 
+        void registerPassResources(const FrameInfo &frameInfo);
+        void updatePassResources(const FrameInfo &frameInfo);
+
         void compile();
         void execute(VkCommandBuffer cmdBuffer, FrameInfo &frameInfo);
         void clear();
         void markSceneDirty();
 
         void transitionToPresent(VkCommandBuffer cmdBuffer, const std::string &imageName);
-        void updateImageHandle(const std::string &name, VkImage image, VkImageView view, VkExtent2D extent);
+        void updateImageHandle(const std::string &name,
+                               VkImage image,
+                               VkImageView view,
+                               VkExtent2D extent,
+                               uint32_t mipLevels = 1);
         void updateBufferHandle(const std::string &name, VkBuffer buffer, VkDeviceSize size);
 
         void pushProfileMarker(VkCommandBuffer cmd, const std::string &name);

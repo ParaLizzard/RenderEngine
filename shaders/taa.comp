@@ -1,0 +1,58 @@
+#version 460
+
+layout (local_size_x = 16, local_size_y = 16) in;
+
+layout (binding = 0) uniform sampler2D samplerSceneColor;
+layout (binding = 1) uniform sampler2D samplerVelocity;
+layout (binding = 2) uniform sampler2D samplerDepth;
+layout (binding = 3) uniform sampler2D samplerHistoryRead;
+layout (binding = 4) uniform writeonly image2D HistoryWrite;
+layout (binding = 5) uniform writeonly image2D TaaOutput;
+layout (binding = 6) uniform sampler2D samplerPrevVelocity;
+
+layout (constant_id = 0) const float TAA_MODULATION_FACTOR = 0.9f;
+
+void main() {
+    ivec2 dim = imageSize(TaaOutput);
+    ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);
+
+    if (pixelCoords.x >= dim.x || pixelCoords.y >= dim.y) return;
+
+    vec2 inUV = (vec2(pixelCoords) + 0.5) / vec2(dim);
+
+    vec2 velocity = texture(samplerVelocity, inUV).xy;
+    vec2 previousPixelPos = inUV - velocity;
+
+    vec2 previousVelocity = texture(samplerPrevVelocity, previousPixelPos).xy;
+    vec3 historyColor = texture(samplerHistoryRead, previousPixelPos).rgb;
+    vec3 currentColor = texelFetch(samplerSceneColor, pixelCoords, 0).rgb;
+
+    float velocityLength = length(previousVelocity - velocity);
+    float velocityDisocclusion = clamp((velocityLength - 0.008) * 10.0, 0.0, 1.0);
+
+    bool isOffScreen = (previousPixelPos.x < 0.0 || previousPixelPos.x > 1.0 || previousPixelPos.y < 0.0 || previousPixelPos.y > 1.0);
+
+    vec3 minColor = currentColor;
+    vec3 maxColor = currentColor;
+
+    for (int x = -1; x <= 1; ++x) {
+        for (int y = -1; y <= 1; ++y) {
+            if (x == 0 && y == 0) continue;
+            ivec2 sampleCoord = clamp(pixelCoords + ivec2(x, y), ivec2(0), dim - 1);
+            vec3 neighborColor = texelFetch(samplerSceneColor, sampleCoord, 0).rgb;
+            minColor = min(minColor, neighborColor);
+            maxColor = max(maxColor, neighborColor);
+        }
+    }
+
+    vec3 historyColorClamped = clamp(historyColor, minColor, maxColor);
+    vec3 accumulation = mix(currentColor, historyColorClamped, TAA_MODULATION_FACTOR);
+
+    vec3 outputColor = mix(accumulation, currentColor, velocityDisocclusion);
+    if (isOffScreen) {
+        outputColor = currentColor;
+    }
+
+    imageStore(HistoryWrite, pixelCoords, vec4(outputColor, 1.0));
+    imageStore(TaaOutput, pixelCoords, vec4(outputColor, 1.0));
+}

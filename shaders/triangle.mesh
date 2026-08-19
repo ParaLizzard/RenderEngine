@@ -22,7 +22,7 @@ struct ObjectData {
     uint baseMeshlet;
     uint meshletCount;
     uint alphaMode;
-    uint padding1;
+    uint materialId;
 };
 
 struct Meshlet {
@@ -57,12 +57,18 @@ layout(std430, set = 0, binding = 9) readonly buffer MeshletVertexMap { uint mes
 layout(std430, set = 0, binding = 10) readonly buffer MeshletTriangleMap { uint8_t meshletTriangles[]; };
 
 layout(push_constant) uniform PushConsts {
+    mat4 view;
+    vec4 projParams;
+    vec4 hizParams;
+    vec2 screenParams;
     uint cullFlags;
     uint objectCount;
     uint actualObjectCount;
     uint objectCapacity;
     uint clipPlaneCount;
     uint isMeshShader;
+    uint phase;
+    uint pad;
 } pc;
 
 struct Payload {

@@ -17,7 +17,7 @@ namespace Engine {
         uint32_t baseMeshlet;
         uint32_t meshletCount;
         uint32_t alphaMode;
-        uint32_t padding1;
+        uint32_t materialId;
     };
 
     class TransformUpdatePassNode: public RenderPassNode

@@ -1,18 +1,18 @@
-#include "Renderer/Passes/FxaaPassNode.h"
+#include "Renderer/Passes/TonemapPassNode.h"
 #include "Core/EngineConfig.h"
 
 #include "Renderer/Renderer.h"
 #include "Renderer/ShaderUtils.h"
 
 namespace Engine {
-    FxaaPassNode::FxaaPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap):
-        RenderPassNode("FXAA Pass"), device(device), renderer(renderer), megaBuffer(megaBuffer), resourceHeap(resourceHeap)
+    TonemapPassNode::TonemapPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap):
+        RenderPassNode("Tonemap Pass"), device(device), renderer(renderer), megaBuffer(megaBuffer), resourceHeap(resourceHeap)
     {
         createPipelineLayout();
         createPipeline();
     }
 
-    FxaaPassNode::~FxaaPassNode()
+    TonemapPassNode::~TonemapPassNode()
     {
         if (sampler != VK_NULL_HANDLE)
             vkDestroySampler(device.getDevice(), sampler, nullptr);
@@ -27,53 +27,90 @@ namespace Engine {
             vkDestroyPipelineLayout(device.getDevice(), pipelineLayout, nullptr);
     }
 
-    void FxaaPassNode::setup(RenderGraphBuilder &renderGraph)
+    void TonemapPassNode::setup(RenderGraphBuilder &renderGraph)
     {
-        renderGraph.readImage("TonemapOutput",
+        const std::string inputImageName = (Config::CURRENT_AA_METHOD == TAA) ? "TaaOutput" : "FinalRender";
+
+        renderGraph.readImage(inputImageName,
                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                               VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
                               VK_ACCESS_2_SHADER_READ_BIT);
 
-        renderGraph.writeImage("SwapChainImage",
-                               VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                               VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                               VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+        renderGraph.readImage("HiZImage",
+                              VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                              VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                              VK_ACCESS_2_SHADER_READ_BIT);
+
+        if (Config::CURRENT_AA_METHOD == FXAA) {
+            VkExtent2D extent = renderer.getSwapChain().getSwapChainExtent();
+            renderGraph.createTransientImage("TonemapOutput",
+                                             renderer.getSwapChain().getSwapChainImageFormat(),
+                                             extent,
+                                             1,
+                                             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+            renderGraph.writeImage("TonemapOutput",
+                                   VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                   VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                   VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+        } else {
+            renderGraph.writeImage("SwapChainImage",
+                                   VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                   VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                   VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+        }
     }
 
-    void FxaaPassNode::registerResources(RenderGraph &graph, const FrameInfo &frameInfo)
+    void TonemapPassNode::registerResources(RenderGraph &graph, const FrameInfo &frameInfo)
     {
         RenderPassNode::registerResources(graph, frameInfo);
     }
 
-    void FxaaPassNode::updateResources(RenderGraph &graph, const FrameInfo &frameInfo)
+    void TonemapPassNode::updateResources(RenderGraph &graph, const FrameInfo &frameInfo)
     {
         RenderPassNode::updateResources(graph, frameInfo);
     }
 
-    void FxaaPassNode::resolve(RenderGraph &graph, const FrameInfo &frameInfo)
+    void TonemapPassNode::resolve(RenderGraph &graph, const FrameInfo &frameInfo)
     {
+        const std::string inputImageName = (Config::CURRENT_AA_METHOD == TAA) ? "TaaOutput" : "FinalRender";
+
         VkDescriptorImageInfo imageInfo {};
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfo.imageView = graph.getImageView("TonemapOutput");
+        imageInfo.imageView = graph.getImageView(inputImageName);
         imageInfo.sampler = sampler;
 
-        VkWriteDescriptorSet descriptorWrite {};
-        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrite.dstSet = descriptorSets[frameInfo.frameIndex];
-        descriptorWrite.dstBinding = 0;
-        descriptorWrite.dstArrayElement = 0;
-        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrite.descriptorCount = 1;
-        descriptorWrite.pImageInfo = &imageInfo;
+        VkDescriptorImageInfo hizInfo {};
+        hizInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        hizInfo.imageView = graph.getImageView("HiZImage");
+        hizInfo.sampler = sampler;
 
-        vkUpdateDescriptorSets(device.getDevice(), 1, &descriptorWrite, 0, nullptr);
+        VkWriteDescriptorSet descriptorWrites[2] {};
+        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[0].dstSet = descriptorSets[frameInfo.frameIndex];
+        descriptorWrites[0].dstBinding = 0;
+        descriptorWrites[0].dstArrayElement = 0;
+        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[0].descriptorCount = 1;
+        descriptorWrites[0].pImageInfo = &imageInfo;
+
+        descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[1].dstSet = descriptorSets[frameInfo.frameIndex];
+        descriptorWrites[1].dstBinding = 1;
+        descriptorWrites[1].dstArrayElement = 0;
+        descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[1].descriptorCount = 1;
+        descriptorWrites[1].pImageInfo = &hizInfo;
+
+        vkUpdateDescriptorSets(device.getDevice(), 2, descriptorWrites, 0, nullptr);
     }
 
-    void FxaaPassNode::execute(VkCommandBuffer &cmd, FrameInfo &frameInfo)
+    void TonemapPassNode::execute(VkCommandBuffer &cmd, FrameInfo &frameInfo)
     {
+        const std::string outputImageName = (Config::CURRENT_AA_METHOD == FXAA) ? "TonemapOutput" : "SwapChainImage";
+
         VkRenderingAttachmentInfo colorAttachment {};
         colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        colorAttachment.imageView = frameInfo.renderGraph->getImageView("SwapChainImage");
+        colorAttachment.imageView = frameInfo.renderGraph->getImageView(outputImageName);
         colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -115,16 +152,33 @@ namespace Engine {
                                 0,
                                 nullptr);
 
-        glm::vec2 resolution = {static_cast<float>(frameInfo.extent.width),
-                                static_cast<float>(frameInfo.extent.height)};
-        vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(glm::vec2), &resolution);
+        VkExtent2D hizExt = { std::bit_ceil(frameInfo.extent.width), std::bit_ceil(frameInfo.extent.height) };
+        struct TonemapPushConstants {
+            int debugMode;
+            int debugMipLevel;
+            glm::vec2 uvScale;
+            int tonemapMethod;
+            float exposure;
+            int agxPunchy;
+            int pad;
+        };
+        TonemapPushConstants pushConstants {
+            frameInfo.debugViewMode,
+            frameInfo.debugHiZMipLevel,
+            glm::vec2((frameInfo.extent.width * 0.5f) / hizExt.width, (frameInfo.extent.height * 0.5f) / hizExt.height),
+            static_cast<int>(Config::CURRENT_TONEMAP_METHOD),
+            Config::AGX_EXPOSURE,
+            Config::AGX_PUNCHY ? 1 : 0,
+            0
+        };
+        vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(TonemapPushConstants), &pushConstants);
 
         vkCmdDraw(cmd, 3, 1, 0, 0);
 
         vkCmdEndRendering(cmd);
     }
 
-    void FxaaPassNode::createPipelineLayout()
+    void TonemapPassNode::createPipelineLayout()
     {
         VkSamplerCreateInfo samplerInfo {};
         samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -136,36 +190,41 @@ namespace Engine {
         samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
 
         if (vkCreateSampler(device.getDevice(), &samplerInfo, nullptr, &sampler) != VK_SUCCESS)
-            throw std::runtime_error("Fxaa: failed to create sampler!");
+            throw std::runtime_error("Tonemap: failed to create sampler!");
 
-        VkDescriptorSetLayoutBinding samplerLayoutBinding {};
-        samplerLayoutBinding.binding = 0;
-        samplerLayoutBinding.descriptorCount = 1;
-        samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        samplerLayoutBinding.pImmutableSamplers = nullptr;
-        samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        VkDescriptorSetLayoutBinding bindings[2] {};
+        bindings[0].binding = 0;
+        bindings[0].descriptorCount = 1;
+        bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[0].pImmutableSamplers = nullptr;
+        bindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        bindings[1].binding = 1;
+        bindings[1].descriptorCount = 1;
+        bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[1].pImmutableSamplers = nullptr;
+        bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
         VkDescriptorSetLayoutCreateInfo layoutInfo {};
         layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = 1;
-        layoutInfo.pBindings = &samplerLayoutBinding;
+        layoutInfo.bindingCount = 2;
+        layoutInfo.pBindings = bindings;
 
         if (vkCreateDescriptorSetLayout(device.getDevice(), &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS)
-            throw std::runtime_error("Fxaa: failed to create descriptor set layout!");
+            throw std::runtime_error("Tonemap: failed to create descriptor set layout!");
 
         VkDescriptorPoolSize poolSize {};
         poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        poolSize.descriptorCount = static_cast<uint32_t>(Config::MAX_FRAMES_IN_FLIGHT);
+        poolSize.descriptorCount = static_cast<uint32_t>(Config::MAX_FRAMES_IN_FLIGHT * 2);
 
         VkDescriptorPoolCreateInfo poolInfo {};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         poolInfo.poolSizeCount = 1;
         poolInfo.pPoolSizes = &poolSize;
         poolInfo.maxSets = static_cast<uint32_t>(Config::MAX_FRAMES_IN_FLIGHT);
-        ;
 
         if (vkCreateDescriptorPool(device.getDevice(), &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS)
-            throw std::runtime_error("Fxaa: failed to create descriptor pool!");
+            throw std::runtime_error("Tonemap: failed to create descriptor pool!");
 
         std::vector<VkDescriptorSetLayout> layouts(Config::MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
         VkDescriptorSetAllocateInfo allocInfo {};
@@ -176,12 +235,22 @@ namespace Engine {
 
         descriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
         if (vkAllocateDescriptorSets(device.getDevice(), &allocInfo, descriptorSets.data()) != VK_SUCCESS)
-            throw std::runtime_error("Fxaa: failed to allocate descriptor sets!");
+            throw std::runtime_error("Tonemap: failed to allocate descriptor sets!");
+
+        struct TonemapPushConstants {
+            int debugMode;
+            int debugMipLevel;
+            glm::vec2 uvScale;
+            int tonemapMethod;
+            float exposure;
+            int agxPunchy;
+            int pad;
+        };
 
         VkPushConstantRange pushConstantRange {};
         pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
         pushConstantRange.offset = 0;
-        pushConstantRange.size = sizeof(glm::vec2);
+        pushConstantRange.size = sizeof(TonemapPushConstants);
 
         VkPipelineLayoutCreateInfo pipelineLayoutInfo {};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -191,13 +260,13 @@ namespace Engine {
         pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
         if (vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS)
-            throw std::runtime_error("failed to create pipeline layout");
+            throw std::runtime_error("Tonemap: failed to create pipeline layout");
     }
 
-    void FxaaPassNode::createPipeline()
+    void TonemapPassNode::createPipeline()
     {
-        auto vertCode = ShaderUtils::readFile("shaders/fxaa.vert.spv");
-        auto fragCode = ShaderUtils::readFile("shaders/fxaa.frag.spv");
+        auto vertCode = ShaderUtils::readFile("shaders/tonemap.vert.spv");
+        auto fragCode = ShaderUtils::readFile("shaders/tonemap.frag.spv");
 
         VkShaderModule vertShaderModule = ShaderUtils::createShaderModule(device.getDevice(), vertCode);
         VkShaderModule fragShaderModule = ShaderUtils::createShaderModule(device.getDevice(), fragCode);
@@ -301,10 +370,10 @@ namespace Engine {
         if (vkCreateGraphicsPipelines(
                 device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, nullptr, &graphicsPipeline) !=
             VK_SUCCESS) {
-            throw std::runtime_error("failed to create graphics pipeline");
+            throw std::runtime_error("Tonemap: failed to create graphics pipeline");
         }
 
         vkDestroyShaderModule(device.getDevice(), vertShaderModule, nullptr);
         vkDestroyShaderModule(device.getDevice(), fragShaderModule, nullptr);
     }
-} // namespace Engine
+}

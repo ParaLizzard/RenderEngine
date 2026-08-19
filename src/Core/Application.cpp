@@ -50,7 +50,8 @@ namespace Engine {
 
 
         sceneManager.flattenSceneGraph();
-        cullPass.markSceneDirty();
+        cullPassPhase1.markSceneDirty();
+        cullPassPhase2.markSceneDirty();
         csmPass.markSceneDirty();
 
         cameraObject = std::make_shared<GameObject>(GameObject::createGameObject());
@@ -79,12 +80,29 @@ namespace Engine {
                 if (freezeCulling) {
                     frozenViewProj = camera.getProjection() * camera.getView();
                     frozenCameraPos = camera.getPosition();
+                    frozenView = camera.getView();
                 }
             }
 
             if (inputManager.IsKeyJustPressed(KeyCode::F5)) {
                 cullEnabled = !cullEnabled;
                 std::cout << "Culling: " << (cullEnabled ? "ON" : "OFF") << "\n";
+            }
+
+            if (inputManager.IsKeyJustPressed(KeyCode::F6)) {
+                debugViewMode = (debugViewMode == 1) ? 0 : 1;
+                std::cout << "Hi-Z Debug View: " << (debugViewMode == 1 ? "ON (Mip 0)" : "OFF") << "\n";
+            }
+
+            if (debugViewMode == 1) {
+                if (inputManager.IsKeyJustPressed(KeyCode::PageUp) || inputManager.IsKeyJustPressed(KeyCode::Right)) {
+                    debugHiZMipLevel = std::min(debugHiZMipLevel + 1, 11);
+                    std::cout << "Hi-Z Debug Mip Level: " << debugHiZMipLevel << "\n";
+                }
+                if (inputManager.IsKeyJustPressed(KeyCode::PageDown) || inputManager.IsKeyJustPressed(KeyCode::Left)) {
+                    debugHiZMipLevel = std::max(debugHiZMipLevel - 1, 0);
+                    std::cout << "Hi-Z Debug Mip Level: " << debugHiZMipLevel << "\n";
+                }
             }
 
             auto currentTime = static_cast<float>(window.getTime());
@@ -140,7 +158,35 @@ namespace Engine {
             info.camera = &camera;
             info.gameObjects = &sceneManager.objects();
 
-            glm::mat4 curViewProj = camera.getProjection() * camera.getView();
+            glm::mat4 proj = camera.getProjection();
+            glm::vec2 subpixelJitter{0.0f, 0.0f};
+            if (Config::CURRENT_AA_METHOD == TAA) {
+                static const glm::vec2 halton8[8] = {
+                    {  0.0f,       -0.1666667f },
+                    { -0.25f,       0.1666667f },
+                    {  0.25f,      -0.3888889f },
+                    { -0.375f,     -0.0555556f },
+                    {  0.125f,      0.2777778f },
+                    { -0.125f,     -0.2777778f },
+                    {  0.375f,      0.0555556f },
+                    { -0.4375f,     0.3888889f }
+                };
+
+                static uint64_t accumulatedFrameCount = 0;
+                accumulatedFrameCount++;
+
+                subpixelJitter = halton8[accumulatedFrameCount % 8];
+
+                glm::vec2 jitterNDC = {
+                    (2.0f * subpixelJitter.x) / static_cast<float>(currentExtent.width),
+                    (2.0f * subpixelJitter.y) / static_cast<float>(currentExtent.height)
+                };
+
+                proj[2][0] += jitterNDC.x;
+                proj[2][1] += jitterNDC.y;
+            }
+
+            glm::mat4 curViewProj = proj * camera.getView();
             if (firstFrame) {
                 prevViewProj = curViewProj;
                 firstFrame = false;
@@ -187,10 +233,16 @@ namespace Engine {
             info.jobSystem = &jobSystem;
             info.enableSSAO = enableSSAO;
             info.input = &inputManager;
+            info.subpixelJitter = subpixelJitter;
+            info.curViewProj = curViewProj;
             
             info.cullViewProj = freezeCulling ? frozenViewProj : (camera.getProjection() * camera.getView());
             info.cullCameraPos = freezeCulling ? frozenCameraPos : camera.getPosition();
+            info.cullView = freezeCulling ? frozenView : camera.getView();
             info.cullEnabled = cullEnabled;
+            info.firstFrame = firstFrame;
+            info.debugViewMode = debugViewMode;
+            info.debugHiZMipLevel = debugHiZMipLevel;
 
             renderGraph.execute(cmd, info);
             renderGraph.transitionToPresent(cmd, "SwapChainImage");
@@ -300,7 +352,8 @@ namespace Engine {
         sceneManager.flattenSceneGraph();
 
         transformPass.markSceneDirty();
-        cullPass.markSceneDirty();
+        cullPassPhase1.markSceneDirty();
+        cullPassPhase2.markSceneDirty();
         csmPass.markSceneDirty();
     }
 
@@ -318,52 +371,29 @@ namespace Engine {
                                                VK_ACCESS_2_HOST_WRITE_BIT);
 
             renderGraph.registerPhysicalBuffer("CompactedIndexBuffer",
-                                   cullPass.getCompactedIndexBuffer(currentFrame),
+                                   cullPassPhase1.getCompactedIndexBuffer(currentFrame),
                                    Config::MAX_SCENE_OBJECTS * Config::MAX_TRIANGLES * 3 * sizeof(uint32_t),
                                    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                                    VK_ACCESS_2_SHADER_WRITE_BIT);
 
             renderGraph.registerPhysicalBuffer("SingleIndirectCommand",
-                                               cullPass.getSingleIndirectCommandBuffer(currentFrame),
+                                               cullPassPhase1.getSingleIndirectCommandBuffer(currentFrame),
                                                sizeof(VkDrawIndirectCommand),
                                                VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                                                VK_ACCESS_2_SHADER_WRITE_BIT);
 
             renderGraph.registerPhysicalBuffer("MaskedCompactedIndexBuffer",
-                                               cullPass.getMaskedCompactedIndexBuffer(currentFrame),
+                                               cullPassPhase1.getMaskedCompactedIndexBuffer(currentFrame),
                                                Config::MAX_SCENE_OBJECTS * Config::MAX_TRIANGLES * 3 * sizeof(uint32_t),
                                                VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                                                VK_ACCESS_2_SHADER_WRITE_BIT);
 
             renderGraph.registerPhysicalBuffer("MaskedSingleIndirectCommand",
-                                               cullPass.getMaskedSingleIndirectCommandBuffer(currentFrame),
+                                               cullPassPhase1.getMaskedSingleIndirectCommandBuffer(currentFrame),
                                                sizeof(VkDrawIndirectCommand),
                                                VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                                                VK_ACCESS_2_SHADER_WRITE_BIT);
 
-            VkDeviceSize normalBufferSize =
-                static_cast<VkDeviceSize>(currentExtent.width) * currentExtent.height * sizeof(uint32_t);
-            renderGraph.registerPhysicalBuffer("PackedNormals",
-                                               materialPass.getPackedNormalBuffer(currentFrame),
-                                               normalBufferSize,
-                                               VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-                                               VK_ACCESS_2_SHADER_WRITE_BIT);
-
-            VkDeviceSize radianceBufferSize =
-                static_cast<VkDeviceSize>(currentExtent.width) * currentExtent.height * sizeof(uint32_t);
-            renderGraph.registerPhysicalBuffer("PackedRadiances",
-                                               materialPass.getPackedRadianceBuffer(currentFrame),
-                                               radianceBufferSize,
-                                               VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-                                               VK_ACCESS_2_SHADER_WRITE_BIT);
-
-            VkDeviceSize worldPosBufferSize =
-                static_cast<VkDeviceSize>(currentExtent.width) * currentExtent.height * sizeof(WorldData);
-            renderGraph.registerPhysicalBuffer("WorldPosition",
-                                               materialPass.getWorldPositionBuffer(currentFrame),
-                                               worldPosBufferSize,
-                                               VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-                                               VK_ACCESS_2_SHADER_WRITE_BIT);
             renderGraph.registerPhysicalImage("SwapChainImage",
                                               renderer.getSwapChain().getImage(imgIdx),
                                               renderer.getSwapChain().getImageView(imgIdx),
@@ -378,12 +408,30 @@ namespace Engine {
                                               VK_IMAGE_LAYOUT_UNDEFINED);
 
             renderGraph.addPass(&transformPass);
-            renderGraph.addPass(&cullPass);
+            renderGraph.addPass(&cullPassPhase1);
+            renderGraph.addPass(&visPassPhase1);
+            renderGraph.addPass(&hiZPass);
+            renderGraph.addPass(&cullPassPhase2);
+            renderGraph.addPass(&visPassPhase2);
             renderGraph.addPass(&csmPass);
-            renderGraph.addPass(&visPass);
-            renderGraph.addPass(&materialPass);
             renderGraph.addPass(&ssaoPass);
-            renderGraph.addPass(&fxaaPass);
+            renderGraph.addPass(&materialPass);
+            if (Config::CURRENT_AA_METHOD == TAA) {
+                renderGraph.addPass(&taaPass);
+            }
+            renderGraph.addPass(&tonemapPass);
+            if (Config::CURRENT_AA_METHOD == FXAA) {
+                renderGraph.addPass(&fxaaPass);
+            }
+
+            FrameInfo frameInfo{};
+            frameInfo.frameIndex = currentFrame;
+            frameInfo.extent = currentExtent;
+            frameInfo.renderGraph = &renderGraph;
+            frameInfo.renderer = &renderer;
+            frameInfo.device = &device;
+
+            renderGraph.registerPassResources(frameInfo);
             renderGraph.compile();
 
             graphCompiled = true;
@@ -393,46 +441,33 @@ namespace Engine {
 
     void Application::updateFrameGraph()
     {
+        FrameInfo frameInfo{};
+        frameInfo.frameIndex = currentFrame;
+        frameInfo.extent = currentExtent;
+        frameInfo.renderGraph = &renderGraph;
+        frameInfo.renderer = &renderer;
+        frameInfo.device = &device;
+
         renderGraph.updateBufferHandle("MaterialSSBO",
                                        resourceHeap.getMaterialBufferInfo(currentFrame).buffer,
                                        resourceHeap.getMaterialBufferSize());
 
         renderGraph.updateBufferHandle("CompactedIndexBuffer",
-                                       cullPass.getCompactedIndexBuffer(currentFrame),
+                                       cullPassPhase1.getCompactedIndexBuffer(currentFrame),
                                        Config::MAX_SCENE_OBJECTS * Config::MAX_TRIANGLES * 3 * sizeof(uint32_t));
 
         renderGraph.updateBufferHandle("SingleIndirectCommand",
-                                       cullPass.getSingleIndirectCommandBuffer(currentFrame),
+                                       cullPassPhase1.getSingleIndirectCommandBuffer(currentFrame),
                                        sizeof(VkDrawIndirectCommand));
 
         renderGraph.updateBufferHandle("MaskedCompactedIndexBuffer",
-                                       cullPass.getMaskedCompactedIndexBuffer(currentFrame),
+                                       cullPassPhase1.getMaskedCompactedIndexBuffer(currentFrame),
                                        Config::MAX_SCENE_OBJECTS * Config::MAX_TRIANGLES * 3 * sizeof(uint32_t));
 
         renderGraph.updateBufferHandle("MaskedSingleIndirectCommand",
-                                       cullPass.getMaskedSingleIndirectCommandBuffer(currentFrame),
+                                       cullPassPhase1.getMaskedSingleIndirectCommandBuffer(currentFrame),
                                        sizeof(VkDrawIndirectCommand));
 
-        VkDeviceSize normalBufferSize =
-            static_cast<VkDeviceSize>(currentExtent.width) * currentExtent.height * sizeof(uint32_t);
-        renderGraph.updateBufferHandle(
-            "PackedNormals",
-            materialPass.getPackedNormalBuffer(currentFrame),
-            normalBufferSize);
-
-        VkDeviceSize radianceBufferSize =
-            static_cast<VkDeviceSize>(currentExtent.width) * currentExtent.height * sizeof(uint32_t);
-        renderGraph.updateBufferHandle(
-            "PackedRadiances",
-            materialPass.getPackedRadianceBuffer(currentFrame),
-            radianceBufferSize);
-
-        VkDeviceSize worldPosBufferSize =
-            static_cast<VkDeviceSize>(currentExtent.width) * currentExtent.height * sizeof(WorldData);
-        renderGraph.updateBufferHandle(
-            "WorldPosition",
-            materialPass.getWorldPositionBuffer(currentFrame),
-            worldPosBufferSize);
         renderGraph.updateImageHandle("SwapChainImage",
                                       renderer.getSwapChain().getImage(imgIdx),
                                       renderer.getSwapChain().getImageView(imgIdx),
@@ -441,6 +476,8 @@ namespace Engine {
                                       renderer.getSwapChain().getDepthImage(),
                                       renderer.getSwapChain().getDepthImageView(),
                                       currentExtent);
+
+        renderGraph.updatePassResources(frameInfo);
     }
 
     void Application::updateSceneGraph()

@@ -46,11 +46,6 @@ TEST_F(RenderPassIntegrationTest, SsaoPassInitializesAndCompiles) {
                                           renderer->getSwapChain().getDepthImage(), renderer->getSwapChain().getDepthImageView(),
                                           renderer->getSwapChain().getDepthFormat(), {800, 600}, VK_IMAGE_LAYOUT_UNDEFINED);
         
-        // The SSAO pass also uses PackedNormals which is a buffer
-        renderGraph->registerPhysicalBuffer("PackedNormals",
-                                            dummyBuffer.getBuffer(), 800 * 600 * sizeof(uint32_t),
-                                            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
-                                            
         renderGraph->registerPhysicalImage("SsaoBlurImage",
                                           renderer->getSwapChain().getImage(0), renderer->getSwapChain().getImageView(0),
                                           VK_FORMAT_R8G8B8A8_UNORM, {800, 600}, VK_IMAGE_LAYOUT_UNDEFINED);

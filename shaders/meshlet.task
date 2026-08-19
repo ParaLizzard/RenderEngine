@@ -1,6 +1,8 @@
 #version 460
 #extension GL_EXT_mesh_shader : require
 #extension GL_KHR_shader_subgroup_ballot : require
+#extension GL_GOOGLE_include_directive : enable
+#include "hiz_cull.glsl"
 
 layout(local_size_x = 32) in;
 
@@ -11,7 +13,7 @@ struct ObjectData {
     uint baseMeshlet;
     uint meshletCount;
     uint alphaMode;
-    uint padding1;
+    uint materialId;
 };
 
 struct Meshlet {
@@ -56,13 +58,21 @@ layout(std430, set = 1, binding = 6) readonly buffer TaskWorkgroupBuffer {
     TaskWorkgroup taskWorkgroups[];
 };
 
+layout(set = 1, binding = 8) uniform sampler2D hizPyramid;
+
 layout(push_constant) uniform PushConsts {
+    mat4 view;
+    vec4 projParams;
+    vec4 hizParams;
+    vec2 screenParams;
     uint cullFlags;
     uint objectCount;
     uint actualObjectCount;
     uint objectCapacity;
     uint clipPlaneCount;
     uint isMeshShader;
+    uint phase;
+    uint pad;
 } push;
 
 const float SUBPIXEL_THRESHOLD = 0.0005;
@@ -90,15 +100,7 @@ void main() {
     float sqY = dot(obj.modelMatrix[1].xyz, obj.modelMatrix[1].xyz);
     float sqZ = dot(obj.modelMatrix[2].xyz, obj.modelMatrix[2].xyz);
     float maxScale = sqrt(max(max(sqX, sqY), sqZ));
-    
 
-    // --- Debug Flags ---
-    bool enableFrustumCull = true;
-    bool enableContributionCull = true;
-    bool enableConeCull = true;
-    // -------------------
-
-    // 2. Meshlet Culling
     bool visible = false;
     
     if (localMeshletIdx < obj.meshletCount) {
@@ -110,7 +112,7 @@ void main() {
         float worldRadius = m.radius * maxScale;
         
         visible = true;
-        if (enableFrustumCull) {
+        if ((push.cullFlags & 1u) != 0u) {
             for (uint p = 0u; p < push.clipPlaneCount; p++) {
                 if (dot(sceneUbo.frustumPlanes[p].xyz, worldCenter) + sceneUbo.frustumPlanes[p].w < -worldRadius) {
                     visible = false;
@@ -119,7 +121,7 @@ void main() {
             }
         }
         
-        if (visible && enableContributionCull) {
+        if (visible && (push.cullFlags & 2u) != 0u) {
             vec3 camToCenter = worldCenter - sceneUbo.cameraPos.xyz;
             float dist = length(camToCenter);
             if (dist > worldRadius) {
@@ -129,12 +131,8 @@ void main() {
                 }
             }
         }
-        
-        if (push.cullFlags == 0) {
-            visible = true;
-        }
 
-        if (visible && enableConeCull) {
+        if (visible) {
             vec4 cone = unpackSnorm4x8(m.cone_axis_cutoff);
             vec3 cone_axis_local = cone.xyz;
             float cone_cutoff = cone.w;
@@ -160,6 +158,17 @@ void main() {
                     }
                 }
             }
+        }
+
+        if (visible && (push.cullFlags & 4u) != 0u) {
+            vec3 centerView = (push.view * vec4(worldCenter, 1.0)).xyz;
+            if (isSphereOccludedHiZ(hizPyramid, centerView, worldRadius, push.projParams, push.hizParams, push.screenParams)) {
+                visible = false;
+            }
+        }
+
+        if (push.cullFlags == 0u) {
+            visible = true;
         }
     }
     
