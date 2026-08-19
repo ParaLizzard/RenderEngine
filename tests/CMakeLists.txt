@@ -1,6 +1,13 @@
 set(TEST_SOURCES
         TestMain.cpp
 
+        # Common Test Harness & Synthetic Generators
+        Common/VulkanTestContext.cpp
+        Common/SyntheticMeshGenerator.cpp
+        Common/SyntheticTextureGenerator.cpp
+        Common/TestContextTest.cpp
+        Common/SyntheticGeneratorsTest.cpp
+
         # Vulkan
         Vulkan/BufferAlignmentTest.cpp
         Vulkan/BufferDescriptorInfoTest.cpp
@@ -26,6 +33,7 @@ set(TEST_SOURCES
         Core/EngineConfigTest.cpp
         
         # Integration (GPU required)
+        Integration/BaselineCaptureTest.cpp
         Integration/PassesTest.cpp
 )
 
@@ -43,3 +51,4 @@ target_include_directories(RenderEngineTests PRIVATE
 
 include(GoogleTest)
 gtest_discover_tests(RenderEngineTests WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+

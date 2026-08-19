@@ -6,6 +6,7 @@
 #include "Renderer/Passes/VisibilityPassNode.h"
 #include "Renderer/Passes/MaterialPassNode.h"
 #include "Renderer/Passes/CullPassNode.h"
+#include "Renderer/Passes/TransformUpdatePassNode.h"
 #include "Core/EngineConfig.h"
 #include "Vulkan/Buffer.h"
 
@@ -19,7 +20,7 @@ TEST_F(RenderPassIntegrationTest, FxaaPassInitializesAndCompiles) {
         renderGraph->addPass(&fxaaPass);
         
         // Register required fake resources to satisfy the RenderGraph compilation
-        renderGraph->registerPhysicalImage("FinalRender",
+        renderGraph->registerPhysicalImage("TonemapOutput",
                                           renderer->getSwapChain().getImage(0), renderer->getSwapChain().getImageView(0),
                                           VK_FORMAT_R8G8B8A8_UNORM, {800, 600}, VK_IMAGE_LAYOUT_UNDEFINED);
         renderGraph->registerPhysicalImage("SwapChainImage",
@@ -60,24 +61,24 @@ TEST_F(RenderPassIntegrationTest, SsaoPassInitializesAndCompiles) {
 
 TEST_F(RenderPassIntegrationTest, CullPassInitializesAndCompiles) {
     ASSERT_NO_THROW({
-        Engine::CullPassNode cullPass(*device, *renderer, *megaBuffer);
+        Engine::CullPassNode cullPass(*device, *renderer, *megaBuffer, *resourceHeap);
         renderGraph->addPass(&cullPass);
         
-        Engine::Buffer dummyBuffer(*device, Engine::Config::MAX_SCENE_OBJECTS * sizeof(Engine::ObjectData), 1, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, 0, 1);
-        
-        renderGraph->registerPhysicalBuffer("CullObjectData",
-                                            dummyBuffer.getBuffer(), Engine::Config::MAX_SCENE_OBJECTS * sizeof(Engine::ObjectData),
-                                            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
-                                            
-        Engine::Buffer dummyBuffer2(*device, Engine::Config::MAX_SCENE_OBJECTS * sizeof(VkDrawIndexedIndirectCommand), 1, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, 0, 1);
-        Engine::Buffer dummyBuffer3(*device, sizeof(uint32_t), 1, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, 0, 1);
-        
-        renderGraph->registerPhysicalBuffer("CullCompactedIndirectCommands",
-                                            dummyBuffer2.getBuffer(), Engine::Config::MAX_SCENE_OBJECTS * sizeof(VkDrawIndexedIndirectCommand),
-                                            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
-        renderGraph->registerPhysicalBuffer("CullDrawCount",
-                                            dummyBuffer3.getBuffer(), sizeof(uint32_t),
-                                            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
+        renderGraph->registerPhysicalImage("HiZImage",
+                                          renderer->getSwapChain().getDepthImage(), renderer->getSwapChain().getDepthImageView(),
+                                          renderer->getSwapChain().getDepthFormat(), {800, 600}, VK_IMAGE_LAYOUT_UNDEFINED);
+
+        std::unique_ptr<Engine::Buffer> dummyBuf1;
+        std::unique_ptr<Engine::Buffer> dummyBuf2;
+        if (!device->isMeshShaderSupported()) {
+            dummyBuf1 = std::make_unique<Engine::Buffer>(*device, sizeof(uint32_t) * 100, 1, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, 0, 1);
+            dummyBuf2 = std::make_unique<Engine::Buffer>(*device, sizeof(VkDrawIndexedIndirectCommand) * 100, 1, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, 0, 1);
+            
+            renderGraph->registerPhysicalBuffer("CompactedIndexBuffer", dummyBuf1->getBuffer(), 400, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
+            renderGraph->registerPhysicalBuffer("SingleIndirectCommand", dummyBuf2->getBuffer(), sizeof(VkDrawIndexedIndirectCommand) * 100, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
+            renderGraph->registerPhysicalBuffer("MaskedCompactedIndexBuffer", dummyBuf1->getBuffer(), 400, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
+            renderGraph->registerPhysicalBuffer("MaskedSingleIndirectCommand", dummyBuf2->getBuffer(), sizeof(VkDrawIndexedIndirectCommand) * 100, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
+        }
                                             
         renderGraph->compile();
     }) << "CullPass failed to initialize.";
@@ -89,8 +90,8 @@ TEST_F(RenderPassIntegrationTest, CullPassInitializesAndCompiles) {
 
 TEST_F(RenderPassIntegrationTest, VisibilityPassInitializesAndCompiles) {
     ASSERT_NO_THROW({
-        Engine::CullPassNode cullPass(*device, *renderer, *megaBuffer);
-        Engine::VisibilityPassNode visPass(*device, *renderer, *megaBuffer, cullPass);
+        Engine::CullPassNode cullPass(*device, *renderer, *megaBuffer, *resourceHeap);
+        Engine::VisibilityPassNode visPass(*device, *renderer, *megaBuffer, cullPass, *resourceHeap);
         
         renderGraph->addPass(&visPass);
         
@@ -119,6 +120,8 @@ TEST_F(RenderPassIntegrationTest, VisibilityPassInitializesAndCompiles) {
 TEST_F(RenderPassIntegrationTest, MaterialPassInitializes) {
     // We only test initialization because compiling MaterialPass requires many buffers
     ASSERT_NO_THROW({
-        Engine::MaterialPassNode matPass(*device, *renderer, *megaBuffer, *resourceHeap, *renderGraph);
+        Engine::CullPassNode cullPass(*device, *renderer, *megaBuffer, *resourceHeap);
+        Engine::MaterialPassNode matPass(*device, *renderer, *megaBuffer, *resourceHeap, cullPass, *renderGraph);
     }) << "MaterialPass failed to initialize compute pipelines.";
 }
+

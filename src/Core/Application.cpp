@@ -447,7 +447,7 @@ namespace Engine {
         frameInfo.renderGraph = &renderGraph;
         frameInfo.renderer = &renderer;
         frameInfo.device = &device;
-
+        vkrect2d
         renderGraph.updateBufferHandle("MaterialSSBO",
                                        resourceHeap.getMaterialBufferInfo(currentFrame).buffer,
                                        resourceHeap.getMaterialBufferSize());

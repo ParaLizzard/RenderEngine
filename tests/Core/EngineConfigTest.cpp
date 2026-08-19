@@ -7,9 +7,9 @@ class EngineConfigTest : public ::testing::Test {};
 // Value assertions
 // =============================================================================
 
-TEST_F(EngineConfigTest, MaxSceneObjectsIs100000)
+TEST_F(EngineConfigTest, MaxSceneObjectsIs8000)
 {
-    EXPECT_EQ(Engine::Config::MAX_SCENE_OBJECTS, 100'000u);
+    EXPECT_EQ(Engine::Config::MAX_SCENE_OBJECTS, 8'000u);
 }
 
 TEST_F(EngineConfigTest, MaxTexturesIs4096)
@@ -29,7 +29,7 @@ TEST_F(EngineConfigTest, MaxFramesInFlightIs3)
 TEST_F(EngineConfigTest, ValuesAreConstexpr)
 {
     // These static_asserts verify the values are usable at compile time
-    static_assert(Engine::Config::MAX_SCENE_OBJECTS == 100'000);
+    static_assert(Engine::Config::MAX_SCENE_OBJECTS == 8'000);
     static_assert(Engine::Config::MAX_TEXTURES == 4096);
     static_assert(Engine::Config::MAX_FRAMES_IN_FLIGHT == 3);
 }
