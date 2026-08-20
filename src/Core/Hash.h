@@ -5,6 +5,8 @@
 #include <concepts>
 #include <functional>
 
+#include "CoreDefines.h"
+
 namespace Engine {
     // Carefully chosen Fowler–Noll–Vo 1a (FNV-1a) prime numbers and their offsets
     namespace Detail {
@@ -16,7 +18,7 @@ namespace Engine {
     }
 
     // Hashes string into 32-bit hash
-    constexpr uint32_t Hash32(std::string_view str) noexcept {
+    ENGINE_NODISCARD constexpr uint32_t Hash32(std::string_view str) noexcept {
         uint32_t hash = Detail::FNV1A_32_OFFSET;
         for (char c : str) {
             hash ^= static_cast<uint8_t>(c);
@@ -26,7 +28,7 @@ namespace Engine {
     }
 
     // 32-bit raw hashing
-    constexpr uint32_t Hash32(const void* data, size_t size) noexcept {
+    ENGINE_NODISCARD constexpr uint32_t Hash32(const void* data, size_t size) noexcept {
         const uint8_t* ptr = static_cast<const uint8_t*>(data);
         uint32_t hash = Detail::FNV1A_32_OFFSET;
         for (size_t i = 0; i < size; ++i) {
@@ -37,7 +39,7 @@ namespace Engine {
     }
 
     // Hashes string into 64-bit hash
-    constexpr uint64_t Hash64(std::string_view str) noexcept {
+    ENGINE_NODISCARD constexpr uint64_t Hash64(std::string_view str) noexcept {
         uint64_t hash = Detail::FNV1A_64_OFFSET;
         for (char c : str) {
             hash ^= static_cast<uint8_t>(c);
@@ -47,7 +49,7 @@ namespace Engine {
     }
 
     // 64-bit raw hashing
-    constexpr uint64_t Hash64(const void* data, size_t size) noexcept {
+    ENGINE_NODISCARD constexpr uint64_t Hash64(const void* data, size_t size) noexcept {
         const uint8_t* ptr = static_cast<const uint8_t*>(data);
         uint64_t hash = Detail::FNV1A_64_OFFSET;
         for (size_t i = 0; i < size; ++i) {
@@ -95,15 +97,15 @@ namespace Engine {
 
 
 // Hash literals
-constexpr uint32_t operator""_hash32(const char* str, size_t len) noexcept {
+ENGINE_NODISCARD constexpr uint32_t operator""_hash32(const char* str, size_t len) noexcept {
     return ::Engine::Hash32(std::string_view(str, len));
 }
 
-constexpr uint64_t operator""_hash64(const char* str, size_t len) noexcept {
+ENGINE_NODISCARD constexpr uint64_t operator""_hash64(const char* str, size_t len) noexcept {
     return ::Engine::Hash64(std::string_view(str, len));
 }
 
-constexpr uint64_t operator""_hash(const char* str, size_t len) noexcept {
+ENGINE_NODISCARD constexpr uint64_t operator""_hash(const char* str, size_t len) noexcept {
     return ::Engine::Hash64(std::string_view(str, len));
 }
 

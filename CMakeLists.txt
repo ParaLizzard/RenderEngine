@@ -278,6 +278,8 @@ set(ENGINE_LIB_SOURCES
         src/Core/CoreDefines.h
         src/Core/types.h
         src/Core/Hash.h
+        src/Core/UUID.cpp
+        src/Core/UUID.h
 )
 
 add_library(RenderEngineLib STATIC ${ENGINE_LIB_SOURCES})

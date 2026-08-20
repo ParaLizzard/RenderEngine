@@ -71,12 +71,12 @@ constexpr size_t operator""_GB(unsigned long long val) noexcept { return val * 1
  * Enum class bitwise flags helpers
  */
 template<typename EnumType>
-inline constexpr bool EnumHasAnyFlags(EnumType value, EnumType flags) noexcept {
+ENGINE_NODISCARD inline constexpr bool EnumHasAnyFlags(EnumType value, EnumType flags) noexcept {
     using Underlying = std::underlying_type_t<EnumType>;
     return (static_cast<Underlying>(value) & static_cast<Underlying>(flags)) != static_cast<Underlying>(0);
 }
 template<typename EnumType>
-inline constexpr bool EnumHasAllFlags(EnumType value, EnumType flags) noexcept {
+ENGINE_NODISCARD inline constexpr bool EnumHasAllFlags(EnumType value, EnumType flags) noexcept {
     using Underlying = std::underlying_type_t<EnumType>;
     return (static_cast<Underlying>(value) & static_cast<Underlying>(flags)) == static_cast<Underlying>(flags);
 }
@@ -86,19 +86,19 @@ inline constexpr bool EnumHasAllFlags(EnumType value, EnumType flags) noexcept {
  * Allows doing bitwise operation with enum flags (EnumHasAnyFlags function for condition)
  */
 #define ENGINE_ENUM_CLASS_FLAGS(EnumType) \
-inline constexpr EnumType operator|(EnumType a, EnumType b) noexcept { \
+ENGINE_NODISCARD inline constexpr EnumType operator|(EnumType a, EnumType b) noexcept { \
 using Underlying = std::underlying_type_t<EnumType>; \
 return static_cast<EnumType>(static_cast<Underlying>(a) | static_cast<Underlying>(b)); \
 } \
-inline constexpr EnumType operator&(EnumType a, EnumType b) noexcept { \
+ENGINE_NODISCARD inline constexpr EnumType operator&(EnumType a, EnumType b) noexcept { \
 using Underlying = std::underlying_type_t<EnumType>; \
 return static_cast<EnumType>(static_cast<Underlying>(a) & static_cast<Underlying>(b)); \
 } \
-inline constexpr EnumType operator^(EnumType a, EnumType b) noexcept { \
+ENGINE_NODISCARD inline constexpr EnumType operator^(EnumType a, EnumType b) noexcept { \
 using Underlying = std::underlying_type_t<EnumType>; \
 return static_cast<EnumType>(static_cast<Underlying>(a) ^ static_cast<Underlying>(b)); \
 } \
-inline constexpr EnumType operator~(EnumType a) noexcept { \
+ENGINE_NODISCARD inline constexpr EnumType operator~(EnumType a) noexcept { \
 using Underlying = std::underlying_type_t<EnumType>; \
 return static_cast<EnumType>(~static_cast<Underlying>(a)); \
 } \
@@ -110,15 +110,15 @@ inline constexpr EnumType& operator^=(EnumType& a, EnumType b) noexcept { return
  * Fast bitwise alignment
  */
 template<typename T>
-constexpr bool IsPowerOfTwo(T value) noexcept {
+ENGINE_NODISCARD constexpr bool IsPowerOfTwo(T value) noexcept {
     return value > 0 && (value & (value - 1)) == 0;
 }
 template<typename T>
-constexpr T AlignUp(T value, size_t alignment) noexcept {
+ENGINE_NODISCARD constexpr T AlignUp(T value, size_t alignment) noexcept {
     return static_cast<T>((value + static_cast<T>(alignment) - 1) & ~static_cast<T>(alignment - 1));
 }
 template<typename T>
-constexpr T AlignDown(T value, size_t alignment) noexcept {
+ENGINE_NODISCARD constexpr T AlignDown(T value, size_t alignment) noexcept {
     return static_cast<T>(value & ~static_cast<T>(alignment - 1));
 }
 
