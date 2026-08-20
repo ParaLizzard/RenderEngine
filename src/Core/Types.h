@@ -7,6 +7,8 @@
 #include <glm/mat4x4.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+#include "CoreDefines.h"
+
 namespace Engine {
     // Ints
     using uint8  = uint8_t;
@@ -48,13 +50,13 @@ namespace Engine {
         uint32_t height = 0;
         bool operator==(const Extent2D&) const noexcept = default;
 
-        [[nodiscard]] constexpr float AspectRatio() const noexcept {
+        ENGINE_NODISCARD constexpr float AspectRatio() const noexcept {
             return height > 0 ? static_cast<float>(width) / static_cast<float>(height) : 1.0f;
         }
-        [[nodiscard]] constexpr uint64_t Area() const noexcept {
+        ENGINE_NODISCARD constexpr uint64_t Area() const noexcept {
             return static_cast<uint64_t>(width) * height;
         }
-        [[nodiscard]] constexpr bool IsEmpty() const noexcept {
+        ENGINE_NODISCARD constexpr bool IsEmpty() const noexcept {
             return width == 0 || height == 0;
         }
     };
@@ -80,7 +82,7 @@ namespace Engine {
 
         bool operator==(const Rect2D&) const noexcept = default;
 
-        [[nodiscard]] constexpr bool Contains(int32_t px, int32_t py) const noexcept {
+        ENGINE_NODISCARD constexpr bool Contains(int32_t px, int32_t py) const noexcept {
             return px >= offset.x && px < (offset.x + static_cast<int32_t>(extent.width)) &&
                    py >= offset.y && py < (offset.y + static_cast<int32_t>(extent.height));
         }
