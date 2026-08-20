@@ -77,13 +77,13 @@ namespace std {
 
     // Lets you format the UUID to a string
     template<>
-    struct std::formatter<Engine::UUID> : std::formatter<std::string> {
+    struct formatter<Engine::UUID> : std::formatter<std::string> {
         auto format(const Engine::UUID& id, std::format_context& ctx) const {
             return std::formatter<std::string>::format(id.ToString(), ctx);
         }
     };
     template<>
-    struct std::formatter<Engine::UUID128> : std::formatter<std::string> {
+    struct formatter<Engine::UUID128> : std::formatter<std::string> {
         auto format(const Engine::UUID128& id, std::format_context& ctx) const {
             return std::formatter<std::string>::format(id.ToString(), ctx);
         }

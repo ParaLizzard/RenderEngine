@@ -6,7 +6,7 @@
 
 #include <random>
 #include <optional>
-
+#include "Core/Log.h"
 
 namespace Engine
 {
@@ -58,7 +58,7 @@ namespace Engine
     {
         UUID128 id{};
         if (str.size() != 36 && str.size() != 32) {
-            // Engine_Warning there in the future
+            LOG_WARN("UUID", "Invalid UUID string");
             return UUID128{};
         }
 
@@ -70,6 +70,7 @@ namespace Engine
 
             auto nibbleOpt = HexCharToNibble(c);
             if (!nibbleOpt) {
+                LOG_WARN("UUID", "Invalid non-hex character in string");
                 return UUID128{}; // Invalid
             }
 
@@ -82,6 +83,7 @@ namespace Engine
         }
 
         if (hexCount != 32) {
+            LOG_WARN("UUID", "Incomplete or malformed hex string");
             return UUID128{}; // Incomplete or malformed UUID
         }
 
@@ -91,7 +93,7 @@ namespace Engine
     std::string UUID128::ToString() const
     {
         if (!IsValid()) {
-            // Engine_warning here
+            LOG_WARN("UUID", "Converting invalid UUID128 to string");
             return "";
         }
 

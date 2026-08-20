@@ -4,7 +4,7 @@ assets/*
 docs/*
 cmake-build-debug
 cmake-build-release
-
+.agents
 
 !models/.gitkeep
 !assets/.gitkeep
