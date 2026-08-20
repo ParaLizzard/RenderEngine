@@ -282,6 +282,7 @@ set(ENGINE_LIB_SOURCES
         src/Core/UUID.h
         src/Core/Log.cpp
         src/Core/Log.h
+        src/Core/Assert.h
 )
 
 add_library(RenderEngineLib STATIC ${ENGINE_LIB_SOURCES})
