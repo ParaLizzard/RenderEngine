@@ -283,6 +283,8 @@ set(ENGINE_LIB_SOURCES
         src/Core/Log.cpp
         src/Core/Log.h
         src/Core/Assert.h
+        src/Core/Clock.cpp
+        src/Core/Clock.h
 )
 
 add_library(RenderEngineLib STATIC ${ENGINE_LIB_SOURCES})
