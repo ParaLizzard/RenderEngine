@@ -31,8 +31,10 @@ set(TEST_SOURCES
         # Core
         Core/ExceptionTest.cpp
         Core/EngineConfigTest.cpp
+        Core/EngineConstantsTest.cpp
         Core/TypesHashTest.cpp
         Core/LogTest.cpp
+        Core/ClockTest.cpp
         
         # Integration (GPU required)
         Integration/BaselineCaptureTest.cpp

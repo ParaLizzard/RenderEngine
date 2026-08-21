@@ -162,8 +162,19 @@ set(CORE_SOURCES
         src/Core/Application.cpp
         src/Core/Application.h
         src/Core/EngineConfig.h
+        src/Core/EngineConstants.h
         src/Core/Exception.cpp
         src/Core/Exception.h
+        src/Core/Clock.h
+        src/Core/Clock.cpp
+        src/Core/Log.h
+        src/Core/Log.cpp
+        src/Core/Assert.h
+        src/Core/CoreDefines.h
+        src/Core/Types.h
+        src/Core/Hash.h
+        src/Core/UUID.h
+        src/Core/UUID.cpp
 )
 
 set(SYSTEM_SOURCES
@@ -285,6 +296,7 @@ set(ENGINE_LIB_SOURCES
         src/Core/Assert.h
         src/Core/Clock.cpp
         src/Core/Clock.h
+        src/Core/EngineConstants.h
 )
 
 add_library(RenderEngineLib STATIC ${ENGINE_LIB_SOURCES})
