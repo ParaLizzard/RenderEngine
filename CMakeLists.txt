@@ -299,6 +299,8 @@ set(ENGINE_LIB_SOURCES
         src/Core/EngineConstants.h
         src/Core/CVar.cpp
         src/Core/CVar.h
+        src/Core/Config.cpp
+        src/Core/Config.h
 )
 
 add_library(RenderEngineLib STATIC ${ENGINE_LIB_SOURCES})

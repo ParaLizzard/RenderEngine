@@ -13,6 +13,7 @@
 #include <charconv>
 
 #include "CoreDefines.h"
+#include "Log.h"
 
 namespace Engine {
     // Flags for required action or modification
@@ -148,11 +149,11 @@ namespace Engine {
         bool FromString(std::string_view val) override {
             if (HasFlag(CVarFlags::ReadOnly)) return false;
             if constexpr (std::is_same_v<T, bool>) {
-                if (val == "1" || val == "true" || val == "True" || val == "TRUE" || val == "on" || val == "ON") {
+                if (val == "1" || val == "true" || val == "True" || val == "TRUE" || val == "on" || val == "ON" || val == "true" || val == "yes") {
                     Set(true);
                     return true;
                 }
-                if (val == "0" || val == "false" || val == "False" || val == "FALSE" || val == "off" || val == "OFF") {
+                if (val == "0" || val == "false" || val == "False" || val == "FALSE" || val == "off" || val == "OFF"|| val == "no") {
                     Set(false);
                     return true;
                 }
@@ -160,7 +161,7 @@ namespace Engine {
             } else if constexpr (std::is_integral_v<T>) {
                 T parsed = 0;
                 auto [ptr, ec] = std::from_chars(val.data(), val.data() + val.size(), parsed);
-                if (ec == std::errc{}) {
+                if (ec == std::errc{} && ptr == val.data() + val.size()) {
                     Set(parsed);
                     return true;
                 }
@@ -169,7 +170,7 @@ namespace Engine {
                 std::string nullTerminatedStr(val);
                 char* endPtr = nullptr;
                 float parsed = std::strtof(nullTerminatedStr.c_str(), &endPtr);
-                if (endPtr != nullTerminatedStr.c_str()) {
+                if (endPtr != nullTerminatedStr.c_str() && *endPtr == '\0') {
                     Set(static_cast<T>(parsed));
                     return true;
                 }
@@ -194,6 +195,22 @@ namespace Engine {
             return value != defaultValue;
         }
 
+        std::string_view GetTypeName() const noexcept override
+        {
+            if constexpr (std::is_same_v<T, bool>) {
+                return "bool";
+            } else if constexpr (std::is_integral_v<T>) {
+                return "int";
+            } else if constexpr (std::is_floating_point_v<T>) {
+                return "float";
+            } else if constexpr (std::is_same_v<T, std::string>) {
+                return "string";
+            }
+
+            LOG_WARN("CVar", "Unknown type '%s'", typeid(T).name());
+            return "Unknown type";
+        };
+
     private:
         T value;
         T defaultValue;
@@ -203,7 +220,7 @@ namespace Engine {
         std::conditional_t<std::is_trivially_copyable_v<T>, std::atomic<T>, uint8_t> atomicValue{};
 
         std::vector<std::pair<SubscriptionToken, Callback>> callbacks;
-        SubscriptionToken nextToken = 0;
+        SubscriptionToken nextToken = 1;
         mutable std::shared_mutex rwMutex;
     };
 
