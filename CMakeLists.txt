@@ -297,6 +297,8 @@ set(ENGINE_LIB_SOURCES
         src/Core/Clock.cpp
         src/Core/Clock.h
         src/Core/EngineConstants.h
+        src/Core/CVar.cpp
+        src/Core/CVar.h
 )
 
 add_library(RenderEngineLib STATIC ${ENGINE_LIB_SOURCES})
