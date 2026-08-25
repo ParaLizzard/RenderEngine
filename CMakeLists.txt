@@ -301,6 +301,9 @@ set(ENGINE_LIB_SOURCES
         src/Core/CVar.h
         src/Core/Config.cpp
         src/Core/Config.h
+        src/Core/ISubsystem.h
+        src/Core/SubsystemRegistry.cpp
+        src/Core/SubsystemRegistry.h
 )
 
 add_library(RenderEngineLib STATIC ${ENGINE_LIB_SOURCES})

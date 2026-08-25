@@ -151,7 +151,7 @@ namespace Engine {
                     break;
                 }
             }
-            
+
             if (targetSection.empty()) {
                 if (cvarName.starts_with("r.Shadow.")) {
                     targetSection = "Shadows";
