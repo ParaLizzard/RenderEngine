@@ -36,6 +36,7 @@ set(TEST_SOURCES
         Core/LogTest.cpp
         Core/ClockTest.cpp
         Core/CVarTest.cpp
+        Core/ConfigTest.cpp
         
         # Integration (GPU required)
         Integration/BaselineCaptureTest.cpp
