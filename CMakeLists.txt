@@ -189,6 +189,12 @@ set(SYSTEM_SOURCES
         src/System/Input/InputBackendWindows.cpp
         src/System/Input/InputBackendWindows.h
         src/System/Input/InputTypes.h
+        src/System/Events/Event.h
+        src/System/Events/EventDispatcher.cpp
+        src/System/Events/EventDispatcher.h
+        src/System/Events/WindowEvents.h
+        src/System/Events/KeyEvents.h
+        src/System/Input/InputCodes.h
 )
 
 set(THREADING_SOURCES
@@ -304,6 +310,9 @@ set(ENGINE_LIB_SOURCES
         src/Core/ISubsystem.h
         src/Core/SubsystemRegistry.cpp
         src/Core/SubsystemRegistry.h
+        src/Core/Engine.cpp
+        src/Core/Engine.h
+        src/System/Events/MouseEvents.h
 )
 
 add_library(RenderEngineLib STATIC ${ENGINE_LIB_SOURCES})
