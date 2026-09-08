@@ -2,11 +2,12 @@
 #include "Scene/KeyboardMovement.h"
 #include "Vulkan/Device.h"
 #include <memory>
+#include <cmath>
 
-#include "System/Input/InputManager.h"
+#include "System/Input/InputSubsystem.h"
 
 namespace Engine {
-    void KeyboardMovementController::moveInPlaneXZ(InputManager& manager, float dt, std::shared_ptr<GameObject> gameObject)
+    void KeyboardMovementController::moveInPlaneXZ(InputSubsystem& input, float dt, std::shared_ptr<GameObject> gameObject)
     {
         if (!initialized) {
             glm::vec3 forward = gameObject->transform.rotation * glm::vec3(0.0f, 0.0f, 1.0f);
@@ -15,12 +16,12 @@ namespace Engine {
             initialized = true;
         }
 
-        if (manager.IsKeyHeld(KeyCode::Right)) yaw += lookSpeed * dt;
-        if (manager.IsKeyHeld(KeyCode::Left))  yaw -= lookSpeed * dt;
-        if (manager.IsKeyHeld(KeyCode::Up))    pitch += lookSpeed * dt;
-        if (manager.IsKeyHeld(KeyCode::Down))  pitch -= lookSpeed * dt;
+        if (input.IsKeyPressed(KeyCode::Right)) yaw += lookSpeed * dt;
+        if (input.IsKeyPressed(KeyCode::Left))  yaw -= lookSpeed * dt;
+        if (input.IsKeyPressed(KeyCode::Up))    pitch += lookSpeed * dt;
+        if (input.IsKeyPressed(KeyCode::Down))  pitch -= lookSpeed * dt;
 
-        glm::vec2 mouseDelta = manager.GetMouseDelta();
+        glm::vec2 mouseDelta = input.GetMouseDelta();
         yaw += mouseDelta.x * mouseSensitivity;
         pitch -= mouseDelta.y * mouseSensitivity;
 
@@ -40,19 +41,31 @@ namespace Engine {
         glm::vec3 rightDirXZ = glm::normalize(glm::vec3(rightDir.x, 0.0f, rightDir.z));
 
         glm::vec3 moveDir {0.f};
-        if (manager.IsKeyHeld(KeyCode::W))
-            moveDir += forwardDirXZ;
-        if (manager.IsKeyHeld(KeyCode::S))
-            moveDir -= forwardDirXZ;
-        if (manager.IsKeyHeld(KeyCode::D))
-            moveDir += rightDirXZ;
-        if (manager.IsKeyHeld(KeyCode::A))
-            moveDir -= rightDirXZ;
-        if (manager.IsKeyHeld(KeyCode::E))
-            moveDir += upDir;
-        if (manager.IsKeyHeld(KeyCode::Q))
-            moveDir -= upDir;
 
+        float forwardAxis = input.GetAxis("MoveForward");
+        float rightAxis   = input.GetAxis("MoveRight");
+        float upAxis      = input.GetAxis("MoveUp");
+
+        if (std::abs(forwardAxis) > 1e-4f) {
+            moveDir += forwardDirXZ * forwardAxis;
+        } else {
+            if (input.IsKeyPressed(KeyCode::W)) moveDir += forwardDirXZ;
+            if (input.IsKeyPressed(KeyCode::S)) moveDir -= forwardDirXZ;
+        }
+
+        if (std::abs(rightAxis) > 1e-4f) {
+            moveDir += rightDirXZ * rightAxis;
+        } else {
+            if (input.IsKeyPressed(KeyCode::D)) moveDir += rightDirXZ;
+            if (input.IsKeyPressed(KeyCode::A)) moveDir -= rightDirXZ;
+        }
+
+        if (std::abs(upAxis) > 1e-4f) {
+            moveDir += upDir * upAxis;
+        } else {
+            if (input.IsKeyPressed(KeyCode::E)) moveDir += upDir;
+            if (input.IsKeyPressed(KeyCode::Q)) moveDir -= upDir;
+        }
 
         if (glm::dot(moveDir, moveDir) > std::numeric_limits<float>::epsilon()) {
             gameObject->transform.translation += moveSpeed * dt * glm::normalize(moveDir);

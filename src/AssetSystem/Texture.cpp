@@ -3,7 +3,8 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 #include "Vulkan/VkUtils.h"
-#include "Core/EngineConfig.h"
+#include "Core/EngineConstants.h"
+#include "Core/Assert.h"
 
 #include <algorithm>
 
@@ -40,15 +41,11 @@ namespace Engine {
     {
         ktxResult result = KTX_SUCCESS;
 
-        if (!std::filesystem::exists(filename)) {
-            throw std::runtime_error("Texture: File does not exist: " + filename);
-        }
+        ENGINE_VERIFY(std::filesystem::exists(filename), "Texture: File does not exist: {}", filename);
 
         result = ktxTexture_CreateFromNamedFile(filename.c_str(), KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, target);
 
-        if (result != KTX_SUCCESS) {
-            throw std::runtime_error("Texture: Failed to load texture: " + filename);
-        }
+        ENGINE_VERIFY(result == KTX_SUCCESS, "Texture: Failed to load texture: {}", filename);
 
         return result;
     }
@@ -110,9 +107,7 @@ namespace Engine {
         ktxTexture *ktxTexture;
         ktxResult result = loadKTXFile(filename, &ktxTexture);
 
-        if (result != KTX_SUCCESS) {
-            throw std::runtime_error("Failed to load KTX texture: " + filename);
-        }
+        ENGINE_VERIFY(result == KTX_SUCCESS, "Failed to load KTX texture: {}", filename);
 
         this->device = device;
         width = ktxTexture->baseWidth;
@@ -131,7 +126,7 @@ namespace Engine {
         for (uint32_t i = 0; i < mipLevels; i++) {
             ktx_size_t offset;
             KTX_error_code result = ktxTexture_GetImageOffset(ktxTexture, i, 0, 0, &offset);
-            assert(result == KTX_SUCCESS);
+            ENGINE_ASSERT(result == KTX_SUCCESS, "Texture: Failed to get KTX image offset");
 
             VkBufferImageCopy bufferCopyRegion = {};
             bufferCopyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -163,9 +158,7 @@ namespace Engine {
 
         VkResult imageResult =
             vmaCreateImage(device->getAllocator(), &imageCreateInfo, &allocInfo, &image, &allocation, {});
-        if (imageResult != VK_SUCCESS) {
-            throw std::runtime_error("Failed to allocate texture image for: " + filename);
-        }
+        ENGINE_VERIFY(imageResult == VK_SUCCESS, "Failed to allocate texture image for: {}", filename);
 
         VkCommandBuffer copyCmd = device->beginSingleTimeCommands();
 
@@ -201,23 +194,23 @@ namespace Engine {
                                                .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
                                                .mipLodBias = 0.0f,
                                                .anisotropyEnable = VK_TRUE,
-                                               .maxAnisotropy = std::min(Config::MATERIAL_MAX_ANISOTROPY, device->getMaxAnisotropy()),
+                                               .maxAnisotropy = std::min(Constants::MATERIAL_MAX_ANISOTROPY, device->getMaxAnisotropy()),
                                                .compareOp = VK_COMPARE_OP_NEVER,
                                                .minLod = 0.0f,
                                                .maxLod = (float)mipLevels,
                                                .borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE};
-        if (vkCreateSampler(device->getDevice(), &samplerCreateInfo, nullptr, &sampler) != VK_SUCCESS) {
-            throw std::runtime_error("Texture: Failed to create sampler for texture: " + filename);
-        }
+        ENGINE_VERIFY(
+            vkCreateSampler(device->getDevice(), &samplerCreateInfo, nullptr, &sampler) == VK_SUCCESS,
+            "Texture: Failed to create sampler for texture: {}", filename);
 
         VkImageViewCreateInfo viewCreateInfo {.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
                                               .image = image,
                                               .viewType = VK_IMAGE_VIEW_TYPE_2D,
                                               .format = format,
                                               .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, mipLevels, 0, 1}};
-        if (vkCreateImageView(device->getDevice(), &viewCreateInfo, nullptr, &view) != VK_SUCCESS) {
-            throw std::runtime_error("Texture: failed to create texture image view!");
-        }
+        ENGINE_VERIFY(
+            vkCreateImageView(device->getDevice(), &viewCreateInfo, nullptr, &view) == VK_SUCCESS,
+            "Texture: failed to create texture image view!");
 
         updateDescriptor();
 
@@ -235,7 +228,7 @@ namespace Engine {
                            VkImageUsageFlags imageUsageFlags,
                            VkImageLayout imageLayout)
 {
-    assert(buffer);
+    ENGINE_ASSERT(buffer != nullptr, "Texture2D::fromBuffer: buffer is null");
 
     this->device = device;
 
@@ -251,9 +244,7 @@ namespace Engine {
                                        &imgChannels,
                                        STBI_rgb_alpha);
 
-        if (!pixels) {
-            throw std::runtime_error("Texture: Failed to decode image from memory!");
-        }
+        ENGINE_VERIFY(pixels != nullptr, "Texture: Failed to decode image from memory!");
 
         this->width = static_cast<uint32_t>(imgWidth);
         this->height = static_cast<uint32_t>(imgHeight);
@@ -265,10 +256,9 @@ namespace Engine {
         pixels = reinterpret_cast<stbi_uc *>(buffer);
     }
 
-    // Check if the format is Block Compressed (BC1 - BC7)
+    // Check if the format is Block Compressed
     const bool isBlockCompressed = (format >= VK_FORMAT_BC1_RGB_UNORM_BLOCK && format <= VK_FORMAT_BC7_SRGB_BLOCK);
 
-    // BC formats cannot be blitted with vkCmdBlitImage on GPU hardware
     if (isBlockCompressed) {
         mipLevels = 1;
     } else {
@@ -301,9 +291,7 @@ namespace Engine {
 
     VkResult imageResult =
         vmaCreateImage(device->getAllocator(), &imageCreateInfo, &allocInfo, &image, &allocation, {});
-    if (imageResult != VK_SUCCESS) {
-        throw std::runtime_error("Failed to allocate texture image");
-    }
+    ENGINE_VERIFY(imageResult == VK_SUCCESS, "Failed to allocate texture image");
 
     VkCommandBuffer commandBuffer = device->beginSingleTimeCommands();
 
@@ -418,9 +406,9 @@ namespace Engine {
     viewInfo.format = format;
     viewInfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, mipLevels, 0, 1};
 
-    if (vkCreateImageView(device->getDevice(), &viewInfo, nullptr, &view) != VK_SUCCESS) {
-        throw std::runtime_error("Texture: failed to create texture image view!");
-    }
+    ENGINE_VERIFY(
+        vkCreateImageView(device->getDevice(), &viewInfo, nullptr, &view) == VK_SUCCESS,
+        "Texture: failed to create texture image view!");
 
     VkSamplerCreateInfo samplerInfo {VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
     samplerInfo.magFilter = filter;
@@ -434,11 +422,11 @@ namespace Engine {
     samplerInfo.mipLodBias = 0.0f;
 
     samplerInfo.anisotropyEnable = VK_TRUE;
-    samplerInfo.maxAnisotropy = std::min(Config::MATERIAL_MAX_ANISOTROPY, device->getMaxAnisotropy());
+    samplerInfo.maxAnisotropy = std::min(Constants::MATERIAL_MAX_ANISOTROPY, device->getMaxAnisotropy());
 
-    if (vkCreateSampler(device->getDevice(), &samplerInfo, nullptr, &sampler) != VK_SUCCESS) {
-        throw std::runtime_error("Texture: failed to create texture sampler!");
-    }
+    ENGINE_VERIFY(
+        vkCreateSampler(device->getDevice(), &samplerInfo, nullptr, &sampler) == VK_SUCCESS,
+        "Texture: failed to create texture sampler!");
 
     updateDescriptor();
 
@@ -453,8 +441,7 @@ namespace Engine {
                            VkImageUsageFlags imageUsageFlags,
                            VkImageLayout imageLayout)
 {
-    if (!ktxTexPtr)
-        throw std::runtime_error("Texture: KTX Pointer is null");
+    ENGINE_VERIFY(ktxTexPtr != nullptr, "Texture: KTX Pointer is null");
 
     ktxTexture *ktxTexture = reinterpret_cast<::ktxTexture *>(ktxTexPtr);
 
@@ -536,9 +523,9 @@ namespace Engine {
     VmaAllocationCreateInfo allocInfo {};
     allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-    if (vmaCreateImage(device->getAllocator(), &imageCreateInfo, &allocInfo, &image, &allocation, {}) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to allocate KTX texture image");
-    }
+    ENGINE_VERIFY(
+        vmaCreateImage(device->getAllocator(), &imageCreateInfo, &allocInfo, &image, &allocation, {}) == VK_SUCCESS,
+        "Failed to allocate KTX texture image");
 
     VkCommandBuffer copyCmd = device->beginSingleTimeCommands();
     VkImageSubresourceRange subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, mipLevels, 0, 1};
@@ -567,9 +554,9 @@ namespace Engine {
         .format = format,
         .subresourceRange = subresourceRange
     };
-    if (vkCreateImageView(device->getDevice(), &viewCreateInfo, nullptr, &view) != VK_SUCCESS) {
-        throw std::runtime_error("Texture: Failed to create image view for KTX texture");
-    }
+    ENGINE_VERIFY(
+        vkCreateImageView(device->getDevice(), &viewCreateInfo, nullptr, &view) == VK_SUCCESS,
+        "Texture: Failed to create image view for KTX texture");
 
     VkSamplerCreateInfo samplerCreateInfo {
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -581,15 +568,15 @@ namespace Engine {
         .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
         .mipLodBias = 0.0f,
         .anisotropyEnable = VK_TRUE,
-        .maxAnisotropy = std::min(Config::MATERIAL_MAX_ANISOTROPY, device->getMaxAnisotropy()),
+        .maxAnisotropy = std::min(Constants::MATERIAL_MAX_ANISOTROPY, device->getMaxAnisotropy()),
         .compareOp = VK_COMPARE_OP_NEVER,
         .minLod = 0.0f,
         .maxLod = static_cast<float>(mipLevels),
         .borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE
     };
-    if (vkCreateSampler(device->getDevice(), &samplerCreateInfo, nullptr, &sampler) != VK_SUCCESS) {
-        throw std::runtime_error("Texture: Failed to create sampler for KTX texture");
-    }
+    ENGINE_VERIFY(
+        vkCreateSampler(device->getDevice(), &samplerCreateInfo, nullptr, &sampler) == VK_SUCCESS,
+        "Texture: Failed to create sampler for KTX texture");
 
     updateDescriptor();
     this->heapHandle = resourceHeap.registerTexture(this->descriptor);
@@ -625,9 +612,7 @@ namespace Engine {
 
         VkResult imageResult =
             vmaCreateImage(device->getAllocator(), &imageCreateInfo, &allocInfo, &image, &allocation, {});
-        if (imageResult != VK_SUCCESS) {
-            throw std::runtime_error("Failed to allocate texture image");
-        }
+        ENGINE_VERIFY(imageResult == VK_SUCCESS, "Failed to allocate texture image");
 
         VkCommandBuffer commandBuffer = device->beginSingleTimeCommands();
 
@@ -669,9 +654,9 @@ namespace Engine {
         viewInfo.format = imageFormat;
         viewInfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
-        if (vkCreateImageView(device->getDevice(), &viewInfo, nullptr, &view) != VK_SUCCESS) {
-            throw std::runtime_error("Texture: Failed to create default texture image view");
-        }
+        ENGINE_VERIFY(
+            vkCreateImageView(device->getDevice(), &viewInfo, nullptr, &view) == VK_SUCCESS,
+            "Texture: Failed to create default texture image view");
 
         VkSamplerCreateInfo samplerInfo {VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
         samplerInfo.magFilter = VK_FILTER_LINEAR;
@@ -687,9 +672,9 @@ namespace Engine {
         samplerInfo.compareEnable = VK_FALSE;
         samplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
 
-        if (vkCreateSampler(device->getDevice(), &samplerInfo, nullptr, &sampler) != VK_SUCCESS) {
-            throw std::runtime_error("Texture: Failed to create default texture sampler");
-        }
+        ENGINE_VERIFY(
+            vkCreateSampler(device->getDevice(), &samplerInfo, nullptr, &sampler) == VK_SUCCESS,
+            "Texture: Failed to create default texture sampler");
 
         this->device = device;
         width = 1;
@@ -713,9 +698,7 @@ namespace Engine {
         ktxTexture *ktxTexture;
         ktxResult result = loadKTXFile(filename, &ktxTexture);
 
-        if (result != KTX_SUCCESS) {
-            throw std::runtime_error("Texture: Failed to load KTX texture array: " + filename);
-        }
+        ENGINE_VERIFY(result == KTX_SUCCESS, "Texture: Failed to load KTX texture array: {}", filename);
 
         this->device = device;
         width = ktxTexture->baseWidth;
@@ -736,7 +719,7 @@ namespace Engine {
             for (uint32_t level = 0; level < mipLevels; level++) {
                 ktx_size_t offset;
                 KTX_error_code result = ktxTexture_GetImageOffset(ktxTexture, level, layer, 0, &offset);
-                assert(result == KTX_SUCCESS);
+                ENGINE_ASSERT(result == KTX_SUCCESS, "Texture2DArray: Failed to get KTX image offset");
 
                 VkBufferImageCopy bufferCopyRegion = {};
                 bufferCopyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -770,9 +753,7 @@ namespace Engine {
 
         VkResult imageResult =
             vmaCreateImage(device->getAllocator(), &imageCreateInfo, &allocInfo, &image, &allocation, {});
-        if (imageResult != VK_SUCCESS) {
-            throw std::runtime_error("Failed to allocate texture array image for: " + filename);
-        }
+        ENGINE_VERIFY(imageResult == VK_SUCCESS, "Failed to allocate texture array image for: {}", filename);
 
         VkCommandBuffer copyCmd = device->beginSingleTimeCommands();
 
@@ -810,14 +791,14 @@ namespace Engine {
                                                .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
                                                .mipLodBias = 0.0f,
                                                .anisotropyEnable = VK_TRUE,
-                                               .maxAnisotropy = std::min(Config::MATERIAL_MAX_ANISOTROPY, device->getMaxAnisotropy()),
+                                               .maxAnisotropy = std::min(Constants::MATERIAL_MAX_ANISOTROPY, device->getMaxAnisotropy()),
                                                .compareOp = VK_COMPARE_OP_NEVER,
                                                .minLod = 0.0f,
                                                .maxLod = (float)mipLevels,
                                                .borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE};
-        if (vkCreateSampler(device->getDevice(), &samplerCreateInfo, nullptr, &sampler) != VK_SUCCESS) {
-            throw std::runtime_error("Texture: Failed to create sampler for texture: " + filename);
-        }
+        ENGINE_VERIFY(
+            vkCreateSampler(device->getDevice(), &samplerCreateInfo, nullptr, &sampler) == VK_SUCCESS,
+            "Texture: Failed to create sampler for texture: {}", filename);
 
         VkImageViewCreateInfo viewCreateInfo {
             .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -825,9 +806,9 @@ namespace Engine {
             .viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY,
             .format = format,
             .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, mipLevels, 0, layerCount}};
-        if (vkCreateImageView(device->getDevice(), &viewCreateInfo, nullptr, &view) != VK_SUCCESS) {
-            throw std::runtime_error("Texture: failed to create texture image view!");
-        }
+        ENGINE_VERIFY(
+            vkCreateImageView(device->getDevice(), &viewCreateInfo, nullptr, &view) == VK_SUCCESS,
+            "Texture: failed to create texture image view!");
 
         updateDescriptor();
 
@@ -844,9 +825,7 @@ namespace Engine {
         ktxTexture *ktxTexture;
         ktxResult result = loadKTXFile(filename, &ktxTexture);
 
-        if (result != KTX_SUCCESS) {
-            throw std::runtime_error("Failed to load cubemap texture from " + filename);
-        }
+        ENGINE_VERIFY(result == KTX_SUCCESS, "Failed to load cubemap texture from {}", filename);
 
         this->device = device;
         width = ktxTexture->baseWidth;
@@ -866,7 +845,7 @@ namespace Engine {
             for (uint32_t level = 0; level < mipLevels; level++) {
                 ktx_size_t offset;
                 KTX_error_code ktxResult = ktxTexture_GetImageOffset(ktxTexture, level, 0, face, &offset);
-                assert(ktxResult == KTX_SUCCESS);
+                ENGINE_ASSERT(ktxResult == KTX_SUCCESS, "TextureCubeMap: Failed to get KTX image offset");
 
                 VkBufferImageCopy bufferCopyRegion = {};
                 bufferCopyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -900,9 +879,7 @@ namespace Engine {
 
         VkResult imageResult =
             vmaCreateImage(device->getAllocator(), &imageCreateInfo, &allocInfo, &image, &allocation, {});
-        if (imageResult != VK_SUCCESS) {
-            throw std::runtime_error("Texture: Failed to allocate cubemap image for: " + filename);
-        }
+        ENGINE_VERIFY(imageResult == VK_SUCCESS, "Texture: Failed to allocate cubemap image for: {}", filename);
 
         VkCommandBuffer copyCmd = device->beginSingleTimeCommands();
 
@@ -940,23 +917,23 @@ namespace Engine {
                                                .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
                                                .mipLodBias = 0.0f,
                                                .anisotropyEnable = VK_TRUE,
-                                               .maxAnisotropy = std::min(Config::MATERIAL_MAX_ANISOTROPY, device->getMaxAnisotropy()),
+                                               .maxAnisotropy = std::min(Constants::MATERIAL_MAX_ANISOTROPY, device->getMaxAnisotropy()),
                                                .compareOp = VK_COMPARE_OP_NEVER,
                                                .minLod = 0.0f,
                                                .maxLod = (float)mipLevels,
                                                .borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE};
-        if (vkCreateSampler(device->getDevice(), &samplerCreateInfo, nullptr, &sampler) != VK_SUCCESS) {
-            throw std::runtime_error("Texture: Failed to create sampler for texture: " + filename);
-        }
+        ENGINE_VERIFY(
+            vkCreateSampler(device->getDevice(), &samplerCreateInfo, nullptr, &sampler) == VK_SUCCESS,
+            "Texture: Failed to create sampler for texture: {}", filename);
 
         VkImageViewCreateInfo viewCreateInfo {.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
                                               .image = image,
                                               .viewType = VK_IMAGE_VIEW_TYPE_CUBE,
                                               .format = format,
                                               .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, mipLevels, 0, 6}};
-        if (vkCreateImageView(device->getDevice(), &viewCreateInfo, nullptr, &view) != VK_SUCCESS) {
-            throw std::runtime_error("Texture: failed to create texture image view!");
-        }
+        ENGINE_VERIFY(
+            vkCreateImageView(device->getDevice(), &viewCreateInfo, nullptr, &view) == VK_SUCCESS,
+            "Texture: failed to create texture image view!");
 
         updateDescriptor();
 
@@ -976,9 +953,9 @@ namespace Engine {
         bool isHDR = stbi_is_hdr(filenames[0].c_str());
         int texWidth = 0, texHeight = 0, texChannels = 0;
 
-        if (!stbi_info(filenames[0].c_str(), &texWidth, &texHeight, &texChannels)) {
-            throw std::runtime_error("TextureCubeMap: Failed to read image info from: " + filenames[0]);
-        }
+        ENGINE_VERIFY(
+            stbi_info(filenames[0].c_str(), &texWidth, &texHeight, &texChannels),
+            "TextureCubeMap: Failed to read image info from: {}", filenames[0]);
         this->width = static_cast<uint32_t>(texWidth);
         this->height = static_cast<uint32_t>(texHeight);
         this->mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
@@ -1000,13 +977,11 @@ namespace Engine {
                 pixels = stbi_load(filenames[i].c_str(), &w, &h, &c, STBI_rgb_alpha);
             }
 
-            if (!pixels) {
-                throw std::runtime_error("TextureCubeMap: Failed to load cubemap face: " + filenames[i]);
-            }
+            ENGINE_VERIFY(pixels != nullptr, "TextureCubeMap: Failed to load cubemap face: {}", filenames[i]);
             if (w != width || h != height) {
                 stbi_image_free(pixels);
-                throw std::runtime_error("TextureCubeMap: Cubemap faces have differing dimensions! Check face: " +
-                                         filenames[i]);
+                ENGINE_VERIFY(false, "TextureCubeMap: Cubemap faces have differing dimensions! Check face: {}",
+                              filenames[i]);
             }
 
             stgBuffer.writeToBuffer(pixels, faceSize, faceSize * i);
@@ -1032,10 +1007,10 @@ namespace Engine {
         VmaAllocationCreateInfo allocInfo {};
         allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-        if (vmaCreateImage(device->getAllocator(), &imageCreateInfo, &allocInfo, &image, &allocation, {}) !=
-            VK_SUCCESS) {
-            throw std::runtime_error("TextureCubeMap: Failed to allocate cubemap image");
-        }
+        ENGINE_VERIFY(
+            vmaCreateImage(device->getAllocator(), &imageCreateInfo, &allocInfo, &image, &allocation, {}) ==
+                VK_SUCCESS,
+            "TextureCubeMap: Failed to allocate cubemap image");
 
         VkCommandBuffer copyCmd = device->beginSingleTimeCommands();
 
@@ -1136,15 +1111,15 @@ namespace Engine {
                                                .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
                                                .mipLodBias = 0.0f,
                                                .anisotropyEnable = VK_TRUE,
-                                               .maxAnisotropy = std::min(Config::MATERIAL_MAX_ANISOTROPY, device->getMaxAnisotropy()),
+                                               .maxAnisotropy = std::min(Constants::MATERIAL_MAX_ANISOTROPY, device->getMaxAnisotropy()),
                                                .compareOp = VK_COMPARE_OP_NEVER,
                                                .minLod = 0.0f,
                                                .maxLod = static_cast<float>(mipLevels),
                                                .borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE};
 
-        if (vkCreateSampler(device->getDevice(), &samplerCreateInfo, nullptr, &sampler) != VK_SUCCESS) {
-            throw std::runtime_error("TextureCubeMap: Failed to create sampler");
-        }
+        ENGINE_VERIFY(
+            vkCreateSampler(device->getDevice(), &samplerCreateInfo, nullptr, &sampler) == VK_SUCCESS,
+            "TextureCubeMap: Failed to create sampler");
 
         VkImageViewCreateInfo viewCreateInfo {.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
                                               .image = image,
@@ -1152,9 +1127,9 @@ namespace Engine {
                                               .format = format,
                                               .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, mipLevels, 0, 6}};
 
-        if (vkCreateImageView(device->getDevice(), &viewCreateInfo, nullptr, &view) != VK_SUCCESS) {
-            throw std::runtime_error("TextureCubeMap: Failed to create image view");
-        }
+        ENGINE_VERIFY(
+            vkCreateImageView(device->getDevice(), &viewCreateInfo, nullptr, &view) == VK_SUCCESS,
+            "TextureCubeMap: Failed to create image view");
 
         updateDescriptor();
         this->heapHandle = resourceHeap.registerTexture(this->descriptor);

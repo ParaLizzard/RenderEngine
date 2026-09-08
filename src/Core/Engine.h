@@ -31,6 +31,7 @@ namespace Engine {
 
         // Get engine clock
         const Clock& GetClock() const noexcept { return clock; }
+        Clock& GetClock() noexcept { return clock; }
 
         // Get engine config
         ConfigFile& GetConfig() noexcept { return config; }
@@ -39,6 +40,7 @@ namespace Engine {
         Engine() = default;
 
         bool running = false;
+        std::string currentConfigFile = "config/engine.ini";
         Clock clock;
         ConfigFile config;
         SubsystemRegistry subsystems;

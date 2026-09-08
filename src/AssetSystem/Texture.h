@@ -1,9 +1,7 @@
 #pragma once
 
 #include <array>
-#include <cassert>
 #include <cmath>
-#include <iostream>
 #include <vulkan/vulkan.h>
 #include <filesystem>
 #include <ktxvulkan.h>

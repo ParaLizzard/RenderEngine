@@ -1,5 +1,7 @@
 #include "Renderer/Passes/TonemapPassNode.h"
-#include "Core/EngineConfig.h"
+#include "Core/Assert.h"
+#include "Core/EngineConstants.h"
+#include "Renderer/RenderSettings.h"
 
 #include "Renderer/Renderer.h"
 #include "Renderer/ShaderUtils.h"
@@ -29,7 +31,7 @@ namespace Engine {
 
     void TonemapPassNode::setup(RenderGraphBuilder &renderGraph)
     {
-        const std::string inputImageName = (Config::CURRENT_AA_METHOD == TAA) ? "TaaOutput" : "FinalRender";
+        const std::string inputImageName = (CVarAAMethod.Get() == 2) ? "TaaOutput" : "FinalRender";
 
         renderGraph.readImage(inputImageName,
                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
@@ -41,7 +43,7 @@ namespace Engine {
                               VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
                               VK_ACCESS_2_SHADER_READ_BIT);
 
-        if (Config::CURRENT_AA_METHOD == FXAA) {
+        if (CVarAAMethod.Get() == 1) {
             VkExtent2D extent = renderer.getSwapChain().getSwapChainExtent();
             renderGraph.createTransientImage("TonemapOutput",
                                              renderer.getSwapChain().getSwapChainImageFormat(),
@@ -72,7 +74,7 @@ namespace Engine {
 
     void TonemapPassNode::resolve(RenderGraph &graph, const FrameInfo &frameInfo)
     {
-        const std::string inputImageName = (Config::CURRENT_AA_METHOD == TAA) ? "TaaOutput" : "FinalRender";
+        const std::string inputImageName = (CVarAAMethod.Get() == 2) ? "TaaOutput" : "FinalRender";
 
         VkDescriptorImageInfo imageInfo {};
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -106,7 +108,7 @@ namespace Engine {
 
     void TonemapPassNode::execute(VkCommandBuffer &cmd, FrameInfo &frameInfo)
     {
-        const std::string outputImageName = (Config::CURRENT_AA_METHOD == FXAA) ? "TonemapOutput" : "SwapChainImage";
+        const std::string outputImageName = (CVarAAMethod.Get() == 1) ? "TonemapOutput" : "SwapChainImage";
 
         VkRenderingAttachmentInfo colorAttachment {};
         colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -162,13 +164,15 @@ namespace Engine {
             int agxPunchy;
             int pad;
         };
+        int debugMode = CVarHiZDebugMode.Get() != 0 ? CVarHiZDebugMode.Get() : frameInfo.debugViewMode;
+        int debugMipLevel = CVarHiZDebugMip.Get() != 0 ? CVarHiZDebugMip.Get() : frameInfo.debugHiZMipLevel;
         TonemapPushConstants pushConstants {
-            frameInfo.debugViewMode,
-            frameInfo.debugHiZMipLevel,
+            debugMode,
+            debugMipLevel,
             glm::vec2((frameInfo.extent.width * 0.5f) / hizExt.width, (frameInfo.extent.height * 0.5f) / hizExt.height),
-            static_cast<int>(Config::CURRENT_TONEMAP_METHOD),
-            Config::AGX_EXPOSURE,
-            Config::AGX_PUNCHY ? 1 : 0,
+            CVarTonemapMethod.Get(),
+            CVarTonemapExposure.Get(),
+            Constants::AGX_PUNCHY ? 1 : 0,
             0
         };
         vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(TonemapPushConstants), &pushConstants);
@@ -189,8 +193,8 @@ namespace Engine {
         samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
 
-        if (vkCreateSampler(device.getDevice(), &samplerInfo, nullptr, &sampler) != VK_SUCCESS)
-            throw std::runtime_error("Tonemap: failed to create sampler!");
+        ENGINE_VERIFY(vkCreateSampler(device.getDevice(), &samplerInfo, nullptr, &sampler) == VK_SUCCESS,
+            "Tonemap: failed to create sampler!");
 
         VkDescriptorSetLayoutBinding bindings[2] {};
         bindings[0].binding = 0;
@@ -210,32 +214,32 @@ namespace Engine {
         layoutInfo.bindingCount = 2;
         layoutInfo.pBindings = bindings;
 
-        if (vkCreateDescriptorSetLayout(device.getDevice(), &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS)
-            throw std::runtime_error("Tonemap: failed to create descriptor set layout!");
+        ENGINE_VERIFY(vkCreateDescriptorSetLayout(device.getDevice(), &layoutInfo, nullptr, &descriptorSetLayout) == VK_SUCCESS,
+            "Tonemap: failed to create descriptor set layout!");
 
         VkDescriptorPoolSize poolSize {};
         poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        poolSize.descriptorCount = static_cast<uint32_t>(Config::MAX_FRAMES_IN_FLIGHT * 2);
+        poolSize.descriptorCount = static_cast<uint32_t>(Constants::MAX_FRAMES_IN_FLIGHT * 2);
 
         VkDescriptorPoolCreateInfo poolInfo {};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         poolInfo.poolSizeCount = 1;
         poolInfo.pPoolSizes = &poolSize;
-        poolInfo.maxSets = static_cast<uint32_t>(Config::MAX_FRAMES_IN_FLIGHT);
+        poolInfo.maxSets = static_cast<uint32_t>(Constants::MAX_FRAMES_IN_FLIGHT);
 
-        if (vkCreateDescriptorPool(device.getDevice(), &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS)
-            throw std::runtime_error("Tonemap: failed to create descriptor pool!");
+        ENGINE_VERIFY(vkCreateDescriptorPool(device.getDevice(), &poolInfo, nullptr, &descriptorPool) == VK_SUCCESS,
+            "Tonemap: failed to create descriptor pool!");
 
-        std::vector<VkDescriptorSetLayout> layouts(Config::MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
+        std::vector<VkDescriptorSetLayout> layouts(Constants::MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
         VkDescriptorSetAllocateInfo allocInfo {};
         allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         allocInfo.descriptorPool = descriptorPool;
-        allocInfo.descriptorSetCount = static_cast<uint32_t>(Config::MAX_FRAMES_IN_FLIGHT);
+        allocInfo.descriptorSetCount = static_cast<uint32_t>(Constants::MAX_FRAMES_IN_FLIGHT);
         allocInfo.pSetLayouts = layouts.data();
 
-        descriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        if (vkAllocateDescriptorSets(device.getDevice(), &allocInfo, descriptorSets.data()) != VK_SUCCESS)
-            throw std::runtime_error("Tonemap: failed to allocate descriptor sets!");
+        descriptorSets.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        ENGINE_VERIFY(vkAllocateDescriptorSets(device.getDevice(), &allocInfo, descriptorSets.data()) == VK_SUCCESS,
+            "Tonemap: failed to allocate descriptor sets!");
 
         struct TonemapPushConstants {
             int debugMode;
@@ -259,8 +263,8 @@ namespace Engine {
         pipelineLayoutInfo.pushConstantRangeCount = 1;
         pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
-        if (vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS)
-            throw std::runtime_error("Tonemap: failed to create pipeline layout");
+        ENGINE_VERIFY(vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &pipelineLayout) == VK_SUCCESS,
+            "Tonemap: failed to create pipeline layout");
     }
 
     void TonemapPassNode::createPipeline()
@@ -367,11 +371,9 @@ namespace Engine {
         pipelineInfo.renderPass = VK_NULL_HANDLE;
         pipelineInfo.subpass = 0;
 
-        if (vkCreateGraphicsPipelines(
-                device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, nullptr, &graphicsPipeline) !=
-            VK_SUCCESS) {
-            throw std::runtime_error("Tonemap: failed to create graphics pipeline");
-        }
+        ENGINE_VERIFY(vkCreateGraphicsPipelines(
+                device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, nullptr, &graphicsPipeline) == VK_SUCCESS,
+            "Tonemap: failed to create graphics pipeline");
 
         vkDestroyShaderModule(device.getDevice(), vertShaderModule, nullptr);
         vkDestroyShaderModule(device.getDevice(), fragShaderModule, nullptr);

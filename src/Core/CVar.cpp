@@ -6,6 +6,11 @@ namespace Engine {
     CVarBase::CVarBase(std::string_view name, std::string_view description, CVarFlags flags) : name(name), description(description), flags(flags)
     {}
 
+    CVarBase::~CVarBase()
+    {
+        CVarSystem::Get().Unregister(name, this);
+    }
+
     CVarSystem & CVarSystem::Get()
     {
         static CVarSystem instance;
@@ -24,11 +29,27 @@ namespace Engine {
         std::string result(name);
         std::transform(result.begin(), result.end(), result.begin(), [](char c) {return std::tolower(c);});
 
-        if (cvars[result] != nullptr) {
-            LOG_WARN("CVar","CVar with the same name already registered");
+        auto it = cvars.find(result);
+        if (it != cvars.end() && it->second != nullptr) {
+            if (it->second == cvar) {
+                return;
+            }
+            LOG_WARN("CVar", "CVar with the same name already registered: {}", name);
         }
 
         cvars[result] = cvar;
+    }
+
+    void CVarSystem::Unregister(std::string_view name, CVarBase *expected)
+    {
+        std::unique_lock<std::shared_mutex> lock(mutex);
+        std::string result(name);
+        std::transform(result.begin(), result.end(), result.begin(), [](char c) {return std::tolower(c);});
+
+        auto it = cvars.find(result);
+        if (it != cvars.end() && (expected == nullptr || it->second == expected)) {
+            cvars.erase(it);
+        }
     }
 
     CVarBase * CVarSystem::Find(std::string_view name)

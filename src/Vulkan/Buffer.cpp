@@ -8,9 +8,9 @@
 #include "Vulkan/Buffer.h"
 
 #include <cstring>
-#include <stdexcept>
 #include <vulkan/vulkan.h>
 
+#include "Core/Assert.h"
 #include "Vulkan/Device.h"
 
 namespace Engine {
@@ -43,9 +43,7 @@ namespace Engine {
                               VmaAllocation &allocation,
                               VmaAllocationInfo *pResultInfo)
     {
-        if (size == 0) {
-            throw std::runtime_error("Buffers: Attempted to create a buffer of size 0");
-        }
+        ENGINE_VERIFY(size > 0, "Buffers: Attempted to create a buffer of size 0");
 
         VkBufferCreateInfo bufferInfo {};
         bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -76,9 +74,7 @@ namespace Engine {
             result = vmaCreateBuffer(device.getAllocator(), &bufferInfo, &allocInfo, &buffer, &allocation, pResultInfo);
         }
 
-        if (result != VK_SUCCESS) {
-            throw std::runtime_error("Buffers: failed to create VMA buffer");
-        }
+        ENGINE_VERIFY(result == VK_SUCCESS, "Buffers: failed to create VMA buffer");
     }
 
     void Buffer::copyBuffer(VkBuffer dstBuffer, VkDeviceSize size)
@@ -125,7 +121,7 @@ namespace Engine {
 
     void Buffer::writeToBuffer(const void *data, VkDeviceSize size, VkDeviceSize offset)
     {
-        assert(mapped && "Cannot copy to unmapped buffer");
+        ENGINE_ASSERT(mapped != nullptr, "Cannot copy to unmapped buffer");
 
         if (size == VK_WHOLE_SIZE) {
             memcpy(mapped, data, bufferSize);

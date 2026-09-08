@@ -6,6 +6,7 @@
 #include "AssetSystem/Model.h"
 
 #include "Renderer/ShaderUtils.h"
+#include "Core/Assert.h"
 
 
 namespace Engine {
@@ -59,10 +60,10 @@ namespace Engine {
         VmaAllocationCreateInfo allocInfo {};
         allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-        if (vmaCreateImage(device.getAllocator(), &imageCI, &allocInfo, &BRDFLUT.image, &BRDFallocation, {}) !=
-            VK_SUCCESS) {
-            throw std::runtime_error("IBL: Failed to create Vulkan image!");
-        }
+        ENGINE_VERIFY(
+            vmaCreateImage(device.getAllocator(), &imageCI, &allocInfo, &BRDFLUT.image, &BRDFallocation, {}) ==
+                VK_SUCCESS,
+            "IBL: Failed to create Vulkan image!");
 
         VkImageViewCreateInfo viewCI {};
         viewCI.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -73,9 +74,9 @@ namespace Engine {
         viewCI.subresourceRange.levelCount = 1;
         viewCI.subresourceRange.layerCount = 1;
         viewCI.image = BRDFLUT.image;
-        if (vkCreateImageView(device.getDevice(), &viewCI, nullptr, &BRDFLUT.imageView) != VK_SUCCESS) {
-            throw std::runtime_error("IBL: Failed to create Vulkan image views!");
-        }
+        ENGINE_VERIFY(
+            vkCreateImageView(device.getDevice(), &viewCI, nullptr, &BRDFLUT.imageView) == VK_SUCCESS,
+            "IBL: Failed to create Vulkan image views!");
 
         VkSamplerCreateInfo samplerCI {};
         samplerCI.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -89,18 +90,18 @@ namespace Engine {
         samplerCI.minLod = 0.0f;
         samplerCI.maxLod = 1.0f;
         samplerCI.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
-        if (vkCreateSampler(device.getDevice(), &samplerCI, nullptr, &BRDFLUT.sampler) != VK_SUCCESS) {
-            throw std::runtime_error("IBL: Failed to create Vulkan texture samplers!");
-        }
+        ENGINE_VERIFY(
+            vkCreateSampler(device.getDevice(), &samplerCI, nullptr, &BRDFLUT.sampler) == VK_SUCCESS,
+            "IBL: Failed to create Vulkan texture samplers!");
 
         VkPipelineLayout pipelinelayout;
         VkPipelineLayoutCreateInfo pipelineLayoutCI {};
         pipelineLayoutCI.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         pipelineLayoutCI.setLayoutCount = 0;
         pipelineLayoutCI.pSetLayouts = nullptr;
-        if (vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutCI, nullptr, &pipelinelayout) != VK_SUCCESS) {
-            throw std::runtime_error("IBL: Failed to create pipeline layout");
-        }
+        ENGINE_VERIFY(
+            vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutCI, nullptr, &pipelinelayout) == VK_SUCCESS,
+            "IBL: Failed to create pipeline layout");
 
         VkPipelineInputAssemblyStateCreateInfo inputAssemblyState {};
         inputAssemblyState.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -201,10 +202,10 @@ namespace Engine {
         shaderStages[1].pName = "main";
 
         VkPipeline pipeline;
-        if (vkCreateGraphicsPipelines(device.getDevice(), VK_NULL_HANDLE, 1, &pipelineCI, nullptr, &pipeline) !=
-            VK_SUCCESS) {
-            throw std::runtime_error("IBL: Failed to create pipeline!");
-        }
+        ENGINE_VERIFY(
+            vkCreateGraphicsPipelines(device.getDevice(), VK_NULL_HANDLE, 1, &pipelineCI, nullptr, &pipeline) ==
+                VK_SUCCESS,
+            "IBL: Failed to create pipeline!");
 
         VkClearValue clearValues[1];
         clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};

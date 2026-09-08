@@ -1,7 +1,8 @@
 #include "AssetSystem/Model.h"
 
 
-#include "Core/EngineConfig.h"
+#include "Core/EngineConstants.h"
+#include "Core/Log.h"
 #include "Vulkan/Buffer.h"
 #include "Vulkan/Device.h"
 
@@ -70,11 +71,11 @@ namespace Engine {
         subMesh.firstIndex = totalAllocatedIndices + cpuIndices.size();
         subMesh.vertexOffset = totalAllocatedVertices + cpuPositions.size();
 
-        uint32_t maxMeshletAmount = meshopt_buildMeshletsBound(indices.size(), Config::MAX_VERTICES, Config::MAX_TRIANGLES);
+        uint32_t maxMeshletAmount = meshopt_buildMeshletsBound(indices.size(), Constants::MAX_MESHLET_VERTICES, Constants::MAX_MESHLET_TRIANGLES);
 
         std::vector<meshopt_Meshlet> finalMeshlets(maxMeshletAmount);
-        std::vector<unsigned int> vertices(maxMeshletAmount * Config::MAX_VERTICES);
-        std::vector<unsigned char> triangles(maxMeshletAmount * Config::MAX_TRIANGLES * 3);
+        std::vector<unsigned int> vertices(maxMeshletAmount * Constants::MAX_MESHLET_VERTICES);
+        std::vector<unsigned char> triangles(maxMeshletAmount * Constants::MAX_MESHLET_TRIANGLES * 3);
 
         uint32_t totalMeshlets = meshopt_buildMeshlets(
             finalMeshlets.data(),
@@ -85,9 +86,9 @@ namespace Engine {
             &positions[0].position.x,
             positions.size(),
             sizeof(VertexPosition),
-            Config::MAX_VERTICES,
-            Config::MAX_TRIANGLES,
-            Config::CONE_WEIGHT
+            Constants::MAX_MESHLET_VERTICES,
+            Constants::MAX_MESHLET_TRIANGLES,
+            Constants::CONE_WEIGHT
             );
 
         finalMeshlets.resize(totalMeshlets);
@@ -153,12 +154,9 @@ namespace Engine {
 
         vkDeviceWaitIdle(device.getDevice());
 
-        std::cout << "[DEBUG] Model::uploadToGPU(): cpuPositions=" << cpuPositions.size()
-                  << ", cpuMeshlets=" << cpuMeshlets.size()
-                  << ", cpuMeshletVerts=" << cpuMeshletVertices.size()
-                  << ", cpuMeshletTris=" << cpuMeshletTriangles.size()
-                  << ", totalAllocatedVertices=" << totalAllocatedVertices
-                  << ", totalAllocatedMeshlets=" << totalAllocatedMeshlets << std::endl;
+        LOG_DEBUG("Model",
+            "cpuPositions={}, cpuMeshlets={}, cpuMeshletVerts={}, cpuMeshletTris={}, totalAllocatedVertices={}, totalAllocatedMeshlets={}",
+            cpuPositions.size(), cpuMeshlets.size(), cpuMeshletVertices.size(), cpuMeshletTriangles.size(), totalAllocatedVertices, totalAllocatedMeshlets);
 
         VkDeviceSize newPosSize = cpuPositions.size() * sizeof(VertexPosition);
         VkDeviceSize newAttrSize = cpuAttributes.size() * sizeof(VertexAttribute);

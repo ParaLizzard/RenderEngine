@@ -43,6 +43,12 @@ namespace Engine {
             return it != typeMap.end() ? static_cast<T*>(it->second) : nullptr;
         }
 
+        // Check if subsystem is registered
+        template<typename T>
+        bool Has() const noexcept {
+            return typeMap.find(std::type_index(typeid(T))) != typeMap.end();
+        }
+
         // Initializes every subsystem according to their dependencies
         bool InitializeAll();
 

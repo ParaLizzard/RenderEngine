@@ -5,6 +5,9 @@
 #include <stb_image.h>
 #include <glm/gtc/packing.hpp>
 
+#include "Core/Assert.h"
+#include "Core/Log.h"
+
 namespace Engine {
     static inline glm::vec2 encodeOctNormalVec2(glm::vec3 n)
     {
@@ -20,7 +23,7 @@ namespace Engine {
             ParsedGLTF result{};
 
             if (!std::filesystem::exists(filePath)) {
-                std::cerr << "LoaderGLTF: File not found: " << filePath << '\n';
+                LOG_ERROR("LoaderGLTF", "File not found: {}", filePath.string());
                 return result;
             }
 
@@ -35,7 +38,7 @@ namespace Engine {
 
                 result.success = true;
             } catch (const JobSystemStoppedException &) {} catch (const std::exception &e) {
-                std::cerr << "LoaderGLTF: Async load failed: " << e.what() << '\n';
+                LOG_ERROR("LoaderGLTF", "Async load failed: {}", e.what());
             }
 
             return result;
@@ -182,7 +185,7 @@ namespace Engine {
             }
         } catch (const std::runtime_error &e) {
             if (std::string(e.what()).find("stopped JobSystem") != std::string::npos) {
-                std::clog << "LoaderGLTF: Loading canceled because JobSystem stopped.\n";
+                LOG_INFO("LoaderGLTF", "Loading canceled because JobSystem stopped.");
                 return;
             }
             throw;
@@ -539,14 +542,14 @@ namespace Engine {
         if (!bool(gltfFile)) {
             auto dataBuffer = fastgltf::GltfDataBuffer::FromPath(filePath);
             if (!bool(dataBuffer)) {
-                std::cerr << "LoaderGLTF: Failed to open: " << fastgltf::getErrorMessage(gltfFile.error()) << '\n';
-                throw std::runtime_error("Failed to load " + filePath.string());
+                LOG_ERROR("LoaderGLTF", "Failed to open: {}", fastgltf::getErrorMessage(gltfFile.error()));
+                ENGINE_VERIFY(false, "Failed to load {}", filePath.string());
             }
 
             auto asset = parser.loadGltf(dataBuffer.get(), filePath.parent_path(), gltfOptions);
             if (asset.error() != fastgltf::Error::None) {
-                std::cerr << "LoaderGLTF: Parse error: " << fastgltf::getErrorMessage(asset.error()) << '\n';
-                throw std::runtime_error("Failed to load " + filePath.string());
+                LOG_ERROR("LoaderGLTF", "Failed to open: {}", fastgltf::getErrorMessage(asset.error()));
+                ENGINE_VERIFY(false, "Failed to load {}", filePath.string());
             }
 
             return std::move(asset.get());
@@ -554,8 +557,8 @@ namespace Engine {
 
         auto asset = parser.loadGltf(gltfFile.get(), filePath.parent_path(), gltfOptions);
         if (asset.error() != fastgltf::Error::None) {
-            std::cerr << "LoaderGLTF: Parse error: " << fastgltf::getErrorMessage(asset.error()) << '\n';
-            throw std::runtime_error("Failed to load " + filePath.string());
+            LOG_ERROR("LoaderGLTF", "Parse error: {}", fastgltf::getErrorMessage(asset.error()));
+            ENGINE_VERIFY(false, "Failed to load {}", filePath.string());
         }
 
         return std::move(asset.get());

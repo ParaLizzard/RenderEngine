@@ -1,5 +1,7 @@
 #include "Renderer/Passes/MaterialPassNode.h"
-
+#include "Core/Assert.h"
+#include "Core/EngineConstants.h"
+#include "Renderer/RenderSettings.h"
 #include <array>
 
 #include "Vulkan/Buffer.h"
@@ -21,9 +23,9 @@ namespace Engine {
         RenderPassNode("Material Pass"), device(device), megaBuffer(megaBuffer), renderer(renderer), resourceHeap(resourceHeap), cullPass(cullPass), renderGraph(renderGraph)
     {
         globalPool = DescriptorPool::Builder(device)
-                     .setMaxSets(Config::MAX_FRAMES_IN_FLIGHT)
-                     .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, Config::MAX_FRAMES_IN_FLIGHT * 4)
-                     .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, Config::MAX_FRAMES_IN_FLIGHT)
+                     .setMaxSets(Constants::MAX_FRAMES_IN_FLIGHT)
+                     .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, Constants::MAX_FRAMES_IN_FLIGHT * 4)
+                     .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, Constants::MAX_FRAMES_IN_FLIGHT)
                      .setPoolFlags(VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT)
                      .build();
 
@@ -47,9 +49,8 @@ namespace Engine {
         samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
         samplerInfo.maxAnisotropy = device.getMaxAnisotropy();
         samplerInfo.pNext = VK_NULL_HANDLE;
-        if (vkCreateSampler(device.getDevice(), &samplerInfo, nullptr, &sampler) != VK_SUCCESS) {
-            throw std::runtime_error("MaterialPassNode: Failed to create texture sampler");
-        }
+        ENGINE_VERIFY(vkCreateSampler(device.getDevice(), &samplerInfo, nullptr, &sampler) == VK_SUCCESS,
+            "MaterialPassNode: Failed to create texture sampler");
 
         VkSamplerCreateInfo nearestSamplerInfo{};
         nearestSamplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -63,9 +64,8 @@ namespace Engine {
         nearestSamplerInfo.maxLod = VK_LOD_CLAMP_NONE;
         nearestSamplerInfo.maxAnisotropy = 1.0f;
         nearestSamplerInfo.pNext = VK_NULL_HANDLE;
-        if (vkCreateSampler(device.getDevice(), &nearestSamplerInfo, nullptr, &nearestSampler) != VK_SUCCESS) {
-            throw std::runtime_error("MaterialPassNode: Failed to create nearest texture sampler");
-        }
+        ENGINE_VERIFY(vkCreateSampler(device.getDevice(), &nearestSamplerInfo, nullptr, &nearestSampler) == VK_SUCCESS,
+            "MaterialPassNode: Failed to create nearest texture sampler");
 
         VkSamplerCreateInfo shadowSamplerInfo{};
         shadowSamplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -78,22 +78,19 @@ namespace Engine {
         shadowSamplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
         shadowSamplerInfo.maxAnisotropy = 1.0f;
         shadowSamplerInfo.pNext = VK_NULL_HANDLE;
-        if (vkCreateSampler(device.getDevice(), &shadowSamplerInfo, nullptr, &shadowSampler) != VK_SUCCESS) {
-            throw std::runtime_error("MaterialPassNode: Failed to create shadow sampler");
-        }
+        ENGINE_VERIFY(vkCreateSampler(device.getDevice(), &shadowSamplerInfo, nullptr, &shadowSampler) == VK_SUCCESS,
+            "MaterialPassNode: Failed to create shadow sampler");
 
         shadowSamplerInfo.compareEnable = VK_TRUE;
         shadowSamplerInfo.compareOp = VK_COMPARE_OP_LESS;
-        if (vkCreateSampler(device.getDevice(), &shadowSamplerInfo, nullptr, &hardwareShadowSampler) != VK_SUCCESS) {
-            throw std::runtime_error("MaterialPassNode: Failed to create hardware shadow sampler");
-        }
+        ENGINE_VERIFY(vkCreateSampler(device.getDevice(), &shadowSamplerInfo, nullptr, &hardwareShadowSampler) == VK_SUCCESS,
+            "MaterialPassNode: Failed to create hardware shadow sampler");
 
-        descriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        descriptorSets.resize(Constants::MAX_FRAMES_IN_FLIGHT);
 
-        for (size_t i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
-            if (!globalPool->allocateDescriptor(globalSetLayout->getDescriptorSetLayout(), descriptorSets[i])) {
-                throw std::runtime_error("MaterialPassNode: Failed to allocate descriptor sets!");
-            }
+        for (size_t i = 0; i < Constants::MAX_FRAMES_IN_FLIGHT; i++) {
+            ENGINE_VERIFY(globalPool->allocateDescriptor(globalSetLayout->getDescriptorSetLayout(), descriptorSets[i]),
+                "MaterialPassNode: Failed to allocate descriptor sets!");
         }
 
         createPipelineLayout();
@@ -179,26 +176,28 @@ namespace Engine {
 
         static uint32_t currentDebugMode = 0;
 
-        if (frameInfo.input->IsKeyJustPressed(KeyCode::F1)) {
-            currentDebugMode = (currentDebugMode == 1) ? 0 : 1;
-        }
-        if (frameInfo.input->IsKeyJustPressed(KeyCode::F2)) {
-            currentDebugMode = (currentDebugMode == 2) ? 0 : 2;
-        }
-        if (frameInfo.input->IsKeyJustPressed(KeyCode::F3)) {
-            currentDebugMode = (currentDebugMode == 3) ? 0 : 3;
-        }
-        if (frameInfo.input->IsKeyJustPressed(KeyCode::F6)) {
-            currentDebugMode = (currentDebugMode == 4) ? 0 : 4;
+        if (frameInfo.input) {
+            if (frameInfo.input->IsKeyJustPressed(KeyCode::F1)) {
+                currentDebugMode = (currentDebugMode == 1) ? 0 : 1;
+            }
+            if (frameInfo.input->IsKeyJustPressed(KeyCode::F2)) {
+                currentDebugMode = (currentDebugMode == 2) ? 0 : 2;
+            }
+            if (frameInfo.input->IsKeyJustPressed(KeyCode::F3)) {
+                currentDebugMode = (currentDebugMode == 3) ? 0 : 3;
+            }
+            if (frameInfo.input->IsKeyJustPressed(KeyCode::F6)) {
+                currentDebugMode = (currentDebugMode == 4) ? 0 : 4;
+            }
         }
 
         MaterialPushConstants pc{};
         pc.viewProj = viewProjection;
         pc.view = view;
         pc.cameraPos = frameInfo.camera->getPosition();
-        pc.enableSSAO = frameInfo.enableSSAO ? 1 : 0;
+        pc.enableSSAO = (CVarSSAOEnabled.Get() && frameInfo.enableSSAO) ? 1 : 0;
         pc.debugMode = currentDebugMode;
-        pc.ssaoStrength = Config::SSAO_STRENGTH;
+        pc.ssaoStrength = CVarSSAOStrength.Get();
         pc.jitterOffset = frameInfo.subpixelJitter;
         pc.resolution = {static_cast<float>(extent.width), static_cast<float>(extent.height)};
         pc.rcpResolution = {1.0f / static_cast<float>(extent.width), 1.0f / static_cast<float>(extent.height)};
@@ -266,9 +265,8 @@ namespace Engine {
         pipelineLayoutInfo.pushConstantRangeCount = 1;
         pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
-        if (vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
-            throw std::runtime_error("MaterialPassNode: Failed to create compute pipeline layout");
-        }
+        ENGINE_VERIFY(vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &pipelineLayout) == VK_SUCCESS,
+            "MaterialPassNode: Failed to create compute pipeline layout");
     }
 
     void MaterialPassNode::createPipeline()
@@ -288,10 +286,10 @@ namespace Engine {
             uint32_t pcfSamplesC1;
             uint32_t pcfSamplesC2;
         } specData = {
-            Config::ENABLE_PCSS,
-            Config::PCF_SAMPLES_CASCADE_0,
-            Config::PCF_SAMPLES_CASCADE_1,
-            Config::PCF_SAMPLES_CASCADE_2
+            Constants::ENABLE_PCSS,
+            Constants::PCF_SAMPLES_CASCADE_0,
+            Constants::PCF_SAMPLES_CASCADE_1,
+            Constants::PCF_SAMPLES_CASCADE_2
         };
 
         std::array<VkSpecializationMapEntry, 4> specEntries{};
@@ -313,10 +311,8 @@ namespace Engine {
         pipelineInfo.layout = pipelineLayout;
         pipelineInfo.stage = computeStageInfo;
 
-        if (vkCreateComputePipelines(device.getDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) !=
-            VK_SUCCESS) {
-            throw std::runtime_error("MaterialPassNode: Failed to create material compute pipeline");
-        }
+        ENGINE_VERIFY(vkCreateComputePipelines(device.getDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) == VK_SUCCESS,
+            "MaterialPassNode: Failed to create material compute pipeline");
         vkDestroyShaderModule(device.getDevice(), compModule, nullptr);
     }
 } // namespace Engine

@@ -161,10 +161,7 @@ set(CORE_SOURCES
         src/Core/main.cpp
         src/Core/Application.cpp
         src/Core/Application.h
-        src/Core/EngineConfig.h
         src/Core/EngineConstants.h
-        src/Core/Exception.cpp
-        src/Core/Exception.h
         src/Core/Clock.h
         src/Core/Clock.cpp
         src/Core/Log.h
@@ -178,23 +175,24 @@ set(CORE_SOURCES
 )
 
 set(SYSTEM_SOURCES
-        src/System/Window/Window.cpp
-        src/System/Window/Window.h
-        src/System/Window/WindowInterface.h
         src/System/Window/WindowWin32.cpp
         src/System/Window/WindowWin32.h
-        src/System/Input/InputManager.cpp
-        src/System/Input/InputManager.h
-        src/System/Input/InputBackend.h
-        src/System/Input/InputBackendWindows.cpp
-        src/System/Input/InputBackendWindows.h
-        src/System/Input/InputTypes.h
+        src/System/Input/Backends/InputBackendWin32.cpp
+        src/System/Input/Backends/InputBackendWin32.h
         src/System/Events/Event.h
         src/System/Events/EventDispatcher.cpp
         src/System/Events/EventDispatcher.h
         src/System/Events/WindowEvents.h
         src/System/Events/KeyEvents.h
         src/System/Input/InputCodes.h
+        src/System/Window/IWindow.h
+        src/System/Window/WindowSubsystem.cpp
+        src/System/Window/WindowSubsystem.h
+        src/System/Window/WindowGLFW.cpp
+        src/System/Window/WindowGLFW.h
+        src/System/Input/ActionMapping.h
+        src/System/Input/InputSubsystem.cpp
+        src/System/Input/InputSubsystem.h
 )
 
 set(THREADING_SOURCES
@@ -219,6 +217,7 @@ set(VULKAN_SOURCES
 set(RENDERER_SOURCES
         src/Renderer/Renderer.cpp
         src/Renderer/Renderer.h
+        src/Renderer/RenderSettings.h
         src/Renderer/RenderGraph.cpp
         src/Renderer/RenderGraph.h
         src/Renderer/RenderPassNode.h
@@ -289,9 +288,6 @@ set(ENGINE_LIB_SOURCES
         ${PASSES_SOURCES}
         src/Core/Application.cpp
         src/Core/Application.h
-        src/Core/EngineConfig.h
-        src/Core/Exception.cpp
-        src/Core/Exception.h
         src/Core/CoreDefines.h
         src/Core/types.h
         src/Core/Hash.h
@@ -313,6 +309,8 @@ set(ENGINE_LIB_SOURCES
         src/Core/Engine.cpp
         src/Core/Engine.h
         src/System/Events/MouseEvents.h
+        src/Vulkan/VulkanDevice.cpp
+        src/Vulkan/VulkanDevice.h
 )
 
 add_library(RenderEngineLib STATIC ${ENGINE_LIB_SOURCES})
@@ -330,6 +328,7 @@ target_link_libraries(RenderEngineLib PUBLIC
         stb
         meshoptimizer
         ffx_spd
+        dwmapi
 )
 
 # ---------------------------------------------------------------------------

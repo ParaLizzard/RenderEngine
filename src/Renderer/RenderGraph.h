@@ -6,7 +6,7 @@
 #include <vulkan/vulkan.h>
 #include "vma/vk_mem_alloc.h"
 #include "Renderer/RenderPassNode.h"
-#include "Core/EngineConfig.h"
+#include "Core/EngineConstants.h"
 
 #include <algorithm>
 #include <chrono>
@@ -137,6 +137,8 @@ namespace Engine {
         void execute(VkCommandBuffer cmdBuffer, FrameInfo &frameInfo);
         void clear();
         void markSceneDirty();
+        void markDirty() { graphCompiled = false; }
+        [[nodiscard]] bool isCompiled() const noexcept { return graphCompiled; }
 
         void transitionToPresent(VkCommandBuffer cmdBuffer, const std::string &imageName);
         void updateImageHandle(const std::string &name,
@@ -175,7 +177,11 @@ namespace Engine {
         uint32_t currentFrameOffset = 0;
         int currentProfileDepth = 0;
         std::vector<ProfileMarker> activeMarkers;
-        std::vector<ProfileMarker> frameMarkers[Config::MAX_FRAMES_IN_FLIGHT];
+        std::vector<ProfileMarker> frameMarkers[Constants::MAX_FRAMES_IN_FLIGHT];
+
+        bool graphCompiled = false;
+        size_t aaCallbackToken = 0;
+        size_t ssaoCallbackToken = 0;
     };
 
     class RenderGraphBuilder

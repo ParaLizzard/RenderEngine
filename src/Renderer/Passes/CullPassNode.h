@@ -7,6 +7,7 @@
 #include "Renderer/RenderPassNode.h"
 #include "Renderer/Renderer.h"
 #include "Vulkan/ResourceHeap.h"
+#include "Core/EngineConstants.h"
 #include <glm/glm.hpp>
 
 namespace Engine {
@@ -30,6 +31,8 @@ namespace Engine {
     class CullPassNode: public RenderPassNode
     {
     public:
+        static constexpr uint32_t WORKGROUP_SIZE = Constants::CULL_WORKGROUP_SIZE;
+
         CullPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap, uint32_t phase = 0, CullPassNode *parentCullPass = nullptr);
         ~CullPassNode();
 
@@ -98,7 +101,7 @@ namespace Engine {
         }
         [[nodiscard]] uint32_t getMaxObjectCount() const
         {
-            return Config::MAX_SCENE_OBJECTS;
+            return Constants::MAX_SCENE_OBJECTS;
         }
         [[nodiscard]] uint32_t getActualObjectCount() const
         {

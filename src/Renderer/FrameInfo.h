@@ -4,7 +4,7 @@
 #include <vector>
 #include "Scene/Camera.h"
 #include "Scene/GameObject.h"
-#include "System/Input/InputManager.h"
+#include "System/Input/InputSubsystem.h"
 
 #define SHADOW_ATLAS_WIDTH 2048
 #define SHADOW_ATLAS_HEIGHT 3072
@@ -30,7 +30,7 @@ namespace Engine {
         VkExtent2D extent;
         VkCommandBuffer commandBuffer;
         Camera *camera;
-        InputManager *input;
+        InputSubsystem *input = nullptr;
         std::vector<GameObject> *gameObjects;
 
         Device *device = nullptr;
@@ -69,39 +69,3 @@ namespace Engine {
 
 
 } // namespace Engine
-
-
-
-class PerformanceMonitor
-{
-private:
-    float timer = 0.0f;
-    int count = 0;
-    float interval = 2.0f;
-
-    float cachedFPS = 0.0f;
-    float cachedFrameTimeMs = 0.0f;
-public:
-    void tick(float dt)
-    {
-        timer += dt;
-        count++;
-
-        if (timer >= interval) {
-            cachedFPS = static_cast<float>(count) / timer;
-            cachedFrameTimeMs = (timer * 1000.0f) / static_cast<float>(count);
-
-            timer -= interval;
-            count = 0;
-        }
-    }
-
-    float GetAverageFPS()
-    {
-        return cachedFPS;
-    }
-    float GetAverageFrameTime()
-    {
-        return cachedFrameTimeMs;
-    }
-};

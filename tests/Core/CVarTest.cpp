@@ -165,38 +165,38 @@ TEST_F(CVarTest, CVarSystemSearch)
 {
     CVarSystem& system = CVarSystem::Get();
 
-    CVar<bool> ssaoEnable("r.SSAO.Enable", true, "Enable SSAO", CVarFlags::SaveToConfig);
-    CVar<float> ssaoStrength("r.SSAO.Strength", 1.2f, "SSAO occlusion multiplier", CVarFlags::SaveToConfig);
-    CVar<float> ssaoRadius("r.SSAO.Radius", 0.5f, "SSAO sampling radius", CVarFlags::SaveToConfig);
-    CVar<int32_t> aaMethod("r.AntiAliasing.Method", 2, "AA Method", CVarFlags::SaveToConfig);
+    CVar<bool> searchEnable("test.Search.Enable", true, "Enable search test", CVarFlags::SaveToConfig);
+    CVar<float> searchStrength("test.Search.Strength", 1.2f, "Search strength multiplier", CVarFlags::SaveToConfig);
+    CVar<float> searchRadius("test.Search.Radius", 0.5f, "Search sampling radius", CVarFlags::SaveToConfig);
+    CVar<int32_t> otherMethod("test.Other.Method", 2, "Other Method", CVarFlags::SaveToConfig);
 
-    system.Register(&ssaoEnable);
-    system.Register(&ssaoStrength);
-    system.Register(&ssaoRadius);
-    system.Register(&aaMethod);
+    system.Register(&searchEnable);
+    system.Register(&searchStrength);
+    system.Register(&searchRadius);
+    system.Register(&otherMethod);
 
-    // Search for prefix "r.SSAO"
-    std::vector<CVarBase*> results = system.Search("r.SSAO");
+    // Search for prefix "test.Search"
+    std::vector<CVarBase*> results = system.Search("test.Search");
 
     EXPECT_EQ(results.size(), 3u);
 
-    // Verify all returned items match "r.ssao"
+    // Verify all returned items match "test.Search"
     for (CVarBase* cvar : results) {
         EXPECT_NE(cvar, nullptr);
         std::string name(cvar->GetName());
-        EXPECT_NE(name.find("r.SSAO"), std::string::npos);
+        EXPECT_NE(name.find("test.Search"), std::string::npos);
     }
 
     // Verify search is case-insensitive
-    std::vector<CVarBase*> resultsLower = system.Search("r.ssao");
+    std::vector<CVarBase*> resultsLower = system.Search("test.search");
     EXPECT_EQ(resultsLower.size(), 3u);
 
     // Verify sorting order (case-insensitive alphabetical)
-    // "r.SSAO.Enable", "r.SSAO.Radius", "r.SSAO.Strength"
+    // "test.Search.Enable", "test.Search.Radius", "test.Search.Strength"
     ASSERT_GE(results.size(), 3u);
-    EXPECT_EQ(results[0]->GetName(), "r.SSAO.Enable");
-    EXPECT_EQ(results[1]->GetName(), "r.SSAO.Radius");
-    EXPECT_EQ(results[2]->GetName(), "r.SSAO.Strength");
+    EXPECT_EQ(results[0]->GetName(), "test.Search.Enable");
+    EXPECT_EQ(results[1]->GetName(), "test.Search.Radius");
+    EXPECT_EQ(results[2]->GetName(), "test.Search.Strength");
 }
 
 // =============================================================================
@@ -310,13 +310,13 @@ TEST_F(CVarTest, SystemFindAndFindExact)
 {
     CVarSystem& system = CVarSystem::Get();
 
-    CVar<float> exposure("r.Tonemap.Exposure", 2.0f, "Exposure value", CVarFlags::None);
+    CVar<float> exposure("test.Find.Exposure", 2.0f, "Exposure value", CVarFlags::None);
     system.Register(&exposure);
 
     // Case-insensitive Find
-    CVarBase* foundBase1 = system.Find("r.Tonemap.Exposure");
-    CVarBase* foundBase2 = system.Find("r.tonemap.exposure");
-    CVarBase* foundBase3 = system.Find("R.TONEMAP.EXPOSURE");
+    CVarBase* foundBase1 = system.Find("test.Find.Exposure");
+    CVarBase* foundBase2 = system.Find("test.find.exposure");
+    CVarBase* foundBase3 = system.Find("TEST.FIND.EXPOSURE");
 
     ASSERT_NE(foundBase1, nullptr);
     EXPECT_EQ(foundBase1, &exposure);
@@ -324,18 +324,18 @@ TEST_F(CVarTest, SystemFindAndFindExact)
     EXPECT_EQ(foundBase3, &exposure);
 
     // Find non-existent
-    EXPECT_EQ(system.Find("r.NonExistent.Param"), nullptr);
+    EXPECT_EQ(system.Find("test.NonExistent.Param"), nullptr);
 
     // FindExact with correct type
-    CVar<float>* typedExposure = system.FindExact<float>("r.tonemap.exposure");
+    CVar<float>* typedExposure = system.FindExact<float>("test.find.exposure");
     ASSERT_NE(typedExposure, nullptr);
     EXPECT_FLOAT_EQ(typedExposure->Get(), 2.0f);
 
     // FindExact with mismatched type returns nullptr
-    CVar<int32_t>* mismatchedInt = system.FindExact<int32_t>("r.tonemap.exposure");
+    CVar<int32_t>* mismatchedInt = system.FindExact<int32_t>("test.find.exposure");
     EXPECT_EQ(mismatchedInt, nullptr);
 
-    CVar<bool>* mismatchedBool = system.FindExact<bool>("r.tonemap.exposure");
+    CVar<bool>* mismatchedBool = system.FindExact<bool>("test.find.exposure");
     EXPECT_EQ(mismatchedBool, nullptr);
 }
 

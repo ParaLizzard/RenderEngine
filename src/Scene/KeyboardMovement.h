@@ -1,15 +1,13 @@
 #pragma once
 
-#include "System/Window/Window.h"
 #include "Scene/GameObject.h"
+#include "System/Input/InputSubsystem.h"
 
 namespace Engine {
     class KeyboardMovementController
     {
     public:
-
-
-        void moveInPlaneXZ(InputManager& manager, float dt, std::shared_ptr<GameObject> gameObject);
+        void moveInPlaneXZ(InputSubsystem& input, float dt, std::shared_ptr<GameObject> gameObject);
 
         float moveSpeed = 3.f;
         float lookSpeed = 1.5f;

@@ -1,5 +1,4 @@
 #pragma once
-#include <cassert>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -10,7 +9,7 @@
 #include "Vulkan/Device.h"
 
 #include "Vulkan/Buffer.h"
-#include "Core/EngineConfig.h"
+#include "Core/EngineConstants.h"
 #include "Renderer/Renderer.h"
 
 
@@ -60,7 +59,7 @@ namespace Engine {
 
 
 
-        ResourceHeap(Device &device, uint32_t maxTextures = 4096);
+        ResourceHeap(Device &device, uint32_t maxTextures = Constants::MAX_TEXTURES);
         ~ResourceHeap();
 
         ResourceHeap(ResourceHeap const &) = delete;
@@ -90,11 +89,11 @@ namespace Engine {
 
         VkDescriptorBufferInfo getMaterialBufferInfo(uint32_t currentFrame) const;
         void writeMaterialDescriptor(uint32_t currentFrame);
-        void writeMaterialDescriptorAllFrames(); // For init
+        void writeMaterialDescriptorAllFrames();
 
         void markMaterialsDirty()
         {
-            materialFramesToUpdate = Config::MAX_FRAMES_IN_FLIGHT;
+            materialFramesToUpdate = Constants::MAX_FRAMES_IN_FLIGHT;
         }
         void update(uint32_t currentFrame);
         void writeSceneUboDescriptor(VkDescriptorBufferInfo bufInfo, uint32_t frameIdx);

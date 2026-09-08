@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <format>
 
+#include "SubsystemRegistry.h"
 #include "AssetSystem/AssetStreamer.h"
 #include "Scene/SceneManager.h"
 #include "Threading/JobSystem.h"
@@ -15,9 +16,8 @@
 #include "Scene/KeyboardMovement.h"
 #include "AssetSystem/Texture.h"
 #include "Vulkan/Device.h"
-#include "System/Window/Window.h"
-#include "System/Input/InputManager.h"
-#include "System/Input/InputBackendWindows.h"
+#include "System/Window/IWindow.h"
+#include "System/Input/InputSubsystem.h"
 #include "AssetSystem/IBL.h"
 #include "Renderer/Passes/CullPassNode.h"
 #include "Renderer/Passes/TransformUpdatePassNode.h"
@@ -29,6 +29,8 @@
 #include "Renderer/Passes/VisibilityPassNode.h"
 #include "Renderer/Passes/CsmPassNode.h"
 #include "Renderer/Passes/HiZPassNode.h"
+#include "Renderer/RenderSettings.h"
+#include "System/Window/WindowSubsystem.h"
 
 namespace Engine {
     class Application
@@ -38,6 +40,7 @@ namespace Engine {
         static constexpr int HEIGHT = 2120;
 
         Application();
+        explicit Application(IWindow &window);
         ~Application();
 
         Application(const Application &) = delete;
@@ -51,7 +54,7 @@ namespace Engine {
         void updateFrameGraph();
         void updateSceneGraph();
 
-        Window window {WIDTH, HEIGHT, "Render Engine"};
+        IWindow &window;
         Device device {window};
         Renderer renderer {window, device};
         Model megaBuffer {device};
@@ -62,9 +65,6 @@ namespace Engine {
         JobSystem jobSystem {std::max(1u, std::thread::hardware_concurrency() - 1)};
         SceneManager sceneManager{};
         AssetStreamer assetStreamer{jobSystem};
-
-        std::unique_ptr<Engine::InputBackend> backend{std::make_unique<Engine::InputBackendWindows>()};
-        Engine::InputManager inputManager{std::move(backend)};
 
         std::vector<std::unique_ptr<Buffer>> sceneUboBuffers;
         uint32_t blueNoiseSlot;
@@ -105,5 +105,8 @@ namespace Engine {
         int debugHiZMipLevel = 0;
         glm::mat4 prevViewProj = glm::mat4(1.0f);
         bool firstFrame = true;
+
+        size_t aaCallbackToken = 0;
+        size_t ssaoCallbackToken = 0;
     };
 } // namespace Engine

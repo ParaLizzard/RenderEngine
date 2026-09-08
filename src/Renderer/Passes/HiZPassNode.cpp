@@ -1,5 +1,7 @@
 
 #include "HiZPassNode.h"
+#include "Core/Assert.h"
+#include "Core/EngineConstants.h"
 
 #include "Renderer/RenderGraph.h"
 #include "Vulkan/Device.h"
@@ -43,10 +45,10 @@ namespace Engine
         createHiZResources(currentExtent);
 
         descriptorPool = DescriptorPool::Builder(device)
-                        .setMaxSets(Config::MAX_FRAMES_IN_FLIGHT)
-                        .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, Config::MAX_FRAMES_IN_FLIGHT * 1)
-                        .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, Config::MAX_FRAMES_IN_FLIGHT * 12)
-                        .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, Config::MAX_FRAMES_IN_FLIGHT * 1)
+                        .setMaxSets(Constants::MAX_FRAMES_IN_FLIGHT)
+                        .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, Constants::MAX_FRAMES_IN_FLIGHT * 1)
+                        .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, Constants::MAX_FRAMES_IN_FLIGHT * 12)
+                        .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, Constants::MAX_FRAMES_IN_FLIGHT * 1)
                         .build();
 
         setLayout = DescriptorSetLayout::Builder(device)
@@ -55,7 +57,7 @@ namespace Engine
                 .addBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT, 1)
                 .build();
 
-        descriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        descriptorSets.resize(Constants::MAX_FRAMES_IN_FLIGHT);
 
         createPipelineLayout();
         createPipeline();
@@ -201,9 +203,8 @@ namespace Engine
         VkDescriptorSetLayout sLayout = setLayout->getDescriptorSetLayout();
         pipelineLayoutInfo.pSetLayouts = &sLayout;
 
-        if (vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
-            throw std::runtime_error("HiZ: failed to create pipeline layout");
-        }
+        ENGINE_VERIFY(vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &pipelineLayout) == VK_SUCCESS,
+            "HiZ: failed to create pipeline layout");
     }
 
     void HiZPassNode::createPipeline()

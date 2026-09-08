@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include "System/Events/EventDispatcher.h"
 
 namespace Engine {
     Engine &Engine::Get()
@@ -12,6 +13,7 @@ namespace Engine {
         LOG_INFO("Engine", "Initializing RenderEngine...");
 
 
+        currentConfigFile = params.configFile;
         if (config.Load(params.configFile)) {
             LOG_INFO("Engine", "Loaded config file: {}", params.configFile);
             config.ApplyToCVars();
@@ -34,6 +36,7 @@ namespace Engine {
         running = true;
 
         while (running) {
+            EventDispatcher::Get().DispatchQueuedEvents();
             float deltaTime = clock.Tick();
             subsystems.UpdateAll(deltaTime);
         }
@@ -50,7 +53,7 @@ namespace Engine {
 
         subsystems.ShutdownAll();
         config.HarvestFromCVars();
-        config.Save("config/engine.ini");
+        config.Save(currentConfigFile);
 
         LOG_INFO("Engine", "RenderEngine shutdown complete.");
     }

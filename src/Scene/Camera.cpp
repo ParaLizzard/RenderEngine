@@ -1,7 +1,6 @@
 
 #include "Scene/Camera.h"
-
-#include <cassert>
+#include "Core/Assert.h"
 #include <limits>
 
 namespace Engine {
@@ -21,7 +20,8 @@ namespace Engine {
 
     void Camera::setPerspectiveProjection(float fovy, float aspect, float near, float far)
     {
-        assert(glm::abs(aspect - std::numeric_limits<float>::epsilon()) > 0.0f);
+        ENGINE_ASSERT(glm::abs(aspect - std::numeric_limits<float>::epsilon()) > 0.0f,
+            "Camera aspect ratio must be greater than epsilon");
 
         farClip = far;
         nearClip = near;

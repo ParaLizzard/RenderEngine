@@ -1,8 +1,9 @@
 #include "Renderer/Passes/VisibilityPassNode.h"
+#include "Core/Assert.h"
 #include "Renderer/RenderGraph.h"
 #include "Renderer/ShaderUtils.h"
 #include "Renderer/Passes/CullPassNode.h"
-#include "Core/EngineConfig.h"
+#include "Core/EngineConstants.h"
 
 namespace Engine {
     VisibilityPassNode::VisibilityPassNode(Device &device,
@@ -20,9 +21,8 @@ namespace Engine {
         if (device.isMeshShaderSupported()) {
             pfn_vkCmdDrawMeshTasksEXT = (PFN_vkCmdDrawMeshTasksEXT)vkGetInstanceProcAddr(device.getInstance(), "vkCmdDrawMeshTasksEXT");
             pfn_vkCmdDrawMeshTasksIndirectEXT = (PFN_vkCmdDrawMeshTasksIndirectEXT)vkGetInstanceProcAddr(device.getInstance(), "vkCmdDrawMeshTasksIndirectEXT");
-            if (!pfn_vkCmdDrawMeshTasksEXT || !pfn_vkCmdDrawMeshTasksIndirectEXT) {
-                throw std::runtime_error("Failed to load mesh shader extension functions");
-            }
+            ENGINE_VERIFY(pfn_vkCmdDrawMeshTasksEXT != nullptr && pfn_vkCmdDrawMeshTasksIndirectEXT != nullptr,
+                "Failed to load mesh shader extension functions");
             createMeshPipeline();
         }
     }
@@ -139,7 +139,7 @@ namespace Engine {
         if (frameInfo.cullEnabled && !frameInfo.firstFrame && phase == 1) pushConsts.cullFlags |= 4u;
         pushConsts.objectCount        = megaBuffer.getMeshletCount();
         pushConsts.actualObjectCount  = static_cast<uint32_t>(frameInfo.gameObjects->size());
-        pushConsts.objectCapacity     = Config::MAX_SCENE_OBJECTS;
+        pushConsts.objectCapacity     = Constants::MAX_SCENE_OBJECTS;
         pushConsts.clipPlaneCount     = 6;
         pushConsts.isMeshShader       = device.isMeshShaderSupported() ? 1 : 0;
         pushConsts.phase              = phase;
@@ -284,9 +284,8 @@ namespace Engine {
         pipelineLayoutInfo.setLayoutCount = 2;
         pipelineLayoutInfo.pSetLayouts = layouts;
 
-        if (vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
-            throw std::runtime_error("VisibilityPassNode: failed to create pipeline layout");
-        }
+        ENGINE_VERIFY(vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &pipelineLayout) == VK_SUCCESS,
+            "VisibilityPassNode: failed to create pipeline layout");
     }
 
     void VisibilityPassNode::createPipeline()
@@ -512,9 +511,8 @@ namespace Engine {
         pipelineLayoutInfo.setLayoutCount = 2;
         pipelineLayoutInfo.pSetLayouts = layouts;
 
-        if (vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &maskedPipelineLayout) != VK_SUCCESS) {
-            throw std::runtime_error("VisibilityPassNode: failed to create masked pipeline layout");
-        }
+        ENGINE_VERIFY(vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &maskedPipelineLayout) == VK_SUCCESS,
+            "VisibilityPassNode: failed to create masked pipeline layout");
 
         auto vertCode = ShaderUtils::readFile("shaders/visbuffer_masked.vert.spv");
         auto fragCode = ShaderUtils::readFile("shaders/visbuffer_masked.frag.spv");
@@ -601,9 +599,8 @@ namespace Engine {
         pipelineInfo.pDynamicState       = &dynamicState;
         pipelineInfo.layout              = maskedPipelineLayout;
 
-        if (vkCreateGraphicsPipelines(device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, nullptr, &maskedPipeline) != VK_SUCCESS) {
-            throw std::runtime_error("VisibilityPassNode: failed to create masked pipeline");
-        }
+        ENGINE_VERIFY(vkCreateGraphicsPipelines(device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, nullptr, &maskedPipeline) == VK_SUCCESS,
+            "VisibilityPassNode: failed to create masked pipeline");
 
         vkDestroyShaderModule(device.getDevice(), vertModule, nullptr);
         vkDestroyShaderModule(device.getDevice(), fragModule, nullptr);

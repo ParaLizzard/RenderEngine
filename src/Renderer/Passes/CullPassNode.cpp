@@ -1,9 +1,11 @@
 #include "Renderer/Passes/CullPassNode.h"
+#include "Core/Assert.h"
+#include "Renderer/RenderSettings.h"
 #include "Vulkan/Buffer.h"
 #include <array>
 #include <vector>
 
-#include "Core/EngineConfig.h"
+#include "Core/EngineConstants.h"
 #include "Renderer/RenderGraph.h"
 #include "Renderer/Renderer.h"
 #include "Renderer/ShaderUtils.h"
@@ -25,7 +27,7 @@ namespace Engine {
         samplerInfo.maxLod = 16.0f;
         vkCreateSampler(device.getDevice(), &samplerInfo, nullptr, &hizSampler);
 
-        objectDescriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        objectDescriptorSets.resize(Constants::MAX_FRAMES_IN_FLIGHT);
 
         VkShaderStageFlags stageFlags = VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
         if (device.isMeshShaderSupported()) {
@@ -96,46 +98,46 @@ namespace Engine {
 
         std::array<VkDescriptorPoolSize, 2> poolSizes {};
         poolSizes[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        poolSizes[0].descriptorCount = Config::MAX_FRAMES_IN_FLIGHT * 10 * 2;
+        poolSizes[0].descriptorCount = Constants::MAX_FRAMES_IN_FLIGHT * 10 * 2;
         poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        poolSizes[1].descriptorCount = Config::MAX_FRAMES_IN_FLIGHT * 1 * 2;
+        poolSizes[1].descriptorCount = Constants::MAX_FRAMES_IN_FLIGHT * 1 * 2;
 
         VkDescriptorPoolCreateInfo poolInfo {};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
         poolInfo.pPoolSizes = poolSizes.data();
-        poolInfo.maxSets = Config::MAX_FRAMES_IN_FLIGHT * 2;
+        poolInfo.maxSets = Constants::MAX_FRAMES_IN_FLIGHT * 2;
         vkCreateDescriptorPool(device.getDevice(), &poolInfo, nullptr, &objectDescriptorPool);
 
-        objectDescriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        maskedObjectDescriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        objectDescriptorSets.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        maskedObjectDescriptorSets.resize(Constants::MAX_FRAMES_IN_FLIGHT);
 
-        gpuDispatchCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        gpuVisibleObjectBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        compactedIndexBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        singleIndirectCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        gpuDrawCountBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        gpuIndirectCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        triangleDispatchCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        visibleMeshletBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        taskWorkgroupBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        taskDispatchCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        gpuDispatchCommandBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        gpuVisibleObjectBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        compactedIndexBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        singleIndirectCommandBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        gpuDrawCountBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        gpuIndirectCommandBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        triangleDispatchCommandBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        visibleMeshletBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        taskWorkgroupBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        taskDispatchCommandBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
 
-        gpuCandidateDispatchCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        gpuCandidateObjectBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        gpuMaskedCandidateDispatchCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        gpuMaskedCandidateObjectBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        gpuCandidateDispatchCommandBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        gpuCandidateObjectBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        gpuMaskedCandidateDispatchCommandBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        gpuMaskedCandidateObjectBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
 
-        gpuMaskedDispatchCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        gpuMaskedVisibleObjectBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        maskedCompactedIndexBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        maskedSingleIndirectCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        maskedTriangleDispatchCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        maskedVisibleMeshletBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        gpuMaskedIndirectCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        gpuMaskedDrawCountBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        gpuMaskedDispatchCommandBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        gpuMaskedVisibleObjectBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        maskedCompactedIndexBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        maskedSingleIndirectCommandBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        maskedTriangleDispatchCommandBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        maskedVisibleMeshletBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        gpuMaskedIndirectCommandBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        gpuMaskedDrawCountBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
 
-        for (uint32_t i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
+        for (uint32_t i = 0; i < Constants::MAX_FRAMES_IN_FLIGHT; i++) {
             gpuDispatchCommandBuffers[i] =
                 std::make_unique<Buffer>(device,
                                          sizeof(VkDispatchIndirectCommand),
@@ -148,7 +150,7 @@ namespace Engine {
             gpuVisibleObjectBuffers[i] =
                 std::make_unique<Buffer>(device,
                                          sizeof(uint32_t),
-                                         Config::MAX_SCENE_OBJECTS,
+                                         Constants::MAX_SCENE_OBJECTS,
                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                          VMA_MEMORY_USAGE_GPU_ONLY,
                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -157,7 +159,7 @@ namespace Engine {
             compactedIndexBuffers[i] =
                 std::make_unique<Buffer>(device,
                                          sizeof(uint32_t),
-                                         Config::MAX_SCENE_OBJECTS * Config::MAX_TRIANGLES * 3,
+                                         Constants::MAX_SCENE_OBJECTS * Constants::MAX_MESHLET_TRIANGLES * 3,
                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
                                          VMA_MEMORY_USAGE_GPU_ONLY,
                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -184,7 +186,7 @@ namespace Engine {
             visibleMeshletBuffers[i] =
                 std::make_unique<Buffer>(device,
                                          sizeof(uint32_t) * 2,
-                                         Config::MAX_SCENE_OBJECTS * 100,
+                                         Constants::MAX_SCENE_OBJECTS * 100,
                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                          VMA_MEMORY_USAGE_GPU_ONLY,
                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -202,7 +204,7 @@ namespace Engine {
             gpuMaskedVisibleObjectBuffers[i] =
                 std::make_unique<Buffer>(device,
                                          sizeof(uint32_t),
-                                         Config::MAX_SCENE_OBJECTS,
+                                         Constants::MAX_SCENE_OBJECTS,
                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                          VMA_MEMORY_USAGE_GPU_ONLY,
                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -211,7 +213,7 @@ namespace Engine {
             maskedCompactedIndexBuffers[i] =
                 std::make_unique<Buffer>(device,
                                          sizeof(uint32_t),
-                                         Config::MAX_SCENE_OBJECTS * Config::MAX_TRIANGLES * 3,
+                                         Constants::MAX_SCENE_OBJECTS * Constants::MAX_MESHLET_TRIANGLES * 3,
                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
                                          VMA_MEMORY_USAGE_GPU_ONLY,
                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -238,7 +240,7 @@ namespace Engine {
             maskedVisibleMeshletBuffers[i] =
                 std::make_unique<Buffer>(device,
                                          sizeof(uint32_t) * 2,
-                                         Config::MAX_SCENE_OBJECTS * 100,
+                                         Constants::MAX_SCENE_OBJECTS * 100,
                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                          VMA_MEMORY_USAGE_GPU_ONLY,
                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -247,7 +249,7 @@ namespace Engine {
             taskWorkgroupBuffers[i] =
                 std::make_unique<Buffer>(device,
                                          sizeof(uint32_t) * 2,
-                                         Config::MAX_SCENE_OBJECTS * 10,
+                                         Constants::MAX_SCENE_OBJECTS * 10,
                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                          VMA_MEMORY_USAGE_GPU_ONLY,
                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -274,7 +276,7 @@ namespace Engine {
             gpuIndirectCommandBuffers[i] =
                 std::make_unique<Buffer>(device,
                                          sizeof(VkDrawIndexedIndirectCommand),
-                                         Config::MAX_SCENE_OBJECTS,
+                                         Constants::MAX_SCENE_OBJECTS,
                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                          VMA_MEMORY_USAGE_CPU_TO_GPU,
                                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -283,7 +285,7 @@ namespace Engine {
             gpuMaskedIndirectCommandBuffers[i] =
                 std::make_unique<Buffer>(device,
                                          sizeof(VkDrawIndexedIndirectCommand),
-                                         Config::MAX_SCENE_OBJECTS,
+                                         Constants::MAX_SCENE_OBJECTS,
                                          VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                          VMA_MEMORY_USAGE_CPU_TO_GPU,
                                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -302,7 +304,7 @@ namespace Engine {
                 gpuCandidateObjectBuffers[i] =
                     std::make_unique<Buffer>(device,
                                              sizeof(uint32_t),
-                                             Config::MAX_SCENE_OBJECTS,
+                                             Constants::MAX_SCENE_OBJECTS,
                                              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                              VMA_MEMORY_USAGE_GPU_ONLY,
                                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -320,7 +322,7 @@ namespace Engine {
                 gpuMaskedCandidateObjectBuffers[i] =
                     std::make_unique<Buffer>(device,
                                              sizeof(uint32_t),
-                                             Config::MAX_SCENE_OBJECTS,
+                                             Constants::MAX_SCENE_OBJECTS,
                                              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                              VMA_MEMORY_USAGE_GPU_ONLY,
                                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -332,12 +334,10 @@ namespace Engine {
             allocInfo.descriptorPool = objectDescriptorPool;
             allocInfo.descriptorSetCount = 1;
             allocInfo.pSetLayouts = &objectSetLayout;
-            if (vkAllocateDescriptorSets(device.getDevice(), &allocInfo, &objectDescriptorSets[i]) != VK_SUCCESS) {
-                throw std::runtime_error("Failed to allocate object descriptor sets in CullPassNode");
-            }
-            if (vkAllocateDescriptorSets(device.getDevice(), &allocInfo, &maskedObjectDescriptorSets[i]) != VK_SUCCESS) {
-                throw std::runtime_error("Failed to allocate masked object descriptor sets in CullPassNode");
-            }
+            ENGINE_VERIFY(vkAllocateDescriptorSets(device.getDevice(), &allocInfo, &objectDescriptorSets[i]) == VK_SUCCESS,
+                "Failed to allocate object descriptor sets in CullPassNode");
+            ENGINE_VERIFY(vkAllocateDescriptorSets(device.getDevice(), &allocInfo, &maskedObjectDescriptorSets[i]) == VK_SUCCESS,
+                "Failed to allocate masked object descriptor sets in CullPassNode");
 
             VkDescriptorBufferInfo dispatchInfo = gpuDispatchCommandBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
             VkDescriptorBufferInfo visibleObjInfo = gpuVisibleObjectBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
@@ -512,12 +512,10 @@ namespace Engine {
         pipelineLayoutInfo.pushConstantRangeCount = 1;
         pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
-        if (vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &computePipelineLayout) !=
-            VK_SUCCESS) {
-            throw std::runtime_error("CullPassNode: failed to create compute pipeline layout");
-        }
+        ENGINE_VERIFY(vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &computePipelineLayout) == VK_SUCCESS,
+            "CullPassNode: failed to create compute pipeline layout");
 
-        uint32_t workgroupSize = Config::CULL_WORKGROUP_SIZE;
+        uint32_t workgroupSize = Constants::CULL_WORKGROUP_SIZE;
         VkSpecializationMapEntry specEntry {};
         specEntry.constantID = 0;
         specEntry.offset = 0;
@@ -560,40 +558,32 @@ namespace Engine {
         objPipelineInfo.layout = computePipelineLayout;
         objPipelineInfo.stage = objStageInfo;
 
-        if (vkCreateComputePipelines(device.getDevice(), VK_NULL_HANDLE, 1, &objPipelineInfo, nullptr, &objectCullPipeline) !=
-            VK_SUCCESS) {
-            throw std::runtime_error("CullPassNode: failed to create object cull compute pipeline");
-        }
+        ENGINE_VERIFY(vkCreateComputePipelines(device.getDevice(), VK_NULL_HANDLE, 1, &objPipelineInfo, nullptr, &objectCullPipeline) == VK_SUCCESS,
+            "CullPassNode: failed to create object cull compute pipeline");
 
         VkComputePipelineCreateInfo taskSubmitPipelineInfo {};
         taskSubmitPipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
         taskSubmitPipelineInfo.layout = computePipelineLayout;
         taskSubmitPipelineInfo.stage = taskSubmitStageInfo;
 
-        if (vkCreateComputePipelines(device.getDevice(), VK_NULL_HANDLE, 1, &taskSubmitPipelineInfo, nullptr, &taskSubmitPipeline) !=
-            VK_SUCCESS) {
-            throw std::runtime_error("CullPassNode: failed to create task submit compute pipeline");
-        }
+        ENGINE_VERIFY(vkCreateComputePipelines(device.getDevice(), VK_NULL_HANDLE, 1, &taskSubmitPipelineInfo, nullptr, &taskSubmitPipeline) == VK_SUCCESS,
+            "CullPassNode: failed to create task submit compute pipeline");
 
         VkComputePipelineCreateInfo meshletPipelineInfo {};
         meshletPipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
         meshletPipelineInfo.layout = computePipelineLayout;
         meshletPipelineInfo.stage = meshletStageInfo;
 
-        if (vkCreateComputePipelines(device.getDevice(), VK_NULL_HANDLE, 1, &meshletPipelineInfo, nullptr, &meshletCullPipeline) !=
-            VK_SUCCESS) {
-            throw std::runtime_error("CullPassNode: failed to create meshlet cull compute pipeline");
-        }
+        ENGINE_VERIFY(vkCreateComputePipelines(device.getDevice(), VK_NULL_HANDLE, 1, &meshletPipelineInfo, nullptr, &meshletCullPipeline) == VK_SUCCESS,
+            "CullPassNode: failed to create meshlet cull compute pipeline");
 
         VkComputePipelineCreateInfo trianglePipelineInfo {};
         trianglePipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
         trianglePipelineInfo.layout = computePipelineLayout;
         trianglePipelineInfo.stage = triangleStageInfo;
 
-        if (vkCreateComputePipelines(device.getDevice(), VK_NULL_HANDLE, 1, &trianglePipelineInfo, nullptr, &triangleCullPipeline) !=
-            VK_SUCCESS) {
-            throw std::runtime_error("CullPassNode: failed to create triangle cull compute pipeline");
-        }
+        ENGINE_VERIFY(vkCreateComputePipelines(device.getDevice(), VK_NULL_HANDLE, 1, &trianglePipelineInfo, nullptr, &triangleCullPipeline) == VK_SUCCESS,
+            "CullPassNode: failed to create triangle cull compute pipeline");
 
         vkDestroyShaderModule(device.getDevice(), objModule, nullptr);
         vkDestroyShaderModule(device.getDevice(), taskSubmitModule, nullptr);
@@ -632,7 +622,7 @@ namespace Engine {
         uint32_t currentFrame = frameInfo.frameIndex;
         graph.registerPhysicalBuffer("CompactedIndexBuffer",
                                      getCompactedIndexBuffer(currentFrame),
-                                     Config::MAX_SCENE_OBJECTS * Config::MAX_TRIANGLES * 3 * sizeof(uint32_t),
+                                     Constants::MAX_SCENE_OBJECTS * Constants::MAX_MESHLET_TRIANGLES * 3 * sizeof(uint32_t),
                                      VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                                      VK_ACCESS_2_SHADER_WRITE_BIT);
 
@@ -644,7 +634,7 @@ namespace Engine {
 
         graph.registerPhysicalBuffer("MaskedCompactedIndexBuffer",
                                      getMaskedCompactedIndexBuffer(currentFrame),
-                                     Config::MAX_SCENE_OBJECTS * Config::MAX_TRIANGLES * 3 * sizeof(uint32_t),
+                                     Constants::MAX_SCENE_OBJECTS * Constants::MAX_MESHLET_TRIANGLES * 3 * sizeof(uint32_t),
                                      VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                                      VK_ACCESS_2_SHADER_WRITE_BIT);
 
@@ -660,7 +650,7 @@ namespace Engine {
         uint32_t currentFrame = frameInfo.frameIndex;
         graph.updateBufferHandle("CompactedIndexBuffer",
                                  getCompactedIndexBuffer(currentFrame),
-                                 Config::MAX_SCENE_OBJECTS * Config::MAX_TRIANGLES * 3 * sizeof(uint32_t));
+                                 Constants::MAX_SCENE_OBJECTS * Constants::MAX_MESHLET_TRIANGLES * 3 * sizeof(uint32_t));
 
         graph.updateBufferHandle("SingleIndirectCommand",
                                  getSingleIndirectCommandBuffer(currentFrame),
@@ -668,7 +658,7 @@ namespace Engine {
 
         graph.updateBufferHandle("MaskedCompactedIndexBuffer",
                                  getMaskedCompactedIndexBuffer(currentFrame),
-                                 Config::MAX_SCENE_OBJECTS * Config::MAX_TRIANGLES * 3 * sizeof(uint32_t));
+                                 Constants::MAX_SCENE_OBJECTS * Constants::MAX_MESHLET_TRIANGLES * 3 * sizeof(uint32_t));
 
         graph.updateBufferHandle("MaskedSingleIndirectCommand",
                                  getMaskedSingleIndirectCommandBuffer(currentFrame),
@@ -709,7 +699,7 @@ namespace Engine {
                 }
             }
 
-            framesToUpdate = Config::MAX_FRAMES_IN_FLIGHT;
+            framesToUpdate = Constants::MAX_FRAMES_IN_FLIGHT;
             sceneDirty = false;
         }
 
@@ -800,9 +790,11 @@ namespace Engine {
 
             VkUtils::pipelineBarrier(cmd, 0, 0, 0, 0, {}, transferBarriers);
 
-            activeCullViewProj = frameInfo.cullViewProj;
-            activeCullCameraPos = frameInfo.cullCameraPos;
-            activeCullView = frameInfo.cullView;
+            if (!CVarFreezeCulling.Get()) {
+                activeCullViewProj = frameInfo.cullViewProj;
+                activeCullCameraPos = frameInfo.cullCameraPos;
+                activeCullView = frameInfo.cullView;
+            }
 
             glm::mat4 proj = frameInfo.camera->getProjection();
             VkExtent2D hizExt = { std::bit_ceil(frameInfo.extent.width), std::bit_ceil(frameInfo.extent.height) };
@@ -822,7 +814,7 @@ namespace Engine {
             if (frameInfo.cullEnabled && !frameInfo.firstFrame) compPc.cullFlags |= 4u;
             compPc.objectCount       = megaBuffer.getMeshletCount();
             compPc.actualObjectCount = totalObjects;
-            compPc.objectCapacity    = Config::MAX_SCENE_OBJECTS;
+            compPc.objectCapacity    = Constants::MAX_SCENE_OBJECTS;
             compPc.clipPlaneCount    = 6;
             compPc.phase             = phase;
 
@@ -838,7 +830,7 @@ namespace Engine {
 
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, objectCullPipeline);
                 if (phase == 0) {
-                    uint32_t objectGroupCount = (compPc.actualObjectCount + Config::CULL_WORKGROUP_SIZE - 1) / Config::CULL_WORKGROUP_SIZE;
+                    uint32_t objectGroupCount = (compPc.actualObjectCount + Constants::CULL_WORKGROUP_SIZE - 1) / Constants::CULL_WORKGROUP_SIZE;
                     vkCmdDispatch(cmd, objectGroupCount, 1, 1);
                 } else if (parentCullPass != nullptr) {
                     VkBuffer candCmdBuf = (alphaModeTag == 0)

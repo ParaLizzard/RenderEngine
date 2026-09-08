@@ -3,6 +3,9 @@
 //
 
 #include "TaaPassNode.h"
+#include "Core/Assert.h"
+#include "Core/EngineConstants.h"
+#include "Renderer/RenderSettings.h"
 
 #include "Renderer/Renderer.h"
 #include "Renderer/ShaderUtils.h"
@@ -37,9 +40,9 @@ namespace Engine {
         vkCreateSampler(device.getDevice(), &samplerInfo2, nullptr, &nearestSampler);
 
         descriptorPool = DescriptorPool::Builder(device)
-                         .setMaxSets(Config::MAX_FRAMES_IN_FLIGHT)
-                         .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, Config::MAX_FRAMES_IN_FLIGHT * 5)
-                         .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, Config::MAX_FRAMES_IN_FLIGHT * 2)
+                         .setMaxSets(Constants::MAX_FRAMES_IN_FLIGHT)
+                         .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, Constants::MAX_FRAMES_IN_FLIGHT * 5)
+                         .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, Constants::MAX_FRAMES_IN_FLIGHT * 2)
                          .build();
 
         setLayout =
@@ -53,7 +56,7 @@ namespace Engine {
                 .addBinding(6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
                 .build();
 
-        descriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        descriptorSets.resize(Constants::MAX_FRAMES_IN_FLIGHT);
 
         createPipelineLayout();
         createPipeline();
@@ -127,6 +130,10 @@ namespace Engine {
 
     void TaaPassNode::execute(VkCommandBuffer&cmd, FrameInfo &frameInfo)
     {
+        if (CVarAAMethod.Get() != 2) {
+            return;
+        }
+
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
         VkDescriptorSet sets[] = {descriptorSets[frameInfo.frameIndex]};
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 0, 1, sets, 0, nullptr);
@@ -186,9 +193,8 @@ namespace Engine {
         VkDescriptorSetLayout sLayout = setLayout->getDescriptorSetLayout();
         pipelineLayoutInfo.pSetLayouts = &sLayout;
 
-        if (vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
-            throw std::runtime_error("TAA: failed to create pipeline layout");
-        }
+        ENGINE_VERIFY(vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &pipelineLayout) == VK_SUCCESS,
+            "TAA: failed to create pipeline layout");
     }
 
     void TaaPassNode::createPipeline()
@@ -199,7 +205,7 @@ namespace Engine {
 
         struct SpecializationData
         {
-           float modulationFactor = Config::TAA_MODULATION_FACTOR;
+           float modulationFactor = Constants::TAA_MODULATION_FACTOR;
         } specializationData;
 
         VkSpecializationMapEntry entry = {0, offsetof(SpecializationData, modulationFactor), sizeof(float)};

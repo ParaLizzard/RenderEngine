@@ -48,10 +48,11 @@ namespace Engine::Constants {
     // Compute Shader Workgroup Sizes
     // =========================================================================
     namespace Compute {
-        inline constexpr uint32_t CULL_WORKGROUP_SIZE     = 256;
-        inline constexpr uint32_t HIZ_MIP_WORKGROUP_SIZE  = 16;
-        inline constexpr uint32_t MATERIAL_WORKGROUP_SIZE = 8;
-        inline constexpr uint32_t SSAO_WORKGROUP_SIZE     = 8;
+        inline constexpr uint32_t CULL_WORKGROUP_SIZE               = 256;
+        inline constexpr uint32_t HIZ_MIP_WORKGROUP_SIZE            = 16;
+        inline constexpr uint32_t HIZ_MIP_GENERATION_WORKGROUP_SIZE = HIZ_MIP_WORKGROUP_SIZE;
+        inline constexpr uint32_t MATERIAL_WORKGROUP_SIZE           = 8;
+        inline constexpr uint32_t SSAO_WORKGROUP_SIZE               = 8;
     }
 
     // =========================================================================
@@ -62,6 +63,26 @@ namespace Engine::Constants {
         inline constexpr uint32_t MAX_TIMESTAMP_QUERIES   = 128;
     }
 
+    // =========================================================================
+    // Shadow & Lighting Configuration
+    // =========================================================================
+    namespace Lighting {
+        inline constexpr bool     USE_D16_SHADOW_MAPS   = true;
+        inline constexpr uint32_t ENABLE_PCSS           = 0;
+        inline constexpr uint32_t PCF_SAMPLES_CASCADE_0 = 8;
+        inline constexpr uint32_t PCF_SAMPLES_CASCADE_1 = 4;
+        inline constexpr uint32_t PCF_SAMPLES_CASCADE_2 = 4;
+    }
+
+    // =========================================================================
+    // Material & Post-Processing Configuration
+    // =========================================================================
+    namespace PostProcess {
+        inline constexpr float    MATERIAL_MAX_ANISOTROPY = 4.0f;
+        inline constexpr float    TAA_MODULATION_FACTOR   = 0.9f;
+        inline constexpr bool     AGX_PUNCHY              = true;
+    }
+
     // Flat aliases for backwards/unscoped compatibility:
     using namespace Limits;
     using namespace Sentinels;
@@ -69,5 +90,7 @@ namespace Engine::Constants {
     using namespace Meshlet;
     using namespace Compute;
     using namespace Profiling;
+    using namespace Lighting;
+    using namespace PostProcess;
 
 } // namespace Engine::Constants

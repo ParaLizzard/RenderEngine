@@ -1,7 +1,7 @@
 #pragma once
 #include <fstream>
-#include <stdexcept>
 #include <string>
+#include "Core/Assert.h"
 #include <vector>
 #include <vulkan/vulkan.h>
 
@@ -22,8 +22,8 @@ namespace Engine::ShaderUtils {
                 }
             }
         }
-        if (!file.is_open())
-            throw std::runtime_error("failed to open file: " + filename);
+
+        ENGINE_VERIFY(file.is_open(), "failed to open file: {}", filename);
         size_t fileSize = (size_t)file.tellg();
         std::vector<char> buffer(fileSize);
         file.seekg(0);
@@ -38,8 +38,8 @@ namespace Engine::ShaderUtils {
         createInfo.codeSize = code.size();
         createInfo.pCode = reinterpret_cast<const uint32_t *>(code.data());
         VkShaderModule shaderModule;
-        if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS)
-            throw std::runtime_error("failed to create shader module");
+        ENGINE_VERIFY(vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) == VK_SUCCESS,
+            "failed to create shader module");
         return shaderModule;
     }
 } // namespace Engine::ShaderUtils

@@ -54,7 +54,7 @@ TEST_F(RenderGraphLifecycleTest, ClearRemovesAllImages)
 
     graph->clear();
 
-    EXPECT_THROW(graph->getImage("target"), std::runtime_error);
+    EXPECT_DEATH(graph->getImage("target"), "");
 }
 
 TEST_F(RenderGraphLifecycleTest, ClearRemovesAllBuffers)
@@ -66,7 +66,7 @@ TEST_F(RenderGraphLifecycleTest, ClearRemovesAllBuffers)
 
     graph->clear();
 
-    EXPECT_THROW(graph->getBufferInfo("ssbo", 0), std::runtime_error);
+    EXPECT_DEATH(graph->getBufferInfo("ssbo", 0), "");
 }
 
 TEST_F(RenderGraphLifecycleTest, ClearCanBeCalledMultipleTimes)

@@ -1,5 +1,7 @@
 #include "Renderer/Passes/SsaoPassNode.h"
-#include "Core/EngineConfig.h"
+#include "Core/Assert.h"
+#include "Core/EngineConstants.h"
+#include "Renderer/RenderSettings.h"
 #include "Vulkan/Buffer.h"
 
 #include <array>
@@ -13,41 +15,16 @@ namespace Engine {
     SsaoPassNode::SsaoPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap):
         RenderPassNode("SSAO Pass"), device(device), renderer(renderer), megaBuffer(megaBuffer), resourceHeap(resourceHeap)
     {
-        try {
-            createNoiseTexture();
-            createPipelines();
-    
-            ssaoDescriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
-            blurDescriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
-            for (int i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
-                if (!descriptorPool->allocateDescriptor(ssaoSetLayout->getDescriptorSetLayout(), ssaoDescriptorSets[i]))
-                    throw std::runtime_error("SsaoPassNode: failed to allocate SSAO descriptor sets");
-                if (!descriptorPool->allocateDescriptor(blurSetLayout->getDescriptorSetLayout(), blurDescriptorSets[i]))
-                    throw std::runtime_error("SsaoPassNode: failed to allocate blur descriptor sets");
-            }
-        } catch (...) {
-            if (noiseSampler != VK_NULL_HANDLE)
-                vkDestroySampler(device.getDevice(), noiseSampler, nullptr);
-            if (colorSampler != VK_NULL_HANDLE)
-                vkDestroySampler(device.getDevice(), colorSampler, nullptr);
-    
-            if (noiseView != VK_NULL_HANDLE)
-                vkDestroyImageView(device.getDevice(), noiseView, nullptr);
-            if (noiseImage != VK_NULL_HANDLE) {
-                vmaDestroyImage(device.getAllocator(), noiseImage, noiseAllocation);
-            }
-    
-            if (ssaoPipeline != VK_NULL_HANDLE)
-                vkDestroyPipeline(device.getDevice(), ssaoPipeline, nullptr);
-            if (ssaoPipelineLayout != VK_NULL_HANDLE)
-                vkDestroyPipelineLayout(device.getDevice(), ssaoPipelineLayout, nullptr);
-    
-            if (blurPipeline != VK_NULL_HANDLE)
-                vkDestroyPipeline(device.getDevice(), blurPipeline, nullptr);
-            if (blurPipelineLayout != VK_NULL_HANDLE)
-                vkDestroyPipelineLayout(device.getDevice(), blurPipelineLayout, nullptr);
-            
-            throw;
+        createNoiseTexture();
+        createPipelines();
+
+        ssaoDescriptorSets.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        blurDescriptorSets.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        for (int i = 0; i < Constants::MAX_FRAMES_IN_FLIGHT; i++) {
+            ENGINE_VERIFY(descriptorPool->allocateDescriptor(ssaoSetLayout->getDescriptorSetLayout(), ssaoDescriptorSets[i]),
+                "SsaoPassNode: failed to allocate SSAO descriptor sets");
+            ENGINE_VERIFY(descriptorPool->allocateDescriptor(blurSetLayout->getDescriptorSetLayout(), blurDescriptorSets[i]),
+                "SsaoPassNode: failed to allocate blur descriptor sets");
         }
     }
 
@@ -132,6 +109,10 @@ namespace Engine {
 
     void SsaoPassNode::execute(VkCommandBuffer &cmd, FrameInfo &frameInfo)
     {
+        if (!CVarSSAOEnabled.Get()) {
+            return;
+        }
+
         int currentFrame = frameInfo.frameIndex;
 
         VkExtent2D halfExtent = {std::max(1u, frameInfo.extent.width / 2), std::max(1u, frameInfo.extent.height / 2)};
@@ -312,10 +293,10 @@ namespace Engine {
         vkCreateSampler(device.getDevice(), &samplerInfo, nullptr, &colorSampler);
 
         descriptorPool = DescriptorPool::Builder(device)
-                             .setMaxSets(Config::MAX_FRAMES_IN_FLIGHT * 2)
-                             .addPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, Config::MAX_FRAMES_IN_FLIGHT * 2)
-                             .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, Config::MAX_FRAMES_IN_FLIGHT * 4)
-                             .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, Config::MAX_FRAMES_IN_FLIGHT * 2)
+                             .setMaxSets(Constants::MAX_FRAMES_IN_FLIGHT * 2)
+                             .addPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, Constants::MAX_FRAMES_IN_FLIGHT * 2)
+                             .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, Constants::MAX_FRAMES_IN_FLIGHT * 4)
+                             .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, Constants::MAX_FRAMES_IN_FLIGHT * 2)
                              .build();
 
         std::default_random_engine rndEngine((unsigned)time(nullptr));
@@ -330,7 +311,7 @@ namespace Engine {
             ssaoKernel[i] = glm::vec4(sample * scale, 0.0f);
         }
 
-        uboBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        uboBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
         for (int i = 0; i < uboBuffers.size(); i++) {
             uboBuffers[i] =
                 std::make_unique<Buffer>(device,
@@ -365,8 +346,8 @@ namespace Engine {
                                         VK_SHADER_STAGE_COMPUTE_BIT) // Output Blur Image
                             .build();
 
-        ssaoDescriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        blurDescriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        ssaoDescriptorSets.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        blurDescriptorSets.resize(Constants::MAX_FRAMES_IN_FLIGHT);
 
         VkPipelineLayoutCreateInfo pipelineLayoutInfo {};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -391,6 +372,7 @@ namespace Engine {
             uint32_t kernelSize = SSAO_KERNEL_SIZE;
             float radius = SSAO_RADIUS;
         } specializationData;
+        specializationData.radius = CVarSSAORadius.Get();
 
         std::array<VkSpecializationMapEntry, 2> specializationMapEntries = {
             VkSpecializationMapEntry(0, offsetof(SpecializationData, kernelSize), sizeof(uint32_t)),

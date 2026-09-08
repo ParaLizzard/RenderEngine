@@ -29,7 +29,7 @@ namespace Engine {
     class CVarBase {
     public:
         CVarBase(std::string_view name, std::string_view description, CVarFlags flags);
-        virtual ~CVarBase() = default;
+        virtual ~CVarBase();
 
         // Get name of the CVar
         ENGINE_NODISCARD std::string_view GetName() const noexcept { return name; }
@@ -207,7 +207,7 @@ namespace Engine {
                 return "string";
             }
 
-            LOG_WARN("CVar", "Unknown type '%s'", typeid(T).name());
+            LOG_WARN("CVar", "Unknown type '{}'", typeid(T).name());
             return "Unknown type";
         };
 
@@ -232,6 +232,7 @@ namespace Engine {
 
         // Register new CVar
         void Register(CVarBase* cvar);
+        void Unregister(std::string_view name, CVarBase* expected = nullptr);
         CVarBase* Find(std::string_view name);
 
         // Find exact CVar pointer

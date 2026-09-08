@@ -7,10 +7,12 @@
 #include <vector>
 #define VK_USE_PLATFORM_WIN32_KHR
 #include <vulkan/vulkan.h>
+
+#include "System/Window/IWindow.h"
 #include "vma/vk_mem_alloc.h"
 
 namespace Engine {
-    class Window;
+
 
     struct QueueFamilyIndices
     {
@@ -45,11 +47,13 @@ namespace Engine {
     class Device
     {
     public:
-        Device(Window &window);
+        Device(IWindow &window);
         ~Device();
 
         Device(Device const &) = delete;
         Device &operator=(Device const &) = delete;
+
+        IWindow& getWindow() const noexcept { return window; }
 
         VkFormat findSupportedFormat(const std::vector<VkFormat> &candidates,
                                      VkImageTiling tiling,
@@ -126,7 +130,7 @@ namespace Engine {
         VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
         VkCommandPool commandPool = VK_NULL_HANDLE;
         VmaAllocator allocator = VK_NULL_HANDLE;
-        Window &window;
+        IWindow &window;
         VkDebugUtilsMessengerEXT debugMessenger;
 
         QueueFamilyIndices indices;

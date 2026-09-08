@@ -1,7 +1,16 @@
 #include "Vulkan/Swapchain.h"
 
+#include "Core/Assert.h"
+
 
 namespace Engine {
+    SwapChain::SwapChain(Device &device, IWindow &window, std::shared_ptr<SwapChain> previous):
+        device(device), window(&window), windowExtent(window.GetExtent())
+    {
+        oldSwapChain = std::move(previous);
+        init();
+    }
+
     SwapChain::SwapChain(Device &device, VkExtent2D windowExtent): device(device), windowExtent(windowExtent)
     {
         init();
@@ -57,6 +66,12 @@ namespace Engine {
         createSwapChain();
         createImageViews();
         createDepthResources();
+
+        resizeSubscription = EventDispatcher::Get().SubscribeScoped<WindowResizeEvent>(
+            [this](WindowResizeEvent& e) {
+                this->onWindowResize(e.GetWidth(), e.GetHeight());
+            }
+        );
     }
 
     void SwapChain::createSwapChain()
@@ -102,9 +117,8 @@ namespace Engine {
 
         swapChainInfo.oldSwapchain = oldSwapChain ? oldSwapChain->swapChain : VK_NULL_HANDLE;
 
-        if (vkCreateSwapchainKHR(device.getDevice(), &swapChainInfo, nullptr, &swapChain) != VK_SUCCESS) {
-            throw std::runtime_error("SwapChain: failed to create family swap chain");
-        }
+        ENGINE_VERIFY(vkCreateSwapchainKHR(device.getDevice(), &swapChainInfo, nullptr, &swapChain) == VK_SUCCESS,
+            "Failed to create family swap chain");
 
         vkGetSwapchainImagesKHR(device.getDevice(), swapChain, &imageCount, nullptr);
         swapChainImages.resize(imageCount);
@@ -133,9 +147,8 @@ namespace Engine {
             viewInfo.subresourceRange.layerCount = 1;
             viewInfo.subresourceRange.baseArrayLayer = 0;
 
-            if (vkCreateImageView(device.getDevice(), &viewInfo, nullptr, &swapChainImageViews[i]) != VK_SUCCESS) {
-                throw std::runtime_error("SwapChain: failed to create image views");
-            }
+            ENGINE_VERIFY(vkCreateImageView(device.getDevice(), &viewInfo, nullptr, &swapChainImageViews[i]) == VK_SUCCESS,
+            "Failed to create image views");
         }
     }
 
@@ -144,7 +157,7 @@ namespace Engine {
         for (auto &format: availableFormats) {
             if ((format.format == VK_FORMAT_B8G8R8A8_SRGB || format.format == VK_FORMAT_R8G8B8A8_SRGB) &&
                 format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-                printf("Loading VK_FORMAT_R8G8B8A8_SRGB format\n");
+                LOG_INFO("Swapchain", "Loading VK_FORMAT_R8G8B8A8_SRGB format");
                 return format;
             }
         }
@@ -153,21 +166,26 @@ namespace Engine {
 
     VkPresentModeKHR SwapChain::chooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes)
     {
+        if (window && window->IsVSync()) {
+            LOG_INFO("Swapchain", "Present mode: V-Sync (Capped FPS)");
+            return VK_PRESENT_MODE_FIFO_KHR;
+        }
+
         for (const auto &availablePresentMode: availablePresentModes) {
             if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
-                std::cout << "Present mode: Mailbox (Uncapped FPS)\n";
+                LOG_INFO("Swapchain", "Present mode: Mailbox (Uncapped FPS)");
                 return availablePresentMode;
             }
         }
 
         for (const auto &availablePresentMode: availablePresentModes) {
             if (availablePresentMode == VK_PRESENT_MODE_IMMEDIATE_KHR) {
-                std::cout << "Present mode: Immediate (Uncapped FPS)\n";
+                LOG_INFO("Swapchain", "Present mode: Immediate (Uncapped FPS)");
                 return availablePresentMode;
             }
         }
 
-        std::cout << "Present mode: V-Sync (Capped FPS)\n";
+        LOG_INFO("Swapchain", "Present mode: V-Sync (Capped FPS)");
         return VK_PRESENT_MODE_FIFO_KHR;
     }
 
@@ -177,7 +195,7 @@ namespace Engine {
             return capabilities.currentExtent;
         }
 
-        VkExtent2D extent = windowExtent;
+        VkExtent2D extent = window ? VkExtent2D{window->GetWidth(), window->GetHeight()} : windowExtent;
 
         extent.width = std::clamp(extent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
         extent.height =
@@ -216,8 +234,7 @@ namespace Engine {
         viewInfo.subresourceRange.baseArrayLayer = 0;
         viewInfo.subresourceRange.layerCount = 1;
 
-        if (vkCreateImageView(device.getDevice(), &viewInfo, nullptr, &depthImageView) != VK_SUCCESS) {
-            throw std::runtime_error("SwapChain: Failed to create depth image view");
-        }
+        ENGINE_VERIFY(vkCreateImageView(device.getDevice(), &viewInfo, nullptr, &depthImageView) == VK_SUCCESS,
+           "Failed to create depth image view");
     }
 } // namespace Engine

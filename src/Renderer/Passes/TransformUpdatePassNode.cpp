@@ -1,19 +1,19 @@
 #include "Renderer/Passes/TransformUpdatePassNode.h"
-#include "Core/EngineConfig.h"
+#include "Core/EngineConstants.h"
 
 namespace Engine {
 
     TransformUpdatePassNode::TransformUpdatePassNode(Device &device, Renderer &renderer):
         RenderPassNode("Transform Update Pass"), device(device), renderer(renderer)
     {
-        globalObjectBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        stagingBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        globalObjectBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        stagingBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
 
-        for (int i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
+        for (int i = 0; i < Constants::MAX_FRAMES_IN_FLIGHT; i++) {
             globalObjectBuffers[i] = std::make_shared<Buffer>(
                 device,
                 sizeof(ObjectData),
-                Config::MAX_SCENE_OBJECTS,
+                Constants::MAX_SCENE_OBJECTS,
                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                 VMA_MEMORY_USAGE_GPU_ONLY,
                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -23,7 +23,7 @@ namespace Engine {
             stagingBuffers[i] = std::make_unique<Buffer>(
                 device,
                 sizeof(ObjectData),
-                Config::MAX_SCENE_OBJECTS,
+                Constants::MAX_SCENE_OBJECTS,
                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                 VMA_MEMORY_USAGE_CPU_ONLY,
                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -57,7 +57,7 @@ namespace Engine {
             }
 
             sceneDirty = false;
-            framesToUpdate = Config::MAX_FRAMES_IN_FLIGHT;
+            framesToUpdate = Constants::MAX_FRAMES_IN_FLIGHT;
         }
 
         if (framesToUpdate > 0) {

@@ -67,21 +67,18 @@ TEST_F(ShaderUtilsReadFileTest, ReadLargerFilePreservesAllBytes)
 
 TEST_F(ShaderUtilsReadFileTest, ReadNonexistentFileThrows)
 {
-    EXPECT_THROW(
+    EXPECT_DEATH(
         Engine::ShaderUtils::readFile("this_file_does_not_exist_12345.spv"),
-        std::runtime_error
+        ""
     );
 }
 
 TEST_F(ShaderUtilsReadFileTest, ReadNonexistentFileErrorContainsFilename)
 {
-    try {
-        Engine::ShaderUtils::readFile("my_missing_shader.spv");
-        FAIL() << "Expected runtime_error";
-    } catch (const std::runtime_error &e) {
-        EXPECT_NE(std::string(e.what()).find("my_missing_shader.spv"), std::string::npos)
-            << "Error message should contain the filename";
-    }
+    EXPECT_DEATH(
+        Engine::ShaderUtils::readFile("my_missing_shader.spv"),
+        "my_missing_shader.spv"
+    );
 }
 
 TEST_F(ShaderUtilsReadFileTest, ReadFileSizeMatchesActualSize)

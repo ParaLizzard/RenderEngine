@@ -1,5 +1,7 @@
 #include "Renderer/Passes/FxaaPassNode.h"
-#include "Core/EngineConfig.h"
+#include "Core/Assert.h"
+#include "Core/EngineConstants.h"
+#include "Renderer/RenderSettings.h"
 
 #include "Renderer/Renderer.h"
 #include "Renderer/ShaderUtils.h"
@@ -71,6 +73,10 @@ namespace Engine {
 
     void FxaaPassNode::execute(VkCommandBuffer &cmd, FrameInfo &frameInfo)
     {
+        if (CVarAAMethod.Get() != 1) {
+            return;
+        }
+
         VkRenderingAttachmentInfo colorAttachment {};
         colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
         colorAttachment.imageView = frameInfo.renderGraph->getImageView("SwapChainImage");
@@ -135,8 +141,8 @@ namespace Engine {
         samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
 
-        if (vkCreateSampler(device.getDevice(), &samplerInfo, nullptr, &sampler) != VK_SUCCESS)
-            throw std::runtime_error("Fxaa: failed to create sampler!");
+        ENGINE_VERIFY(vkCreateSampler(device.getDevice(), &samplerInfo, nullptr, &sampler) == VK_SUCCESS,
+            "Fxaa: failed to create sampler!");
 
         VkDescriptorSetLayoutBinding samplerLayoutBinding {};
         samplerLayoutBinding.binding = 0;
@@ -150,33 +156,33 @@ namespace Engine {
         layoutInfo.bindingCount = 1;
         layoutInfo.pBindings = &samplerLayoutBinding;
 
-        if (vkCreateDescriptorSetLayout(device.getDevice(), &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS)
-            throw std::runtime_error("Fxaa: failed to create descriptor set layout!");
+        ENGINE_VERIFY(vkCreateDescriptorSetLayout(device.getDevice(), &layoutInfo, nullptr, &descriptorSetLayout) == VK_SUCCESS,
+            "Fxaa: failed to create descriptor set layout!");
 
         VkDescriptorPoolSize poolSize {};
         poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        poolSize.descriptorCount = static_cast<uint32_t>(Config::MAX_FRAMES_IN_FLIGHT);
+        poolSize.descriptorCount = static_cast<uint32_t>(Constants::MAX_FRAMES_IN_FLIGHT);
 
         VkDescriptorPoolCreateInfo poolInfo {};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         poolInfo.poolSizeCount = 1;
         poolInfo.pPoolSizes = &poolSize;
-        poolInfo.maxSets = static_cast<uint32_t>(Config::MAX_FRAMES_IN_FLIGHT);
+        poolInfo.maxSets = static_cast<uint32_t>(Constants::MAX_FRAMES_IN_FLIGHT);
         ;
 
-        if (vkCreateDescriptorPool(device.getDevice(), &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS)
-            throw std::runtime_error("Fxaa: failed to create descriptor pool!");
+        ENGINE_VERIFY(vkCreateDescriptorPool(device.getDevice(), &poolInfo, nullptr, &descriptorPool) == VK_SUCCESS,
+            "Fxaa: failed to create descriptor pool!");
 
-        std::vector<VkDescriptorSetLayout> layouts(Config::MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
+        std::vector<VkDescriptorSetLayout> layouts(Constants::MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
         VkDescriptorSetAllocateInfo allocInfo {};
         allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         allocInfo.descriptorPool = descriptorPool;
-        allocInfo.descriptorSetCount = static_cast<uint32_t>(Config::MAX_FRAMES_IN_FLIGHT);
+        allocInfo.descriptorSetCount = static_cast<uint32_t>(Constants::MAX_FRAMES_IN_FLIGHT);
         allocInfo.pSetLayouts = layouts.data();
 
-        descriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        if (vkAllocateDescriptorSets(device.getDevice(), &allocInfo, descriptorSets.data()) != VK_SUCCESS)
-            throw std::runtime_error("Fxaa: failed to allocate descriptor sets!");
+        descriptorSets.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        ENGINE_VERIFY(vkAllocateDescriptorSets(device.getDevice(), &allocInfo, descriptorSets.data()) == VK_SUCCESS,
+            "Fxaa: failed to allocate descriptor sets!");
 
         VkPushConstantRange pushConstantRange {};
         pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
@@ -190,8 +196,8 @@ namespace Engine {
         pipelineLayoutInfo.pushConstantRangeCount = 1;
         pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
-        if (vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS)
-            throw std::runtime_error("failed to create pipeline layout");
+        ENGINE_VERIFY(vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &pipelineLayout) == VK_SUCCESS,
+            "failed to create pipeline layout");
     }
 
     void FxaaPassNode::createPipeline()
@@ -298,11 +304,9 @@ namespace Engine {
         pipelineInfo.renderPass = VK_NULL_HANDLE;
         pipelineInfo.subpass = 0;
 
-        if (vkCreateGraphicsPipelines(
-                device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, nullptr, &graphicsPipeline) !=
-            VK_SUCCESS) {
-            throw std::runtime_error("failed to create graphics pipeline");
-        }
+        ENGINE_VERIFY(vkCreateGraphicsPipelines(
+                device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, nullptr, &graphicsPipeline) == VK_SUCCESS,
+            "failed to create graphics pipeline");
 
         vkDestroyShaderModule(device.getDevice(), vertShaderModule, nullptr);
         vkDestroyShaderModule(device.getDevice(), fragShaderModule, nullptr);

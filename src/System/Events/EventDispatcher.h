@@ -30,6 +30,7 @@ namespace Engine {
             other.token = 0;
         }
 
+        // Resets if moved
         ScopedSubscription& operator=(ScopedSubscription&& other) noexcept {
             if (this != &other) {
                 Reset();
@@ -41,9 +42,14 @@ namespace Engine {
             return *this;
         }
 
+        // Unsubscribes from its token and dispatcher
         void Reset();
-        SubscriptionToken GetToken() const noexcept { return token; }
-        bool IsValid() const noexcept { return token != 0 && dispatcher != nullptr; }
+
+        // Get subscription token
+        ENGINE_NODISCARD SubscriptionToken GetToken() const noexcept { return token; }
+
+        // Scoped subscription is invalid if it doesn't have its token and dispatcher
+        ENGINE_NODISCARD bool IsValid() const noexcept { return token != 0 && dispatcher != nullptr; }
 
     private:
         EventDispatcher* dispatcher = nullptr;
@@ -54,8 +60,10 @@ namespace Engine {
     public:
         using EventCallbackFn = std::function<void(Event&)>;
 
+        // Get instance
         static EventDispatcher& Get();
 
+        // Subscribes the callback to event dispatcher
         template<typename T, typename F>
         SubscriptionToken Subscribe(F&& callback) {
             static_assert(std::is_base_of_v<Event, T>, "T must derive from Event");
@@ -78,9 +86,10 @@ namespace Engine {
         template<typename T, typename F>
         ScopedSubscription SubscribeScoped(F&& callback) {
             SubscriptionToken token = Subscribe<T>(std::forward<F>(callback));
-            return ScopedSubscription(*this, token);
+            return {*this, token};
         }
 
+        // Unsubscribes the callback from the event dispatcher
         void Unsubscribe(SubscriptionToken token) {
             if (token == 0) return;
 
@@ -101,11 +110,12 @@ namespace Engine {
             }
         }
 
-        // Synchronous dispatch on calling thread with reentrant and thread-safe execution
+        // Synchronous event dispatch
         void PostEvent(Event& event) {
             EventTypeID typeId = event.GetEventType();
 
             std::vector<EventCallbackFn> callbacksToInvoke;
+
             {
                 std::shared_lock<std::shared_mutex> lock(listenersMutex);
                 auto it = listeners.find(typeId);
@@ -123,13 +133,13 @@ namespace Engine {
             }
         }
 
-        // Thread-safe dispatch: queues event from worker threads to be processed on the main thread
+        // Thread-safe event dispatch
         void PostEventThreadSafe(std::unique_ptr<Event> event) {
             std::lock_guard<std::mutex> lock(queueMutex);
             eventQueue.push_back(std::move(event));
         }
 
-        // Drains all thread-safe queued events (called once per frame at the beginning of the engine tick)
+        // Drains all thread-safe queued events
         void DispatchQueuedEvents() {
             std::vector<std::unique_ptr<Event>> localQueue;
             {

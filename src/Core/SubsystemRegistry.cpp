@@ -1,6 +1,3 @@
-//
-// Created by Jan Varga on 25.08.2026.
-//
 
 #include "SubsystemRegistry.h"
 
@@ -38,6 +35,7 @@ namespace Engine
 
         while (!zeroIndegreeQueue.empty()) {
             std::type_index current = zeroIndegreeQueue.front();
+            zeroIndegreeQueue.pop();
             initializationOrder.push_back(typeMap[current]);
             for (auto neighbour : adjList[current]) {
                 inDegree[neighbour]--;

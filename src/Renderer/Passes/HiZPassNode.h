@@ -3,12 +3,15 @@
 #include "Vulkan/Descriptor.h"
 #include "Vulkan/Buffer.h"
 #include "vma/vk_mem_alloc.h"
+#include "Core/EngineConstants.h"
 
 namespace Engine
 {
     class HiZPassNode: public RenderPassNode
     {
     public:
+        static constexpr uint32_t WORKGROUP_SIZE = Constants::HIZ_MIP_GENERATION_WORKGROUP_SIZE;
+
         HiZPassNode(Device& device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap);
         ~HiZPassNode();
 

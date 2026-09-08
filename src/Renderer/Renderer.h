@@ -1,10 +1,13 @@
 #pragma once
-#include <cassert>
 #include <memory>
+#include "Core/Assert.h"
+#include "Core/EngineConstants.h"
 #include <vulkan/vulkan.h>
 #include "Vulkan/Device.h"
-#include "System/Window/Window.h"
+#include "System/Window/IWindow.h"
 #include "Vulkan/Swapchain.h"
+#include "System/Events/EventDispatcher.h"
+#include "System/Events/WindowEvents.h"
 
 namespace Engine {
     struct FrameData
@@ -19,7 +22,7 @@ namespace Engine {
     class Renderer
     {
     public:
-        Renderer(Window &window, Device &device);
+        Renderer(IWindow &window, Device &device);
         ~Renderer();
 
         Renderer(const Renderer &) = delete;
@@ -37,7 +40,7 @@ namespace Engine {
 
         size_t getFrameIndex()
         {
-            assert(isFrameStarted && "Cannot get frameindex when frame not in progress");
+            ENGINE_ASSERT(isFrameStarted, "Cannot get frameindex when frame not in progress");
             return currentFrameIndex;
         };
 
@@ -58,6 +61,7 @@ namespace Engine {
         {
             return swapChainRecreatedThisFrame;
         }
+        void onWindowResize(uint32_t width, uint32_t height);
         std::unique_ptr<SwapChain> swapChain;
 
     private:
@@ -69,7 +73,8 @@ namespace Engine {
         void createFrameData();
         void recreateSwapChain();
 
-        Window &window;
+        IWindow &window;
         Device &device;
+        ScopedSubscription resizeSubscription;
     };
 } // namespace Engine

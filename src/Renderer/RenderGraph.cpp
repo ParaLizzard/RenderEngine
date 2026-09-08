@@ -1,5 +1,8 @@
 #include "Renderer/RenderGraph.h"
-#include "Core/EngineConfig.h"
+#include "Core/Assert.h"
+#include "Core/Log.h"
+#include "Core/EngineConstants.h"
+#include "Renderer/RenderSettings.h"
 #include "Vulkan/Device.h"
 #include "Vulkan/VkUtils.h"
 
@@ -14,6 +17,13 @@ namespace Engine {
     RenderGraph::RenderGraph(Device &device): device(device)
     {
         startTime = std::chrono::high_resolution_clock::now();
+
+        aaCallbackToken = CVarAAMethod.OnChanged([this](int, int) {
+            markDirty();
+        });
+        ssaoCallbackToken = CVarSSAOEnabled.OnChanged([this](bool, bool) {
+            markDirty();
+        });
     }
 
     RenderGraph::~RenderGraph()
@@ -34,6 +44,15 @@ namespace Engine {
         bufferRegistry.clear();
 
         clear();
+
+        if (aaCallbackToken != 0) {
+            CVarAAMethod.RemoveCallback(aaCallbackToken);
+            aaCallbackToken = 0;
+        }
+        if (ssaoCallbackToken != 0) {
+            CVarSSAOEnabled.RemoveCallback(ssaoCallbackToken);
+            ssaoCallbackToken = 0;
+        }
     }
 
     void RenderGraph::addPass(RenderPassNode *pass)
@@ -101,6 +120,7 @@ namespace Engine {
 
     void RenderGraph::compile()
     {
+        graphCompiled = true;
         for (const PassExecutionInfo &pass: registeredPasses) {
             for (const TransientImageDeclaration &decl: pass.transientImages) {
                 if (imageRegistry.find(decl.name) != imageRegistry.end())
@@ -167,19 +187,17 @@ namespace Engine {
             }
 
             for (const ImageUsageDeclaration &image: pass.imageUsages) {
-                if (imageRegistry.find(image.imageName) == imageRegistry.end())
-                    throw std::runtime_error("RenderGraph: Image '" + image.imageName + "' not registered");
-
-                if (imageRegistry.at(image.imageName).image == VK_NULL_HANDLE)
-                    throw std::runtime_error("RenderGraph: Image '" + image.imageName + "' is VK_NULL_HANDLE");
+                ENGINE_VERIFY(imageRegistry.find(image.imageName) != imageRegistry.end(),
+                    "RenderGraph: Image '{}' not registered", image.imageName);
+                ENGINE_VERIFY(imageRegistry.at(image.imageName).image != VK_NULL_HANDLE,
+                    "RenderGraph: Image '{}' is VK_NULL_HANDLE", image.imageName);
             }
 
             for (const BufferUsageDeclaration &buf: pass.bufferUsages) {
-                if (bufferRegistry.find(buf.bufferName) == bufferRegistry.end())
-                    throw std::runtime_error("RenderGraph: Buffer '" + buf.bufferName + "' not registered");
-
-                if (bufferRegistry.at(buf.bufferName).buffer == VK_NULL_HANDLE)
-                    throw std::runtime_error("RenderGraph: Buffer '" + buf.bufferName + "' is VK_NULL_HANDLE");
+                ENGINE_VERIFY(bufferRegistry.find(buf.bufferName) != bufferRegistry.end(),
+                    "RenderGraph: Buffer '{}' not registered", buf.bufferName);
+                ENGINE_VERIFY(bufferRegistry.at(buf.bufferName).buffer != VK_NULL_HANDLE,
+                    "RenderGraph: Buffer '{}' is VK_NULL_HANDLE", buf.bufferName);
             }
         }
     }
@@ -194,12 +212,12 @@ namespace Engine {
             VkQueryPoolCreateInfo queryPoolInfo {};
             queryPoolInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
             queryPoolInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
-            queryPoolInfo.queryCount = Config::MAX_FRAMES_IN_FLIGHT * 256;
+            queryPoolInfo.queryCount = Constants::MAX_FRAMES_IN_FLIGHT * 256;
             if (vkCreateQueryPool(device.getDevice(), &queryPoolInfo, nullptr, &profilerQueryPool) != VK_SUCCESS) {
                 profilerQueryPool = VK_NULL_HANDLE;
             } else {
 
-                vkResetQueryPool(device.getDevice(), profilerQueryPool, 0, Config::MAX_FRAMES_IN_FLIGHT * 256);
+                vkResetQueryPool(device.getDevice(), profilerQueryPool, 0, Constants::MAX_FRAMES_IN_FLIGHT * 256);
             }
         }
 
@@ -309,8 +327,8 @@ namespace Engine {
             frameMarkers[currentFrame] = activeMarkers;
         }
 
-        if (activeProfiling && framesProfiledCount > Config::MAX_FRAMES_IN_FLIGHT) {
-            uint32_t prevFrame = (currentFrame + Config::MAX_FRAMES_IN_FLIGHT - 1) % Config::MAX_FRAMES_IN_FLIGHT;
+        if (activeProfiling && framesProfiledCount > Constants::MAX_FRAMES_IN_FLIGHT) {
+            uint32_t prevFrame = (currentFrame + Constants::MAX_FRAMES_IN_FLIGHT - 1) % Constants::MAX_FRAMES_IN_FLIGHT;
             uint32_t prevOffset = prevFrame * 256;
             auto &prevMarkers = frameMarkers[prevFrame];
             uint32_t queryCount = static_cast<uint32_t>(prevMarkers.size() * 2);
@@ -397,15 +415,16 @@ namespace Engine {
             }
         }
 
-        std::cout << "\n========================================================================================\n"
-                  << "ENGINE GPU PASS PROFILER SUMMARY (Measured Over 5s Window After 30s Warmup)\n"
-                  << "========================================================================================\n"
-                  << std::left << std::setw(30) << "Pass Name"
-                  << " | " << std::setw(16) << "Avg GPU Time (ms)"
-                  << " | " << std::setw(12) << "Min (ms)"
-                  << " | " << std::setw(12) << "Max (ms)"
-                  << " | " << std::setw(12) << "% GPU Share" << "\n"
-                  << "----------------------------------------------------------------------------------------\n";
+        std::ostringstream ss;
+        ss << "\n========================================================================================\n"
+           << "ENGINE GPU PASS PROFILER SUMMARY (Measured Over 5s Window After 30s Warmup)\n"
+           << "========================================================================================\n"
+           << std::left << std::setw(30) << "Pass Name"
+           << " | " << std::setw(16) << "Avg GPU Time (ms)"
+           << " | " << std::setw(12) << "Min (ms)"
+           << " | " << std::setw(12) << "Max (ms)"
+           << " | " << std::setw(12) << "% GPU Share" << "\n"
+           << "----------------------------------------------------------------------------------------\n";
 
         for (const auto &s : statsList) {
             double avgMs = s.totalTimeMs / s.samples;
@@ -420,24 +439,24 @@ namespace Engine {
                 displayName = std::string(s.depth * 2, ' ') + "|- " + s.name;
             }
 
-            std::cout << std::left << std::setw(30) << displayName
-                      << " | " << std::fixed << std::setprecision(3) << std::setw(16) << avgMs
-                      << " | " << std::setw(12) << s.minTimeMs
-                      << " | " << std::setw(12) << s.maxTimeMs
-                      << " | ";
+            ss << std::left << std::setw(30) << displayName
+               << " | " << std::fixed << std::setprecision(3) << std::setw(16) << avgMs
+               << " | " << std::setw(12) << s.minTimeMs
+               << " | " << std::setw(12) << s.maxTimeMs
+               << " | ";
                       
             if (s.depth == 0) {
-                std::cout << std::setprecision(1) << std::setw(11) << pct << " %\n";
+                ss << std::setprecision(1) << std::setw(11) << pct << " %\n";
             } else {
-                std::cout << std::setw(13) << " " << "\n";
+                ss << std::setw(13) << " " << "\n";
             }
         }
-        std::cout << "----------------------------------------------------------------------------------------\n"
-                  << std::left << std::setw(30) << "Total Measured Pass Time"
-                  << " | " << std::fixed << std::setprecision(3) << std::setw(16) << totalGpuMs << " ms\n"
-                  << "========================================================================================\n" << std::flush;
+        ss << "----------------------------------------------------------------------------------------\n"
+           << std::left << std::setw(30) << "Total Measured Pass Time"
+           << " | " << std::fixed << std::setprecision(3) << std::setw(16) << totalGpuMs << " ms\n"
+           << "========================================================================================\n";
 
-        std::cout << "\a" << std::flush;
+        LOG_INFO("Profiler", "{}", ss.str());
 #ifdef _WIN32
         Beep(750, 300);
 #endif
@@ -448,6 +467,7 @@ namespace Engine {
         registeredPasses.clear();
         imageRegistry.clear();
         bufferRegistry.clear();
+        graphCompiled = false;
     }
 
     void RenderGraph::markSceneDirty()
@@ -496,10 +516,8 @@ namespace Engine {
     VkImageView RenderGraph::getImageView(const std::string &name) const
     {
         auto it = imageRegistry.find(name);
-        if (it != imageRegistry.end()) {
-            return it->second.imageView;
-        }
-        throw std::runtime_error("RenderGraph: Attempted to fetch unregistered image: " + name);
+        ENGINE_VERIFY(it != imageRegistry.end(), "RenderGraph: Attempted to fetch unregistered image: {}", name);
+        return it->second.imageView;
     }
 
     RenderGraphBuilder::RenderGraphBuilder(std::vector<ImageUsageDeclaration> &imageUsagesList,
@@ -582,19 +600,14 @@ namespace Engine {
     VkImage RenderGraph::getImage(const std::string &name) const
     {
         auto it = imageRegistry.find(name);
-        if (it != imageRegistry.end()) {
-            return it->second.image;
-        }
-        throw std::runtime_error("RenderGraph: Attempted to fetch unregistered image: " + name);
+        ENGINE_VERIFY(it != imageRegistry.end(), "RenderGraph: Attempted to fetch unregistered image: {}", name);
+        return it->second.image;
     }
 
     VkDescriptorBufferInfo RenderGraph::getBufferInfo(const std::string &name, int32_t currentFrame)
     {
         auto it = bufferRegistry.find(name);
-        if (it != bufferRegistry.end()) {
-            return VkDescriptorBufferInfo {it->second.buffer, 0, VK_WHOLE_SIZE};
-        }
-
-        throw std::runtime_error("RenderGraph: Attempted to fetch unregistered buffer: " + name);
+        ENGINE_VERIFY(it != bufferRegistry.end(), "RenderGraph: Attempted to fetch unregistered buffer: {}", name);
+        return VkDescriptorBufferInfo {it->second.buffer, 0, VK_WHOLE_SIZE};
     }
 } // namespace Engine

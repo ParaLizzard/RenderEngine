@@ -32,6 +32,7 @@ TEST_F(EngineConstantsTest, ValuesAreConstexpr)
 
     static_assert(Engine::Constants::CULL_WORKGROUP_SIZE == 256);
     static_assert(Engine::Constants::HIZ_MIP_WORKGROUP_SIZE == 16);
+    static_assert(Engine::Constants::HIZ_MIP_GENERATION_WORKGROUP_SIZE == 16);
     static_assert(Engine::Constants::MATERIAL_WORKGROUP_SIZE == 8);
     static_assert(Engine::Constants::SSAO_WORKGROUP_SIZE == 8);
 

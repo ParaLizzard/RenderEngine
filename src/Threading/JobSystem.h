@@ -11,6 +11,9 @@
 #include <vector>
 #include <condition_variable>
 
+#include "Core/Assert.h"
+#include "Core/Log.h"
+
 namespace Engine {
     class JobSystemStoppedException: public std::runtime_error
     {
@@ -78,10 +81,10 @@ namespace Engine {
             try {
                 return bound_task();
             } catch (const std::exception &e) {
-                std::cerr << "\n[JobSystem ERROR]: Exception thrown inside worker thread: " << e.what() << std::endl;
+                LOG_ERROR("JobSystem", "Exception thrown inside worker thread: {}", e.what());
                 throw;
             } catch (...) {
-                std::cerr << "\n[JobSystem ERROR]: Unknown exception thrown inside worker thread." << std::endl;
+                LOG_ERROR("JobSystem", "Unknown exception thrown inside worker thread.");
                 throw;
             }
         });
@@ -91,8 +94,7 @@ namespace Engine {
         {
             std::unique_lock<std::mutex> lock(queueMutex);
 
-            if (stop)
-                throw std::runtime_error("JobSystem: enqueue called on stopped JobSystem");
+            ENGINE_ASSERT(!stop, "JobSystem: enqueue called on stopped JobSystem");
 
             tasks.emplace([task]() { (*task)(); });
         }

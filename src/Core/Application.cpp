@@ -6,17 +6,54 @@
 
 #include <stb_image.h>
 
+#include "Core/Assert.h"
+#include "Core/Log.h"
+#include "Engine.h"
 #include "AssetSystem/IBL.h"
 #include "AssetSystem/LoaderGLTF.h"
-#include "System/Window/WindowWin32.h"
-
 #include "Scene/SceneManager.h"
-#include "Core/EngineConfig.h"
+#include "Core/EngineConstants.h"
+#include "System/Input/InputSubsystem.h"
+#include "System/Window/WindowSubsystem.h"
+#include "System/Events/EventDispatcher.h"
 
 
 namespace Engine {
+    static IWindow& getWindowFromSubsystems()
+    {
+        auto& registry = Engine::Get().GetSubsystems();
+        if (!registry.Has<WindowSubsystem>()) {
+            registry.Register<WindowSubsystem>(WindowProps{
+                .title = "RenderEngine",
+                .width = Application::WIDTH,
+                .height = Application::HEIGHT,
+                .vsync = false,
+                .fullscreen = false,
+                .resizable = true,
+                .cursorMode = CursorMode::Normal
+            });
+            registry.Get<WindowSubsystem>().Initialize(registry);
+        }
+        if (!registry.Has<InputSubsystem>()) {
+            registry.Register<InputSubsystem, WindowSubsystem>();
+            registry.Get<InputSubsystem>().Initialize(registry);
+        }
+        return registry.Get<WindowSubsystem>().GetWindow();
+    }
+
     Application::Application()
-    {}
+        : window(getWindowFromSubsystems())
+        , device(window)
+        , renderer(window, device)
+    {
+    }
+
+    Application::Application(IWindow &windowRef)
+        : window(windowRef)
+        , device(window)
+        , renderer(window, device)
+    {
+    }
 
     Application::~Application()
     {
@@ -26,8 +63,6 @@ namespace Engine {
     void Application::run()
     {
         initScene();
-        inputManager.Initialize(window);
-        window.setInputManager(&inputManager);
 
         FrameInfo info{};
         info.device = &device;
@@ -35,7 +70,7 @@ namespace Engine {
         info.renderer = &renderer;
         info.megaBuffer = &megaBuffer;
         info.renderGraph = &renderGraph;
-        info.input = &inputManager;
+        //info.input = &inputManager;
 
         camera.setViewTarget(glm::vec3{0.0f, 0.0f, -5.0f}, glm::vec3{0.0f, 0.0f, 0.0f});
 
@@ -57,63 +92,83 @@ namespace Engine {
         cameraObject = std::make_shared<GameObject>(GameObject::createGameObject());
         cameraObject->transform.translation = {0.f, 0.f, -5.f};
 
-        float lastTime = 0.0f;
         graphCompiled = false;
         sceneGraphDirty = true;
         lastExtent = {0, 0};
 
-        PerformanceMonitor monitor{};
+        Engine& engine = Engine::Get();
+        SubsystemRegistry& registry = engine.GetSubsystems();
+        auto& windowSubsystem = registry.Get<WindowSubsystem>();
+        IWindow& window = windowSubsystem.GetWindow();
+        InputSubsystem& input = registry.Get<InputSubsystem>();
 
-        while (!window.shouldClose()) {
+        // Movement Axes
+        input.BindAxis("MoveForward", { .positiveKey = KeyCode::W, .negativeKey = KeyCode::S, .scale = 1.0f });
+        input.BindAxis("MoveRight",   { .positiveKey = KeyCode::D, .negativeKey = KeyCode::A, .scale = 1.0f });
+        input.BindAxis("MoveUp",      { .positiveKey = KeyCode::E, .negativeKey = KeyCode::Q, .scale = 1.0f });
 
-            window.pollEvents();
-            inputManager.Update();
+        // Key Actions
+        input.BindAction("ToggleSSAO",       { .primaryKey = KeyCode::O,  .triggerType = TriggerType::JustPressed });
+        input.BindAction("ToggleFreezeCull", { .primaryKey = KeyCode::F4, .triggerType = TriggerType::JustPressed });
+        input.BindAction("ToggleCulling",    { .primaryKey = KeyCode::F5, .triggerType = TriggerType::JustPressed });
+        input.BindAction("ToggleHiZDebug",   { .primaryKey = KeyCode::F6, .triggerType = TriggerType::JustPressed });
 
+        aaCallbackToken = CVarAAMethod.OnChanged([this](int, int) {
+            graphCompiled = false;
+        });
+        ssaoCallbackToken = CVarSSAOEnabled.OnChanged([this](bool, bool) {
+            graphCompiled = false;
+        });
 
-            if (inputManager.IsKeyJustPressed(KeyCode::O)) {
-                enableSSAO = !enableSSAO;
-                std::cout << "SSAO: " << (enableSSAO ? "ON" : "OFF") << "\n";
+        while (!window.ShouldClose()) {
+            EventDispatcher::Get().DispatchQueuedEvents();
+            window.PollEvents();
+
+            if (input.IsActionTriggered("ToggleSSAO")) {
+                CVarSSAOEnabled.Set(!CVarSSAOEnabled.Get());
+                LOG_INFO("Application", "SSAO: {}", CVarSSAOEnabled.Get() ? "ON" : "OFF");
             }
 
-            if (inputManager.IsKeyJustPressed(KeyCode::F4)) {
-                freezeCulling = !freezeCulling;
-                if (freezeCulling) {
+            if (input.IsActionTriggered("ToggleFreezeCull")) {
+                CVarFreezeCulling.Set(!CVarFreezeCulling.Get());
+                if (CVarFreezeCulling.Get()) {
                     frozenViewProj = camera.getProjection() * camera.getView();
                     frozenCameraPos = camera.getPosition();
                     frozenView = camera.getView();
                 }
+                LOG_INFO("Application", "Freeze Culling: {}", CVarFreezeCulling.Get() ? "ON" : "OFF");
             }
 
-            if (inputManager.IsKeyJustPressed(KeyCode::F5)) {
+            if (input.IsActionTriggered("ToggleCulling")) {
                 cullEnabled = !cullEnabled;
-                std::cout << "Culling: " << (cullEnabled ? "ON" : "OFF") << "\n";
+                LOG_INFO("Application", "Culling: {}", cullEnabled ? "ON" : "OFF");
             }
 
-            if (inputManager.IsKeyJustPressed(KeyCode::F6)) {
-                debugViewMode = (debugViewMode == 1) ? 0 : 1;
-                std::cout << "Hi-Z Debug View: " << (debugViewMode == 1 ? "ON (Mip 0)" : "OFF") << "\n";
+            if (input.IsActionTriggered("ToggleHiZDebug")) {
+                int mode = CVarHiZDebugMode.Get() == 1 ? 0 : 1;
+                CVarHiZDebugMode.Set(mode);
+                LOG_INFO("Application", "Hi-Z Debug View: {}", mode == 1 ? "ON (Mip 0)" : "OFF");
             }
 
-            if (debugViewMode == 1) {
-                if (inputManager.IsKeyJustPressed(KeyCode::PageUp) || inputManager.IsKeyJustPressed(KeyCode::Right)) {
-                    debugHiZMipLevel = std::min(debugHiZMipLevel + 1, 11);
-                    std::cout << "Hi-Z Debug Mip Level: " << debugHiZMipLevel << "\n";
+            if (CVarHiZDebugMode.Get() == 1) {
+                if (input.IsKeyJustPressed(KeyCode::PageUp) || input.IsKeyJustPressed(KeyCode::Right)) {
+                    CVarHiZDebugMip.Set(std::min(CVarHiZDebugMip.Get() + 1, 11));
+                    LOG_INFO("Application", "Hi-Z Debug Mip Level: {}", CVarHiZDebugMip.Get());
                 }
-                if (inputManager.IsKeyJustPressed(KeyCode::PageDown) || inputManager.IsKeyJustPressed(KeyCode::Left)) {
-                    debugHiZMipLevel = std::max(debugHiZMipLevel - 1, 0);
-                    std::cout << "Hi-Z Debug Mip Level: " << debugHiZMipLevel << "\n";
+                if (input.IsKeyJustPressed(KeyCode::PageDown) || input.IsKeyJustPressed(KeyCode::Left)) {
+                    CVarHiZDebugMip.Set(std::max(CVarHiZDebugMip.Get() - 1, 0));
+                    LOG_INFO("Application", "Hi-Z Debug Mip Level: {}", CVarHiZDebugMip.Get());
                 }
             }
 
-            auto currentTime = static_cast<float>(window.getTime());
-            float deltaTime = currentTime - lastTime;
-            lastTime = currentTime;
-            double time = window.getTime();
-            monitor.tick(deltaTime);
+            auto& clock = engine.GetClock();
+            clock.Tick();
+            float deltaTime = clock.GetDeltaTime();
+            [[maybe_unused]] float gameDt = clock.GetGameDeltaTime();
+            float fps = clock.GetAverageFPS();
 
-            std::string title = "Render Engine - " + std::to_string(monitor.GetAverageFPS()) + " FPS";
+            std::string title = std::format("Render Engine - {:.1f} FPS", fps);
             window.setWindowTitle(title);
-
 
             std::vector<ParsedGLTF> parsedModels = assetStreamer.pollCompleted();
             for (auto& parsedModel : parsedModels) {
@@ -134,10 +189,10 @@ namespace Engine {
                 renderGraph.markSceneDirty();
                 sceneGraphDirty = true;
                 
-                std::cout << "Successfully streamed in async model!" << std::endl;
+                LOG_INFO("AssetStreamer", "Successfully streamed in async model!");
             }
 
-            cameraController.moveInPlaneXZ(inputManager, deltaTime, cameraObject);
+            cameraController.moveInPlaneXZ(input, deltaTime, cameraObject);
             camera.setViewYXZ(cameraObject->transform.translation, cameraObject->transform.rotation);
 
             float aspect = renderer.getAspectRatio();
@@ -160,7 +215,7 @@ namespace Engine {
 
             glm::mat4 proj = camera.getProjection();
             glm::vec2 subpixelJitter{0.0f, 0.0f};
-            if (Config::CURRENT_AA_METHOD == TAA) {
+            if (CVarAAMethod.Get() == 2) {
                 static const glm::vec2 halton8[8] = {
                     {  0.0f,       -0.1666667f },
                     { -0.25f,       0.1666667f },
@@ -196,7 +251,8 @@ namespace Engine {
             uboData.viewProjection = curViewProj;
             uboData.prevViewProjection = prevViewProj;
 
-            glm::mat4 cullVP = freezeCulling ? frozenViewProj : curViewProj;
+            bool freezeCull = CVarFreezeCulling.Get();
+            glm::mat4 cullVP = freezeCull ? frozenViewProj : curViewProj;
             glm::mat4 tvp = glm::transpose(cullVP);
             uboData.frustumPlanes[0] = tvp[3] + tvp[0]; // Left
             uboData.frustumPlanes[1] = tvp[3] - tvp[0]; // Right
@@ -210,7 +266,7 @@ namespace Engine {
                 uboData.frustumPlanes[i] /= len;
             }
 
-            glm::vec3 cullCamPos = freezeCulling ? frozenCameraPos : camera.getPosition();
+            glm::vec3 cullCamPos = freezeCull ? frozenCameraPos : camera.getPosition();
             uboData.cameraPosition = glm::vec4(cullCamPos, camera.getProjection()[1][1]);
             uboData.directionalLight = glm::vec4(glm::normalize(glm::vec3(0.2f, -1.0f, 0.1f)), 7.0f);
             uboData.maxReflectionLod = static_cast<float>(ibl->prefilteredCube.mipLevels - 1);
@@ -227,27 +283,38 @@ namespace Engine {
             updateFrameGraph();
 
             info.frameIndex = currentFrame;
-            info.frameTime = time;
+            info.frameTime = deltaTime;
             info.extent = currentExtent;
             info.commandBuffer = cmd;
             info.jobSystem = &jobSystem;
-            info.enableSSAO = enableSSAO;
-            info.input = &inputManager;
+            info.enableSSAO = CVarSSAOEnabled.Get();
+            info.input = &input;
             info.subpixelJitter = subpixelJitter;
             info.curViewProj = curViewProj;
             
-            info.cullViewProj = freezeCulling ? frozenViewProj : (camera.getProjection() * camera.getView());
-            info.cullCameraPos = freezeCulling ? frozenCameraPos : camera.getPosition();
-            info.cullView = freezeCulling ? frozenView : camera.getView();
+            info.cullViewProj = freezeCull ? frozenViewProj : (camera.getProjection() * camera.getView());
+            info.cullCameraPos = freezeCull ? frozenCameraPos : camera.getPosition();
+            info.cullView = freezeCull ? frozenView : camera.getView();
             info.cullEnabled = cullEnabled;
             info.firstFrame = firstFrame;
-            info.debugViewMode = debugViewMode;
-            info.debugHiZMipLevel = debugHiZMipLevel;
+            info.debugViewMode = CVarHiZDebugMode.Get();
+            info.debugHiZMipLevel = CVarHiZDebugMip.Get();
 
             renderGraph.execute(cmd, info);
             renderGraph.transitionToPresent(cmd, "SwapChainImage");
 
             renderer.endFrame();
+
+            input.Update(deltaTime);
+        }
+
+        if (aaCallbackToken != 0) {
+            CVarAAMethod.RemoveCallback(aaCallbackToken);
+            aaCallbackToken = 0;
+        }
+        if (ssaoCallbackToken != 0) {
+            CVarSSAOEnabled.RemoveCallback(ssaoCallbackToken);
+            ssaoCallbackToken = 0;
         }
     }
 
@@ -267,8 +334,7 @@ namespace Engine {
 
         int noiseW, noiseH, noiseC;
         stbi_uc *noisePixels = stbi_load("assets/blue_noise.png", &noiseW, &noiseH, &noiseC, STBI_rgb_alpha);
-        if (!noisePixels)
-            throw std::runtime_error("Failed to load blue noise texture!");
+        ENGINE_VERIFY(noisePixels != nullptr, "Failed to load blue noise texture!");
 
         Texture2D blueNoiseTex;
         blueNoiseTex.fromBuffer(noisePixels,
@@ -331,13 +397,13 @@ namespace Engine {
 
         resourceHeap.writeIBLDescriptors(irradianceInfo, prefilterInfo, brdfLutInfo);
 
-        for (int i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
+        for (int i = 0; i < Constants::MAX_FRAMES_IN_FLIGHT; i++) {
             resourceHeap.uploadMaterialBuffer(i);
         }
         resourceHeap.writeMaterialDescriptorAllFrames();
 
-        sceneUboBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        for (int i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
+        sceneUboBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        for (int i = 0; i < Constants::MAX_FRAMES_IN_FLIGHT; i++) {
             sceneUboBuffers[i] = std::make_unique<Buffer>(device,
                                                           sizeof(SceneUbo),
                                                           1,
@@ -372,7 +438,7 @@ namespace Engine {
 
             renderGraph.registerPhysicalBuffer("CompactedIndexBuffer",
                                    cullPassPhase1.getCompactedIndexBuffer(currentFrame),
-                                   Config::MAX_SCENE_OBJECTS * Config::MAX_TRIANGLES * 3 * sizeof(uint32_t),
+                                   Constants::MAX_SCENE_OBJECTS * Constants::MAX_MESHLET_TRIANGLES * 3 * sizeof(uint32_t),
                                    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                                    VK_ACCESS_2_SHADER_WRITE_BIT);
 
@@ -384,7 +450,7 @@ namespace Engine {
 
             renderGraph.registerPhysicalBuffer("MaskedCompactedIndexBuffer",
                                                cullPassPhase1.getMaskedCompactedIndexBuffer(currentFrame),
-                                               Config::MAX_SCENE_OBJECTS * Config::MAX_TRIANGLES * 3 * sizeof(uint32_t),
+                                               Constants::MAX_SCENE_OBJECTS * Constants::MAX_MESHLET_TRIANGLES * 3 * sizeof(uint32_t),
                                                VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                                                VK_ACCESS_2_SHADER_WRITE_BIT);
 
@@ -416,11 +482,11 @@ namespace Engine {
             renderGraph.addPass(&csmPass);
             renderGraph.addPass(&ssaoPass);
             renderGraph.addPass(&materialPass);
-            if (Config::CURRENT_AA_METHOD == TAA) {
+            if (CVarAAMethod.Get() == 2) {
                 renderGraph.addPass(&taaPass);
             }
             renderGraph.addPass(&tonemapPass);
-            if (Config::CURRENT_AA_METHOD == FXAA) {
+            if (CVarAAMethod.Get() == 1) {
                 renderGraph.addPass(&fxaaPass);
             }
 
@@ -454,7 +520,7 @@ namespace Engine {
 
         renderGraph.updateBufferHandle("CompactedIndexBuffer",
                                        cullPassPhase1.getCompactedIndexBuffer(currentFrame),
-                                       Config::MAX_SCENE_OBJECTS * Config::MAX_TRIANGLES * 3 * sizeof(uint32_t));
+                                       Constants::MAX_SCENE_OBJECTS * Constants::MAX_MESHLET_TRIANGLES * 3 * sizeof(uint32_t));
 
         renderGraph.updateBufferHandle("SingleIndirectCommand",
                                        cullPassPhase1.getSingleIndirectCommandBuffer(currentFrame),
@@ -462,7 +528,7 @@ namespace Engine {
 
         renderGraph.updateBufferHandle("MaskedCompactedIndexBuffer",
                                        cullPassPhase1.getMaskedCompactedIndexBuffer(currentFrame),
-                                       Config::MAX_SCENE_OBJECTS * Config::MAX_TRIANGLES * 3 * sizeof(uint32_t));
+                                       Constants::MAX_SCENE_OBJECTS * Constants::MAX_MESHLET_TRIANGLES * 3 * sizeof(uint32_t));
 
         renderGraph.updateBufferHandle("MaskedSingleIndirectCommand",
                                        cullPassPhase1.getMaskedSingleIndirectCommandBuffer(currentFrame),

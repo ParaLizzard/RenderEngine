@@ -6,8 +6,7 @@
 #include "Renderer/Passes/VisibilityPassNode.h"
 #include "Renderer/Passes/MaterialPassNode.h"
 #include "Renderer/Passes/CullPassNode.h"
-#include "Renderer/Passes/TransformUpdatePassNode.h"
-#include "Core/EngineConfig.h"
+#include "Core/EngineConstants.h"
 #include "Vulkan/Buffer.h"
 
 // =============================================================================
@@ -95,11 +94,11 @@ TEST_F(RenderPassIntegrationTest, VisibilityPassInitializesAndCompiles) {
         
         renderGraph->addPass(&visPass);
         
-        Engine::Buffer dummyBuffer1(*device, Engine::Config::MAX_SCENE_OBJECTS * sizeof(VkDrawIndexedIndirectCommand), 1, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, 0, 1);
+        Engine::Buffer dummyBuffer1(*device, Engine::Constants::MAX_SCENE_OBJECTS * sizeof(VkDrawIndexedIndirectCommand), 1, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, 0, 1);
         Engine::Buffer dummyBuffer2(*device, sizeof(uint32_t), 1, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY, 0, 1);
         
         renderGraph->registerPhysicalBuffer("CullCompactedIndirectCommands",
-                                            dummyBuffer1.getBuffer(), Engine::Config::MAX_SCENE_OBJECTS * sizeof(VkDrawIndexedIndirectCommand),
+                                            dummyBuffer1.getBuffer(), Engine::Constants::MAX_SCENE_OBJECTS * sizeof(VkDrawIndexedIndirectCommand),
                                             VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
         renderGraph->registerPhysicalBuffer("CullDrawCount",
                                             dummyBuffer2.getBuffer(), sizeof(uint32_t),

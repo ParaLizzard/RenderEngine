@@ -7,8 +7,8 @@ namespace Engine {
     class MouseMovedEvent : public Event {
     public:
         MouseMovedEvent(float x, float y) : mouseX(x), mouseY(y) {}
-        float GetX() const noexcept { return mouseX; }
-        float GetY() const noexcept { return mouseY; }
+        ENGINE_NODISCARD float GetX() const noexcept { return mouseX; }
+        ENGINE_NODISCARD float GetY() const noexcept { return mouseY; }
 
         EVENT_CLASS_TYPE(MouseMoved)
         EVENT_CLASS_CATEGORY(EventCategory::Mouse | EventCategory::Input)
@@ -20,8 +20,8 @@ namespace Engine {
     class MouseRawDeltaEvent : public Event {
     public:
         MouseRawDeltaEvent(float dx, float dy) : deltaX(dx), deltaY(dy) {}
-        float GetDeltaX() const noexcept { return deltaX; }
-        float GetDeltaY() const noexcept { return deltaY; }
+        ENGINE_NODISCARD float GetDeltaX() const noexcept { return deltaX; }
+        ENGINE_NODISCARD float GetDeltaY() const noexcept { return deltaY; }
 
         EVENT_CLASS_TYPE(MouseRawDelta)
         EVENT_CLASS_CATEGORY(EventCategory::Mouse | EventCategory::Input)
@@ -33,8 +33,8 @@ namespace Engine {
     class MouseScrolledEvent : public Event {
     public:
         MouseScrolledEvent(float xOffset, float yOffset) : xOffset(xOffset), yOffset(yOffset) {}
-        float GetOffsetX() const noexcept { return xOffset; }
-        float GetOffsetY() const noexcept { return yOffset; }
+        ENGINE_NODISCARD float GetOffsetX() const noexcept { return xOffset; }
+        ENGINE_NODISCARD float GetOffsetY() const noexcept { return yOffset; }
 
         EVENT_CLASS_TYPE(MouseScrolled)
         EVENT_CLASS_CATEGORY(EventCategory::Mouse | EventCategory::Input)
@@ -43,9 +43,22 @@ namespace Engine {
         float xOffset, yOffset;
     };
 
+    class MouseEnterEvent : public Event
+    {
+    public:
+        explicit MouseEnterEvent(bool entered) : entered(entered) {}
+
+        ENGINE_NODISCARD bool IsIconified() const noexcept { return entered; }
+
+        EVENT_CLASS_TYPE(MouseEnter)
+        EVENT_CLASS_CATEGORY(EventCategory::Mouse | EventCategory::Application)
+    private:
+        bool entered;
+    };
+
     class MouseButtonEvent : public Event {
     public:
-        MouseButton GetMouseButton() const noexcept { return button; }
+        ENGINE_NODISCARD MouseButton GetMouseButton() const noexcept { return button; }
         EVENT_CLASS_CATEGORY(EventCategory::Mouse | EventCategory::MouseButton | EventCategory::Input)
 
     protected:

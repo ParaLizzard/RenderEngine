@@ -4,7 +4,7 @@
 #include <memory>
 #include <iostream>
 
-#include "System/Window/Window.h"
+#include "System/Window/WindowWin32.h"
 #include "Vulkan/Device.h"
 #include "Renderer/Renderer.h"
 #include "Vulkan/ResourceHeap.h"
@@ -15,7 +15,7 @@
 // Note: This will momentarily spawn a window, as the current Engine::Device requires it.
 class RenderPassIntegrationTest : public ::testing::Test {
 protected:
-    std::unique_ptr<Engine::Window> window;
+    std::unique_ptr<Engine::WindowWin32> window;
     std::unique_ptr<Engine::Device> device;
     std::unique_ptr<Engine::Renderer> renderer;
     std::unique_ptr<Engine::Model> megaBuffer;
@@ -25,7 +25,7 @@ protected:
     void SetUp() override {
         try {
             // Use a small 800x600 window to minimize screen flash during tests
-            window = std::make_unique<Engine::Window>(800, 600, "RenderPass Integration Test");
+            window = std::make_unique<Engine::WindowWin32>(Engine::WindowProps{.title = "RenderPass Integration Test", .width = 800, .height = 600});
             device = std::make_unique<Engine::Device>(*window);
             renderer = std::make_unique<Engine::Renderer>(*window, *device);
             megaBuffer = std::make_unique<Engine::Model>(*device);

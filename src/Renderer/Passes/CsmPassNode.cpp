@@ -1,11 +1,10 @@
 #include "CsmPassNode.h"
-
-#include <iostream>
+#include "Core/Assert.h"
+#include "Core/EngineConstants.h"
 
 #include "Renderer/RenderGraph.h"
 #include "Renderer/Renderer.h"
 #include "Renderer/ShaderUtils.h"
-#include "System/Input/InputManager.h"
 #include "Vulkan/ResourceHeap.h"
 #include "Vulkan/VkUtils.h"
 
@@ -13,7 +12,7 @@ namespace Engine {
     CsmPassNode::CsmPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap, CullPassNode &cullPass)
         : RenderPassNode("CSM Pass"), device(device), renderer(renderer), megaBuffer(megaBuffer), resourceHeap(resourceHeap), cullPass(cullPass)
     {
-        objectDescriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        objectDescriptorSets.resize(Constants::MAX_FRAMES_IN_FLIGHT);
 
         VkShaderStageFlags stageFlags = VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
         if (device.isMeshShaderSupported()) {
@@ -37,28 +36,28 @@ namespace Engine {
 
         std::array<VkDescriptorPoolSize, 1> poolSizes {};
         poolSizes[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        poolSizes[0].descriptorCount = Config::MAX_FRAMES_IN_FLIGHT * 11;
+        poolSizes[0].descriptorCount = Constants::MAX_FRAMES_IN_FLIGHT * 11;
 
         VkDescriptorPoolCreateInfo poolInfo {};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
         poolInfo.pPoolSizes = poolSizes.data();
-        poolInfo.maxSets = Config::MAX_FRAMES_IN_FLIGHT;
+        poolInfo.maxSets = Constants::MAX_FRAMES_IN_FLIGHT;
         vkCreateDescriptorPool(device.getDevice(), &poolInfo, nullptr, &objectDescriptorPool);
 
-        gpuDispatchCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        gpuVisibleObjectBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        singleIndirectCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        compactedIndexBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        visibleMeshletBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        triangleDispatchCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        taskWorkgroupBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        taskDispatchCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        maskedTaskWorkgroupBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        maskedTaskDispatchCommandBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        cascadeDataBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        gpuDispatchCommandBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        gpuVisibleObjectBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        singleIndirectCommandBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        compactedIndexBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        visibleMeshletBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        triangleDispatchCommandBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        taskWorkgroupBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        taskDispatchCommandBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        maskedTaskWorkgroupBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        maskedTaskDispatchCommandBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        cascadeDataBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
 
-        for (uint32_t i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
+        for (uint32_t i = 0; i < Constants::MAX_FRAMES_IN_FLIGHT; i++) {
             gpuDispatchCommandBuffers[i] =
                 std::make_unique<Buffer>(device,
                                          sizeof(VkDispatchIndirectCommand),
@@ -71,7 +70,7 @@ namespace Engine {
             gpuVisibleObjectBuffers[i] =
                 std::make_unique<Buffer>(device,
                                          sizeof(uint32_t),
-                                         Config::MAX_SCENE_OBJECTS,
+                                         Constants::MAX_SCENE_OBJECTS,
                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                          VMA_MEMORY_USAGE_GPU_ONLY,
                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -89,7 +88,7 @@ namespace Engine {
             compactedIndexBuffers[i] =
                 std::make_unique<Buffer>(device,
                                          sizeof(uint32_t),
-                                         Config::MAX_SCENE_OBJECTS * Config::MAX_TRIANGLES * 3,
+                                         Constants::MAX_SCENE_OBJECTS * Constants::MAX_MESHLET_TRIANGLES * 3,
                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
                                          VMA_MEMORY_USAGE_GPU_ONLY,
                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -98,7 +97,7 @@ namespace Engine {
             visibleMeshletBuffers[i] =
                 std::make_unique<Buffer>(device,
                                          sizeof(uint32_t) * 2,
-                                         Config::MAX_SCENE_OBJECTS * 100,
+                                         Constants::MAX_SCENE_OBJECTS * 100,
                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                          VMA_MEMORY_USAGE_GPU_ONLY,
                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -116,7 +115,7 @@ namespace Engine {
             taskWorkgroupBuffers[i] =
                 std::make_unique<Buffer>(device,
                                          sizeof(uint32_t) * 2,
-                                         Config::MAX_SCENE_OBJECTS * 10 * SHADOW_MAP_CASCADES,
+                                         Constants::MAX_SCENE_OBJECTS * 10 * SHADOW_MAP_CASCADES,
                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                          VMA_MEMORY_USAGE_GPU_ONLY,
                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -134,7 +133,7 @@ namespace Engine {
             maskedTaskWorkgroupBuffers[i] =
                 std::make_unique<Buffer>(device,
                                          sizeof(uint32_t) * 2,
-                                         Config::MAX_SCENE_OBJECTS * 10 * SHADOW_MAP_CASCADES,
+                                         Constants::MAX_SCENE_OBJECTS * 10 * SHADOW_MAP_CASCADES,
                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                          VMA_MEMORY_USAGE_GPU_ONLY,
                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -212,7 +211,7 @@ namespace Engine {
         VkExtent2D mapExtent = {SHADOW_ATLAS_WIDTH, SHADOW_ATLAS_HEIGHT};
         renderGraph.createTransientImage(
             "CsmImage",
-            Config::USE_D16_SHADOW_MAPS ? VK_FORMAT_D16_UNORM : VK_FORMAT_D32_SFLOAT,
+            Constants::USE_D16_SHADOW_MAPS ? VK_FORMAT_D16_UNORM : VK_FORMAT_D32_SFLOAT,
             mapExtent,
             1,
             VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
@@ -228,7 +227,7 @@ namespace Engine {
 
     void CsmPassNode::updateDescriptors()
     {
-        for (uint32_t i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
+        for (uint32_t i = 0; i < Constants::MAX_FRAMES_IN_FLIGHT; i++) {
             VkDescriptorBufferInfo dispatchInfo = gpuDispatchCommandBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
             VkDescriptorBufferInfo visibleObjInfo = gpuVisibleObjectBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
             VkDescriptorBufferInfo singleIndirectInfo = singleIndirectCommandBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
@@ -423,13 +422,13 @@ namespace Engine {
             compPc.objectCount = megaBuffer.getMeshletCount();
             compPc.actualObjectCount = totalObjects;
             compPc.cullFlags = frameInfo.cullEnabled ? 1 : 0;
-            compPc.maxTaskWgsPerCascade = Config::MAX_SCENE_OBJECTS * 10;
+            compPc.maxTaskWgsPerCascade = Constants::MAX_SCENE_OBJECTS * 10;
             vkCmdPushConstants(cmd, computePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(CsmCullPushConstants), &compPc);
 
             if (frameInfo.renderGraph) frameInfo.renderGraph->pushProfileMarker(cmd, "CSM Compute Pre-pass");
 
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, objectCullPipeline);
-            uint32_t objectGroupCount = (totalObjects + Config::CULL_WORKGROUP_SIZE - 1) / Config::CULL_WORKGROUP_SIZE;
+            uint32_t objectGroupCount = (totalObjects + Constants::CULL_WORKGROUP_SIZE - 1) / Constants::CULL_WORKGROUP_SIZE;
             vkCmdDispatch(cmd, objectGroupCount, 1, 1);
 
             VkMemoryBarrier2 objCullBarrier{};
@@ -522,7 +521,7 @@ namespace Engine {
             VkDescriptorSet sets[] = {bindlessSet, objectDescriptorSets[currentFrame]};
 
             if (totalObjects > 0) {
-                CsmMeshPushConstants meshPc { c, Config::MAX_SCENE_OBJECTS * 10 };
+                CsmMeshPushConstants meshPc { c, Constants::MAX_SCENE_OBJECTS * 10 };
                 if (device.isMeshShaderSupported()) {
                     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipeline);
                     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipelineLayout, 0, 2, sets, 0, nullptr);
@@ -656,7 +655,7 @@ namespace Engine {
         renderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
         renderingCreateInfo.colorAttachmentCount = 0;
         renderingCreateInfo.pColorAttachmentFormats = nullptr;
-        renderingCreateInfo.depthAttachmentFormat = Config::USE_D16_SHADOW_MAPS ? VK_FORMAT_D16_UNORM : VK_FORMAT_D32_SFLOAT;
+        renderingCreateInfo.depthAttachmentFormat = Constants::USE_D16_SHADOW_MAPS ? VK_FORMAT_D16_UNORM : VK_FORMAT_D32_SFLOAT;
         renderingCreateInfo.viewMask = 0;
 
         VkGraphicsPipelineCreateInfo pipelineInfo {};
@@ -768,7 +767,7 @@ namespace Engine {
         renderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
         renderingCreateInfo.colorAttachmentCount = 0;
         renderingCreateInfo.pColorAttachmentFormats = nullptr;
-        renderingCreateInfo.depthAttachmentFormat = Config::USE_D16_SHADOW_MAPS ? VK_FORMAT_D16_UNORM : VK_FORMAT_D32_SFLOAT;
+        renderingCreateInfo.depthAttachmentFormat = Constants::USE_D16_SHADOW_MAPS ? VK_FORMAT_D16_UNORM : VK_FORMAT_D32_SFLOAT;
         renderingCreateInfo.viewMask = 0;
 
         VkGraphicsPipelineCreateInfo pipelineInfo {};
@@ -784,9 +783,8 @@ namespace Engine {
         pipelineInfo.pDynamicState = &dynamicState;
         pipelineInfo.layout = meshPipelineLayout;
 
-        if (vkCreateGraphicsPipelines(device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, VK_NULL_HANDLE, &meshPipeline) != VK_SUCCESS) {
-            throw std::runtime_error("CsmPassNode: failed to create mesh shadow pipeline");
-        }
+        ENGINE_VERIFY(vkCreateGraphicsPipelines(device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, VK_NULL_HANDLE, &meshPipeline) == VK_SUCCESS,
+            "CsmPassNode: failed to create mesh shadow pipeline");
 
         vkDestroyShaderModule(device.getDevice(), taskShaderModule, nullptr);
         vkDestroyShaderModule(device.getDevice(), meshShaderModule, nullptr);
@@ -860,7 +858,7 @@ namespace Engine {
         renderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
         renderingCreateInfo.colorAttachmentCount = 0;
         renderingCreateInfo.pColorAttachmentFormats = nullptr;
-        renderingCreateInfo.depthAttachmentFormat = Config::USE_D16_SHADOW_MAPS ? VK_FORMAT_D16_UNORM : VK_FORMAT_D32_SFLOAT;
+        renderingCreateInfo.depthAttachmentFormat = Constants::USE_D16_SHADOW_MAPS ? VK_FORMAT_D16_UNORM : VK_FORMAT_D32_SFLOAT;
         renderingCreateInfo.viewMask = 0;
 
         VkGraphicsPipelineCreateInfo pipelineInfo {};
@@ -874,11 +872,10 @@ namespace Engine {
         pipelineInfo.pDepthStencilState = &depthStencil;
         pipelineInfo.pColorBlendState = &colorBlending;
         pipelineInfo.pDynamicState = &dynamicState;
-        pipelineInfo.layout = meshPipelineLayout; // Re-use the same layout
+        pipelineInfo.layout = meshPipelineLayout;
 
-        if (vkCreateGraphicsPipelines(device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, VK_NULL_HANDLE, &maskedMeshPipeline) != VK_SUCCESS) {
-            throw std::runtime_error("CsmPassNode: failed to create masked mesh shadow pipeline");
-        }
+        ENGINE_VERIFY(vkCreateGraphicsPipelines(device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, VK_NULL_HANDLE, &maskedMeshPipeline) == VK_SUCCESS,
+            "CsmPassNode: failed to create masked mesh shadow pipeline");
 
         vkDestroyShaderModule(device.getDevice(), taskShaderModule, nullptr);
         vkDestroyShaderModule(device.getDevice(), meshShaderModule, nullptr);
@@ -957,7 +954,7 @@ namespace Engine {
         renderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
         renderingCreateInfo.colorAttachmentCount = 0;
         renderingCreateInfo.pColorAttachmentFormats = nullptr;
-        renderingCreateInfo.depthAttachmentFormat = Config::USE_D16_SHADOW_MAPS ? VK_FORMAT_D16_UNORM : VK_FORMAT_D32_SFLOAT;
+        renderingCreateInfo.depthAttachmentFormat = Constants::USE_D16_SHADOW_MAPS ? VK_FORMAT_D16_UNORM : VK_FORMAT_D32_SFLOAT;
         renderingCreateInfo.viewMask = 0;
 
         VkGraphicsPipelineCreateInfo pipelineInfo {};
@@ -975,9 +972,8 @@ namespace Engine {
         pipelineInfo.pDynamicState = &dynamicState;
         pipelineInfo.layout = maskedPipelineLayout;
 
-        if (vkCreateGraphicsPipelines(device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, VK_NULL_HANDLE, &maskedPipeline) != VK_SUCCESS) {
-            throw std::runtime_error("CsmPassNode: failed to create masked shadow pipeline");
-        }
+        ENGINE_VERIFY(vkCreateGraphicsPipelines(device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, VK_NULL_HANDLE, &maskedPipeline) == VK_SUCCESS,
+            "CsmPassNode: failed to create masked shadow pipeline");
 
         vkDestroyShaderModule(device.getDevice(), vertShaderModule, nullptr);
         vkDestroyShaderModule(device.getDevice(), fragShaderModule, nullptr);

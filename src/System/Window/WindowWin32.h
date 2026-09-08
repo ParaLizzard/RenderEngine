@@ -1,102 +1,47 @@
 #pragma once
-#include "Core/Exception.h"
-#include "System/Window/WindowInterface.h"
-#define VK_USE_PLATFORM_WIN32_KHR
+#include "System/Window/IWindow.h"
 #include <windows.h>
-#include <vulkan/vulkan.h>
+
+#include "Core/Types.h"
 
 namespace Engine {
-    class WindowWin32 : public WindowInterface
-    {
+    class WindowWin32 : public IWindow {
     public:
-        class WindowException : public Engine::Exception
-        {
-        public:
-            WindowException(int line, const char* file, HRESULT hr) noexcept;
-            const char* what() const noexcept override;
-            const char* getType() const noexcept override;
-            static std::string translateErrorCode(HRESULT hr);
-            HRESULT getErrorCode() const noexcept;
-            std::string getErrorMessage() const noexcept;
-        private:
-            HRESULT hr;
-        };
-
-    private:
-        class WindowClass
-        {
-        public:
-            static const char* getName() noexcept;
-            static HINSTANCE getInstance() noexcept;
-        private:
-            WindowClass() noexcept;
-            ~WindowClass();
-            WindowClass(const WindowClass&) = delete;
-            WindowClass& operator=(const WindowClass&) = delete;
-            static constexpr const char* windowClassName = "WindowClass";
-            static WindowClass wndClass;
-            HINSTANCE hInst;
-        };
-
-        class Timer {
-        public:
-            Timer() {
-                QueryPerformanceFrequency(&frequency);
-                QueryPerformanceCounter(&start);
-            }
-
-            double getTime() const {
-                LARGE_INTEGER current;
-                QueryPerformanceCounter(&current);
-
-                return static_cast<double>(current.QuadPart - start.QuadPart) / frequency.QuadPart;
-            }
-
-            void reset() {
-                QueryPerformanceCounter(&start);
-            }
-
-        private:
-            LARGE_INTEGER frequency;
-            LARGE_INTEGER start;
-        };
-
-    public:
-        WindowWin32(int width, int height, std::string title);
+        WindowWin32(const WindowProps& props);
         ~WindowWin32() override;
-        WindowWin32(const WindowWin32&) = delete;
-        WindowWin32& operator=(const WindowWin32&) = delete;
 
-        static std::unique_ptr<WindowInterface> createWindow(int width, int height, std::string title);
+        void PollEvents() override;
+        ENGINE_NODISCARD bool ShouldClose() const override { return shouldClose; }
+        void RequestClose() override { shouldClose = true; }
+
+        ENGINE_NODISCARD uint32_t GetWidth() const noexcept override { return properties.width; }
+        ENGINE_NODISCARD uint32_t GetHeight() const noexcept override { return properties.height; }
+
+        void SetTitle(std::string_view title) override;
+        void SetVSync(bool enabled) override {
+            if (properties.vsync != enabled) {
+                properties.vsync = enabled;
+            }
+        }
+        ENGINE_NODISCARD bool IsVSync() const noexcept override { return properties.vsync; }
+        void SetCursorMode(CursorMode mode) override;
+
+        bool CreateVulkanSurface(VkInstance instance, VkSurfaceKHR* outSurface) override;
+        ENGINE_NODISCARD void* GetNativeHandle() const noexcept override { return static_cast<void*>(hwnd); }
 
     private:
-        void pollEvents() override;
-        void setWindowTitle(std::string_view title) override;
-        void setResizable(bool bResizable) override;
-        void setWindowUserPointer(void *, void *pointer) override;
-        double getTime() override
-        {
-            return timer.getTime();
-        };
-        void createWindowSurface(VkInstance instance, VkSurfaceKHR*surface) override;
-        void *getWindowHandle() override
-        {
-            return hWnd;
-        };
-        VkExtent2D getExtent() override;
-        bool shouldClose() override {return isClosing;};
+        static LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+        LRESULT HandleMessage(UINT uMsg, WPARAM wParam, LPARAM lParam);
 
-        static LRESULT CALLBACK HandleMsgSetup(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-        static LRESULT CALLBACK HandleMsgThunk(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-        LRESULT HandleMsg(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-    private:
-        int width, height;
-        HWND hWnd;
-        Timer timer{};
+        void ApplyDpiScaling();
+        void EnableDarkMode();
 
-        bool isClosing = false;
+        HWND hwnd = nullptr;
+        HINSTANCE hInstance = nullptr;
+        WindowProps properties;
+        bool shouldClose = false;
+        bool mouseHovering = false;
+        CursorMode cursorMode = CursorMode::Normal;
+        Vec2 dpiScale = {1.0f, 1.0f};
     };
-
-#define WND_EXCEPT(hr) WindowWin32::WindowException(__LINE__, __FILE__, hr)
-#define WND_LAST_EXCEPT() WindowWin32::WindowException(__LINE__, __FILE__, GetLastError())
 }

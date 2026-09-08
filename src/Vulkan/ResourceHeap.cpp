@@ -2,6 +2,8 @@
 
 #include <array>
 
+#include "Core/Assert.h"
+#include "Core/EngineConstants.h"
 #include "Renderer/Renderer.h"
 #include "AssetSystem/Texture.h"
 #include "Vulkan/Device.h"
@@ -22,22 +24,21 @@ namespace Engine {
 
         std::array<VkDescriptorPoolSize, 3> poolSizes {};
         poolSizes[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        poolSizes[0].descriptorCount = 8 * Config::MAX_FRAMES_IN_FLIGHT;
+        poolSizes[0].descriptorCount = 8 * Constants::MAX_FRAMES_IN_FLIGHT;
         poolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        poolSizes[1].descriptorCount = 1 * Config::MAX_FRAMES_IN_FLIGHT;
+        poolSizes[1].descriptorCount = 1 * Constants::MAX_FRAMES_IN_FLIGHT;
         poolSizes[2].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        poolSizes[2].descriptorCount = (maxDescriptors + 3) * Config::MAX_FRAMES_IN_FLIGHT;
+        poolSizes[2].descriptorCount = (maxDescriptors + 3) * Constants::MAX_FRAMES_IN_FLIGHT;
 
         VkDescriptorPoolCreateInfo poolInfo {};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
-        poolInfo.maxSets = Config::MAX_FRAMES_IN_FLIGHT;
+        poolInfo.maxSets = Constants::MAX_FRAMES_IN_FLIGHT;
         poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
         poolInfo.pPoolSizes = poolSizes.data();
 
-        if (vkCreateDescriptorPool(device.getDevice(), &poolInfo, nullptr, &globalDescriptorPool) != VK_SUCCESS) {
-            throw std::runtime_error("ResourceHeap: Failed to create bindless descriptor pool");
-        }
+        ENGINE_VERIFY(vkCreateDescriptorPool(device.getDevice(), &poolInfo, nullptr, &globalDescriptorPool) == VK_SUCCESS,
+            "ResourceHeap: Failed to create bindless descriptor pool");
 
         std::array<VkDescriptorSetLayoutBinding, 13> bindings {};
 
@@ -153,29 +154,26 @@ namespace Engine {
         layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
         layoutInfo.pBindings = bindings.data();
 
-        if (vkCreateDescriptorSetLayout(device.getDevice(), &layoutInfo, nullptr, &globalDescriptorSetLayout) !=
-            VK_SUCCESS) {
-            throw std::runtime_error("ResourceHeap: Failed to create bindless set layout");
-        }
+        ENGINE_VERIFY(vkCreateDescriptorSetLayout(device.getDevice(), &layoutInfo, nullptr, &globalDescriptorSetLayout) == VK_SUCCESS,
+            "ResourceHeap: Failed to create bindless set layout");
 
-        std::vector<uint32_t> variableCounts(Config::MAX_FRAMES_IN_FLIGHT, maxDescriptors);
+        std::vector<uint32_t> variableCounts(Constants::MAX_FRAMES_IN_FLIGHT, maxDescriptors);
         VkDescriptorSetVariableDescriptorCountAllocateInfo variableCountInfo {};
         variableCountInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO;
-        variableCountInfo.descriptorSetCount = Config::MAX_FRAMES_IN_FLIGHT;
+        variableCountInfo.descriptorSetCount = Constants::MAX_FRAMES_IN_FLIGHT;
         variableCountInfo.pDescriptorCounts = variableCounts.data();
 
         VkDescriptorSetAllocateInfo allocInfo {};
         allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         allocInfo.pNext = &variableCountInfo;
         allocInfo.descriptorPool = globalDescriptorPool;
-        allocInfo.descriptorSetCount = Config::MAX_FRAMES_IN_FLIGHT;
-        std::vector<VkDescriptorSetLayout> layouts(Config::MAX_FRAMES_IN_FLIGHT, globalDescriptorSetLayout);
+        allocInfo.descriptorSetCount = Constants::MAX_FRAMES_IN_FLIGHT;
+        std::vector<VkDescriptorSetLayout> layouts(Constants::MAX_FRAMES_IN_FLIGHT, globalDescriptorSetLayout);
         allocInfo.pSetLayouts = layouts.data();
 
-        globalDescriptorSets.resize(Config::MAX_FRAMES_IN_FLIGHT);
-        if (vkAllocateDescriptorSets(device.getDevice(), &allocInfo, globalDescriptorSets.data()) != VK_SUCCESS) {
-            throw std::runtime_error("ResourceHeap: failed to allocate descriptor sets!");
-        }
+        globalDescriptorSets.resize(Constants::MAX_FRAMES_IN_FLIGHT);
+        ENGINE_VERIFY(vkAllocateDescriptorSets(device.getDevice(), &allocInfo, globalDescriptorSets.data()) == VK_SUCCESS,
+            "ResourceHeap: failed to allocate descriptor sets!");
 
         fallbackWhiteTex = std::make_unique<Texture2D>();
         fallbackFlatNormalTex = std::make_unique<Texture2D>();
@@ -223,14 +221,11 @@ namespace Engine {
     {
         std::lock_guard<std::mutex> lock(heapMutex);
 
-        if (imageInfo.imageView == VK_NULL_HANDLE || imageInfo.sampler == VK_NULL_HANDLE ||
-            imageInfo.imageLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-            throw std::runtime_error("ResourceHeap: Attempted to register texture or shader invalid");
-        }
+        ENGINE_VERIFY(imageInfo.imageView != VK_NULL_HANDLE && imageInfo.sampler != VK_NULL_HANDLE &&
+                      imageInfo.imageLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                      "ResourceHeap: Attempted to register texture or shader invalid");
 
-        if (freeIndices.empty()) {
-            throw std::runtime_error("ResourceHeap: Bindless texture array is out of available slots!");
-        }
+        ENGINE_VERIFY(!freeIndices.empty(), "ResourceHeap: Bindless texture array is out of available slots!");
 
         uint32_t allocatedIndex = freeIndices.back();
         freeIndices.pop_back();
@@ -252,10 +247,10 @@ namespace Engine {
     void ResourceHeap::freeTexture(TextureHandle &handle)
     {
         std::lock_guard<std::mutex> lock(heapMutex);
-        assert(handle.index < maxDescriptors && "ResourceHeap: Attempted to free an out-of-bounds index");
-        assert(handle.generation == slots[handle.index].generation &&
+        ENGINE_ASSERT(handle.index < maxDescriptors, "ResourceHeap: Attempted to free an out-of-bounds index");
+        ENGINE_ASSERT(handle.generation == slots[handle.index].generation,
                "ResourceHeap: Attempted to free an out-of-bounds index");
-        assert(slots[handle.index].allocated == true && "ResourceHeap: Attempted to free an out-of-bounds index");
+        ENGINE_ASSERT(slots[handle.index].allocated == true, "ResourceHeap: Attempted to free an out-of-bounds index");
 
         slots[handle.index].allocated = false;
         slots[handle.index].generation++;
@@ -270,9 +265,9 @@ namespace Engine {
             return;
 
         std::vector<VkWriteDescriptorSet> writes;
-        writes.reserve(pendingWrites.size() * Config::MAX_FRAMES_IN_FLIGHT);
+        writes.reserve(pendingWrites.size() * Constants::MAX_FRAMES_IN_FLIGHT);
 
-        for (uint32_t f = 0; f < Config::MAX_FRAMES_IN_FLIGHT; ++f) {
+        for (uint32_t f = 0; f < Constants::MAX_FRAMES_IN_FLIGHT; ++f) {
             for (const auto &pending: pendingWrites) {
                 VkWriteDescriptorSet write {};
                 write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -317,8 +312,8 @@ namespace Engine {
 
         VkDeviceSize bufferSize = sizeof(MaterialData) * materials.size();
 
-        if (materialBuffers.size() < Config::MAX_FRAMES_IN_FLIGHT) {
-            materialBuffers.resize(Config::MAX_FRAMES_IN_FLIGHT);
+        if (materialBuffers.size() < Constants::MAX_FRAMES_IN_FLIGHT) {
+            materialBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
         }
 
         if (!materialBuffers[currentFrame] || materialBuffers[currentFrame]->getBufferSize() < bufferSize) {
@@ -338,7 +333,7 @@ namespace Engine {
 
     VkDescriptorBufferInfo ResourceHeap::getMaterialBufferInfo(uint32_t currentFrame) const
     {
-        assert(materialBuffers.size() > currentFrame && materialBuffers[currentFrame] &&
+        ENGINE_ASSERT(materialBuffers.size() > currentFrame && materialBuffers[currentFrame],
                "Material buffer not uploaded yet");
         return materialBuffers[currentFrame]->descriptorInfo(sizeof(MaterialData) * materials.size(), 0);
     }
@@ -355,10 +350,10 @@ namespace Engine {
 
     void ResourceHeap::writeMaterialDescriptorAllFrames()
     {
-        std::vector<VkDescriptorBufferInfo> matBufInfos(Config::MAX_FRAMES_IN_FLIGHT);
+        std::vector<VkDescriptorBufferInfo> matBufInfos(Constants::MAX_FRAMES_IN_FLIGHT);
         std::vector<VkWriteDescriptorSet> writes;
 
-        for (size_t i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
+        for (size_t i = 0; i < Constants::MAX_FRAMES_IN_FLIGHT; i++) {
             if (materialBuffers.size() <= i || !materialBuffers[i])
                 continue;
 
@@ -405,7 +400,7 @@ namespace Engine {
                                            VkDescriptorImageInfo brdfLutInfo)
     {
         std::vector<VkWriteDescriptorSet> writes;
-        for (size_t i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
+        for (size_t i = 0; i < Constants::MAX_FRAMES_IN_FLIGHT; i++) {
             VkWriteDescriptorSet w0 {};
             w0.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             w0.dstSet = globalDescriptorSets[i];
@@ -455,7 +450,7 @@ namespace Engine {
         globalMeshletTrianglesBuffer = meshletTrianglesBuf;
 
         std::vector<VkWriteDescriptorSet> writes;
-        for (size_t i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
+        for (size_t i = 0; i < Constants::MAX_FRAMES_IN_FLIGHT; i++) {
             auto addWrite = [&](std::shared_ptr<Buffer> buf, uint32_t binding) {
                 if (!buf) return;
                 VkDescriptorBufferInfo* info = new VkDescriptorBufferInfo(buf->descriptorInfo(VK_WHOLE_SIZE, 0));
@@ -489,11 +484,11 @@ namespace Engine {
         globalObjectBuffers = objectBufs;
         if (globalObjectBuffers.empty()) return;
 
-        std::vector<VkDescriptorBufferInfo> bufferInfos(Config::MAX_FRAMES_IN_FLIGHT);
+        std::vector<VkDescriptorBufferInfo> bufferInfos(Constants::MAX_FRAMES_IN_FLIGHT);
         std::vector<VkWriteDescriptorSet> writes;
-        writes.reserve(Config::MAX_FRAMES_IN_FLIGHT);
+        writes.reserve(Constants::MAX_FRAMES_IN_FLIGHT);
 
-        for (size_t i = 0; i < Config::MAX_FRAMES_IN_FLIGHT; i++) {
+        for (size_t i = 0; i < Constants::MAX_FRAMES_IN_FLIGHT; i++) {
             if (i >= globalObjectBuffers.size() || !globalObjectBuffers[i]) continue;
 
             bufferInfos[i] = globalObjectBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);

@@ -15,6 +15,7 @@ set(TEST_SOURCES
         Vulkan/QueueFamilyIndicesTest.cpp
 
         # Renderer
+        Renderer/RenderSettingsTest.cpp
         Renderer/RenderGraphBuilderTest.cpp
         Renderer/RenderGraphRegistryTest.cpp
         Renderer/RenderGraphCompileTest.cpp
@@ -29,14 +30,20 @@ set(TEST_SOURCES
         Scene/CameraViewTest.cpp
 
         # Core
-        Core/ExceptionTest.cpp
-        Core/EngineConfigTest.cpp
+        Core/AssertTest.cpp
         Core/EngineConstantsTest.cpp
         Core/TypesHashTest.cpp
         Core/LogTest.cpp
         Core/ClockTest.cpp
         Core/CVarTest.cpp
         Core/ConfigTest.cpp
+        Core/SubsystemRegistryTest.cpp
+        Core/EngineLifecycleTest.cpp
+
+        # System
+        System/EventDispatcherTest.cpp
+        System/WindowSubsystemTest.cpp
+        System/InputSubsystemTest.cpp
         
         # Integration (GPU required)
         Integration/BaselineCaptureTest.cpp

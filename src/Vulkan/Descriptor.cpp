@@ -1,8 +1,6 @@
 #include "Vulkan/Descriptor.h"
 
-// std
-#include <cassert>
-#include <stdexcept>
+#include "Core/Assert.h"
 
 #include "Vulkan/Device.h"
 
@@ -15,7 +13,7 @@ namespace Engine {
                                                                            VkShaderStageFlags stageFlags,
                                                                            uint32_t count)
     {
-        assert(bindings.count(binding) == 0 && "Binding already in use");
+        ENGINE_ASSERT(bindings.count(binding) == 0, "Binding {} already in use", binding);
         VkDescriptorSetLayoutBinding layoutBinding {};
         layoutBinding.binding = binding;
         layoutBinding.descriptorType = descriptorType;
@@ -28,7 +26,7 @@ namespace Engine {
     DescriptorSetLayout::Builder &DescriptorSetLayout::Builder::setBindingFlags(uint32_t binding,
                                                                                 VkDescriptorBindingFlags flags)
     {
-        assert(bindings.count(binding) == 1 && "Binding must exist before setting flags");
+        ENGINE_ASSERT(bindings.count(binding) == 1, "Binding must exist before setting flags");
         bindingFlags[binding] = flags;
         return *this;
     }
@@ -79,10 +77,8 @@ namespace Engine {
             descriptorSetLayoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
         }
 
-        if (vkCreateDescriptorSetLayout(device.getDevice(), &descriptorSetLayoutInfo, nullptr, &descriptorSetLayout) !=
-            VK_SUCCESS) {
-            throw std::runtime_error("failed to create descriptor set layout!");
-        }
+        ENGINE_VERIFY(vkCreateDescriptorSetLayout(device.getDevice(), &descriptorSetLayoutInfo, nullptr, &descriptorSetLayout) == VK_SUCCESS,
+            "failed to create descriptor set layout!");
     }
 
     DescriptorSetLayout::~DescriptorSetLayout()
@@ -128,9 +124,8 @@ namespace Engine {
         descriptorPoolInfo.maxSets = maxSets;
         descriptorPoolInfo.flags = poolFlags;
 
-        if (vkCreateDescriptorPool(device.getDevice(), &descriptorPoolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create descriptor pool!");
-        }
+        ENGINE_VERIFY(vkCreateDescriptorPool(device.getDevice(), &descriptorPoolInfo, nullptr, &descriptorPool) == VK_SUCCESS,
+            "failed to create descriptor pool!");
     }
 
     DescriptorPool::~DescriptorPool()
@@ -172,11 +167,11 @@ namespace Engine {
 
     DescriptorWriter &DescriptorWriter::writeBuffer(uint32_t binding, VkDescriptorBufferInfo *bufferInfo)
     {
-        assert(setLayout.bindings.count(binding) == 1 && "Layout does not contain specified binding");
+        ENGINE_ASSERT(setLayout.bindings.count(binding) == 1, "Layout does not contain specified binding {}", binding);
 
         auto &bindingDescription = setLayout.bindings[binding];
 
-        assert(bindingDescription.descriptorCount == 1 &&
+        ENGINE_ASSERT(bindingDescription.descriptorCount == 1,
                "Binding single descriptor info, but binding expects multiple");
 
         VkWriteDescriptorSet write {};
@@ -192,11 +187,11 @@ namespace Engine {
 
     DescriptorWriter &DescriptorWriter::writeImage(uint32_t binding, VkDescriptorImageInfo *imageInfo)
     {
-        assert(setLayout.bindings.count(binding) == 1 && "Layout does not contain specified binding");
+        ENGINE_ASSERT(setLayout.bindings.count(binding) == 1, "Layout does not contain specified binding {}", binding);
 
         auto &bindingDescription = setLayout.bindings[binding];
 
-        assert(bindingDescription.descriptorCount == 1 &&
+        ENGINE_ASSERT(bindingDescription.descriptorCount == 1,
                "Binding single descriptor info, but binding expects multiple");
 
         VkWriteDescriptorSet write {};
@@ -214,11 +209,11 @@ namespace Engine {
                                                         VkDescriptorImageInfo *imageInfos,
                                                         uint32_t count)
     {
-        assert(setLayout.bindings.count(binding) == 1 && "Layout does not contain specified binding");
+        ENGINE_ASSERT(setLayout.bindings.count(binding) == 1, "Layout does not contain specified binding {}", binding);
 
         auto &bindingDescription = setLayout.bindings[binding];
 
-        assert(bindingDescription.descriptorCount >= count && "Trying to write more descriptors than binding can hold");
+        ENGINE_ASSERT(bindingDescription.descriptorCount >= count, "Trying to write more descriptors than binding can hold");
 
         VkWriteDescriptorSet write {};
         write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;

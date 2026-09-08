@@ -5,7 +5,7 @@
 #include <glm/glm.hpp>
 #include <vulkan/vulkan.h>
 #include <meshoptimizer.h>
-
+#include "Core/EngineConstants.h"
 
 namespace Engine {
     class Buffer;

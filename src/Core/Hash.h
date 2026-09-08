@@ -93,6 +93,27 @@ namespace Engine {
     #endif
     }
 
+    struct TransparentStringHash {
+        using is_transparent = void; // C++20 heterogeneous lookup tag
+        size_t operator()(std::string_view sv) const noexcept {
+            return std::hash<std::string_view>{}(sv);
+        }
+        size_t operator()(const std::string& s) const noexcept {
+            return std::hash<std::string_view>{}(s);
+        }
+        size_t operator()(const char* s) const noexcept {
+            return std::hash<std::string_view>{}(s);
+        }
+    };
+
+    template<typename T>
+    using TransparentStringMap = std::unordered_map<
+        std::string,
+        T,
+        TransparentStringHash,
+        std::equal_to<>
+    >;
+
 }
 
 

@@ -3,8 +3,9 @@
 
 #include <fstream>
 #include "Vulkan/VkUtils.h"
-#include "System/Window/Window.h"
-#include "System/Window/WindowWin32.h"
+#include "System/Window/IWindow.h"
+#include "Core/Log.h"
+#include "Core/Assert.h"
 
 
 namespace Engine {
@@ -19,7 +20,7 @@ namespace Engine {
         }
     }
 
-    Device::Device(Window &window): window(window)
+    Device::Device(IWindow &window): window(window)
     {
         createInstance();
         setupDebugMessenger();
@@ -96,9 +97,8 @@ namespace Engine {
             createInfo.pNext = nullptr;
         }
 
-        if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS) {
-            throw std::runtime_error("Device: failed to create instance");
-        }
+        ENGINE_VERIFY(vkCreateInstance(&createInfo, nullptr, &instance) == VK_SUCCESS,
+            "Failed to create instance");
 
         checkGlfwRequiredExtensions();
     }
@@ -123,8 +123,7 @@ namespace Engine {
                                                         const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
                                                         void *pUserData)
     {
-        std::cerr << "Validation Layer: " << pCallbackData->pMessage << std::endl;
-
+        LOG_INFO("Device", "Validation Layer: {}", pCallbackData->pMessage);
         return VK_FALSE;
     }
 
@@ -150,9 +149,8 @@ namespace Engine {
         VkDebugUtilsMessengerCreateInfoEXT createInfo;
         populateDebugMessageInfo(createInfo);
 
-        if (CreateDebugUtilsMessengerEXT(instance, &createInfo, nullptr, &debugMessenger) != VK_SUCCESS) {
-            throw std::runtime_error("Device: failed to set up debug messenger");
-        }
+        ENGINE_VERIFY(CreateDebugUtilsMessengerEXT(instance, &createInfo, nullptr, &debugMessenger) == VK_SUCCESS,
+           "Failed to set up debug messenger");
     }
 
     void Device::populateDebugMessageInfo(VkDebugUtilsMessengerCreateInfoEXT &createInfo)
@@ -172,18 +170,19 @@ namespace Engine {
 
     void Device::createSurface()
     {
-        window.createWindowSurface(instance, &surface);
+        ENGINE_VERIFY(window.CreateVulkanSurface(instance, &surface),
+            "Failed to create Vulkan surface from window");
     }
 
     void Device::pickPhysicalDevice()
     {
         uint32_t deviceCount = 0;
         vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
-        if (deviceCount == 0) {
-            throw std::runtime_error("Device: failed to detect physical device");
-        }
+        ENGINE_VERIFY(deviceCount > 0,
+           "Failed to detect physical device");
 
-        std::cout << "Found " << deviceCount << " GPUs" << std::endl;
+
+        LOG_INFO("Device", "Found {} GPUs", deviceCount);
         std::vector<VkPhysicalDevice> devices(deviceCount);
         vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
 
@@ -194,9 +193,8 @@ namespace Engine {
             }
         }
 
-        if (physicalDevice == VK_NULL_HANDLE) {
-            throw std::runtime_error("Device: failed to find a suitable GPU");
-        }
+        ENGINE_VERIFY(physicalDevice != VK_NULL_HANDLE,
+          "Failed to find a suitable GPU");
     }
 
     bool Device::isDeviceSuitable(VkPhysicalDevice physicalDevice)
@@ -414,9 +412,8 @@ namespace Engine {
         createInfo.enabledLayerCount = 0;
         createInfo.ppEnabledLayerNames = nullptr;
 
-        if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) {
-            throw std::runtime_error("Device: failed to create device");
-        }
+        ENGINE_VERIFY(vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) == VK_SUCCESS,
+          "Failed to create device");
 
         vkGetDeviceQueue(device, indices.graphicsFamily, 0, &graphicsQueue);
         vkGetDeviceQueue(device, indices.presentFamily, 0, &presentQueue);
@@ -431,9 +428,8 @@ namespace Engine {
         poolInfo.queueFamilyIndex = indices.graphicsFamily;
         poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
-        if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS) {
-            throw std::runtime_error("Device: failed to create command pool");
-        }
+        ENGINE_VERIFY(vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) == VK_SUCCESS,
+          "Failed to create command pool");
     }
 
     void Device::createAllocator()
@@ -453,9 +449,8 @@ namespace Engine {
                           VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT |
                           VMA_ALLOCATOR_CREATE_KHR_MAINTENANCE4_BIT;
 
-        if (vmaCreateAllocator(&allocatorInfo, &allocator) != VK_SUCCESS) {
-            throw std::runtime_error("Device: failed to create allocator");
-        }
+        ENGINE_VERIFY(vmaCreateAllocator(&allocatorInfo, &allocator) == VK_SUCCESS,
+          "Failed to create allocator");
     }
 
     VkFormat Device::findSupportedFormat(const std::vector<VkFormat> &candidates,
@@ -473,7 +468,8 @@ namespace Engine {
             }
         }
 
-        throw std::runtime_error("Device: failed to find supported format");
+        ENGINE_VERIFY(false, "Failed to find supported format");
+        return candidates[0];
     }
 
     VkCommandBuffer Device::beginSingleTimeCommands()
@@ -525,9 +521,8 @@ namespace Engine {
         VmaAllocationCreateInfo allocInfo {};
         allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-        if (vmaCreateImage(allocator, &imageInfo, &allocInfo, &image, &allocation, {}) != VK_SUCCESS) {
-            throw std::runtime_error("Device: failed to createImage image");
-        }
+        ENGINE_VERIFY(vmaCreateImage(allocator, &imageInfo, &allocInfo, &image, &allocation, {}) == VK_SUCCESS,
+            "Failed to create image with info");
     }
 
     void Device::checkGlfwRequiredExtensions()
@@ -538,19 +533,17 @@ namespace Engine {
 
         vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, extensions.data());
 
-        std::cout << "Available extensions: " << std::endl;
+        LOG_INFO("Device", "Available extensions: ");
         std::unordered_set<std::string> available;
         for (const auto &extension: extensions) {
-            std::cout << "\t" << extension.extensionName << std::endl;
+            LOG_INFO("Device", "\t {}", extension.extensionName);
             available.insert(extension.extensionName);
         }
 
         auto requiredExtensions = getRequiredExtensions();
         for (const auto &required: requiredExtensions) {
-            std::cout << "\t" << required << std::endl;
-            if (available.find(required) == available.end()) {
-                throw std::runtime_error("Device: required Vulkan extensions not present");
-            }
+            LOG_INFO("Device", "\t {} ", required);
+            ENGINE_VERIFY(available.contains(required), "Required Vulkan extension '{}' is not supported by GPU", required);
         }
     }
 
@@ -631,7 +624,7 @@ namespace Engine {
             dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
             dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
         } else {
-            throw std::invalid_argument("Device: Unsupported layout transition!");
+            ENGINE_VERIFY(false, "Unsupported layout transition!");
         }
 
         VkImageMemoryBarrier2 barrier = VkUtils::imageBarrier(
@@ -660,12 +653,11 @@ namespace Engine {
 
             cacheInfo.initialDataSize = cacheData.size();
             cacheInfo.pInitialData = cacheData.data();
-            std::cout << "Loaded Pipeline Cache from disk (" << fileSize << " bytes)\n";
+            LOG_INFO("Device", "Loaded Pipeline Cache from disk ({} bytes)", fileSize);
         }
 
-        if (vkCreatePipelineCache(device, &cacheInfo, nullptr, &pipelineCache) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create pipeline cache!");
-        }
+        ENGINE_VERIFY(vkCreatePipelineCache(device, &cacheInfo, nullptr, &pipelineCache) == VK_SUCCESS,
+              "Failed to create pipeline cache!");
     }
 
     void Device::savePipelineCache()

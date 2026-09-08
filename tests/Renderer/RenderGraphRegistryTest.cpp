@@ -90,23 +90,17 @@ TEST_F(RenderGraphRegistryTest, ReRegisterImageOverwrites)
 
 TEST_F(RenderGraphRegistryTest, GetUnregisteredImageThrows)
 {
-    EXPECT_THROW(graph->getImage("nonexistent"), std::runtime_error);
+    EXPECT_DEATH(graph->getImage("nonexistent"), "");
 }
 
 TEST_F(RenderGraphRegistryTest, GetUnregisteredImageViewThrows)
 {
-    EXPECT_THROW(graph->getImageView("nonexistent"), std::runtime_error);
+    EXPECT_DEATH(graph->getImageView("nonexistent"), "");
 }
 
 TEST_F(RenderGraphRegistryTest, GetUnregisteredImageThrowsContainsName)
 {
-    try {
-        graph->getImage("myMissingResource");
-        FAIL() << "Expected runtime_error";
-    } catch (const std::runtime_error &e) {
-        EXPECT_NE(std::string(e.what()).find("myMissingResource"), std::string::npos)
-            << "Error message should contain the resource name";
-    }
+    EXPECT_DEATH(graph->getImage("myMissingResource"), "myMissingResource");
 }
 
 // =============================================================================
@@ -127,17 +121,12 @@ TEST_F(RenderGraphRegistryTest, RegisterAndGetBuffer)
 
 TEST_F(RenderGraphRegistryTest, GetUnregisteredBufferThrows)
 {
-    EXPECT_THROW(graph->getBufferInfo("ghost", 0), std::runtime_error);
+    EXPECT_DEATH(graph->getBufferInfo("ghost", 0), "");
 }
 
 TEST_F(RenderGraphRegistryTest, GetUnregisteredBufferThrowsContainsName)
 {
-    try {
-        graph->getBufferInfo("missingBuffer", 0);
-        FAIL() << "Expected runtime_error";
-    } catch (const std::runtime_error &e) {
-        EXPECT_NE(std::string(e.what()).find("missingBuffer"), std::string::npos);
-    }
+    EXPECT_DEATH(graph->getBufferInfo("missingBuffer", 0), "missingBuffer");
 }
 
 // =============================================================================

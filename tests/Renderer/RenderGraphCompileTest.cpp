@@ -69,7 +69,7 @@ TEST_F(RenderGraphCompileTest, UnregisteredImageThrowsOnCompile)
 
     graph->addPass(pass.get());
 
-    EXPECT_THROW(graph->compile(), std::runtime_error);
+    EXPECT_DEATH(graph->compile(), "");
 }
 
 TEST_F(RenderGraphCompileTest, UnregisteredImageErrorContainsName)
@@ -85,12 +85,7 @@ TEST_F(RenderGraphCompileTest, UnregisteredImageErrorContainsName)
 
     graph->addPass(pass.get());
 
-    try {
-        graph->compile();
-        FAIL() << "Expected runtime_error";
-    } catch (const std::runtime_error &e) {
-        EXPECT_THAT(std::string(e.what()), ::testing::HasSubstr("gbufferAlbedo"));
-    }
+    EXPECT_DEATH(graph->compile(), "gbufferAlbedo");
 }
 
 // =============================================================================
@@ -109,7 +104,7 @@ TEST_F(RenderGraphCompileTest, UnregisteredBufferThrowsOnCompile)
 
     graph->addPass(pass.get());
 
-    EXPECT_THROW(graph->compile(), std::runtime_error);
+    EXPECT_DEATH(graph->compile(), "");
 }
 
 TEST_F(RenderGraphCompileTest, UnregisteredBufferErrorContainsName)
@@ -124,12 +119,7 @@ TEST_F(RenderGraphCompileTest, UnregisteredBufferErrorContainsName)
 
     graph->addPass(pass.get());
 
-    try {
-        graph->compile();
-        FAIL() << "Expected runtime_error";
-    } catch (const std::runtime_error &e) {
-        EXPECT_THAT(std::string(e.what()), ::testing::HasSubstr("objectSSBO"));
-    }
+    EXPECT_DEATH(graph->compile(), "objectSSBO");
 }
 
 // =============================================================================
@@ -155,7 +145,7 @@ TEST_F(RenderGraphCompileTest, NullImageHandleThrowsOnCompile)
 
     graph->addPass(pass.get());
 
-    EXPECT_THROW(graph->compile(), std::runtime_error);
+    EXPECT_DEATH(graph->compile(), "");
 }
 
 // =============================================================================
@@ -176,7 +166,7 @@ TEST_F(RenderGraphCompileTest, NullBufferHandleThrowsOnCompile)
 
     graph->addPass(pass.get());
 
-    EXPECT_THROW(graph->compile(), std::runtime_error);
+    EXPECT_DEATH(graph->compile(), "");
 }
 
 // =============================================================================

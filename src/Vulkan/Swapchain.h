@@ -6,11 +6,15 @@
 #include <vector>
 #include <vulkan/vulkan.h>
 #include "Vulkan/Device.h"
+#include "System/Window/IWindow.h"
+#include "System/Events/EventDispatcher.h"
+#include "System/Events/WindowEvents.h"
 
 namespace Engine {
     class SwapChain
     {
     public:
+        SwapChain(Device &deviceRef, IWindow &window, std::shared_ptr<SwapChain> previous = nullptr);
         SwapChain(Device &deviceRef, VkExtent2D windowExtent);
         SwapChain(Device &deviceRef, VkExtent2D windowExtent, std::shared_ptr<SwapChain> previous);
         ~SwapChain();
@@ -73,6 +77,11 @@ namespace Engine {
             return swapChain.swapChainImageFormat == swapChainImageFormat;
         }
 
+        void onWindowResize(uint32_t width, uint32_t height)
+        {
+            windowExtent = { width, height };
+        }
+
     private:
         void init();
         void createSwapChain();
@@ -94,9 +103,11 @@ namespace Engine {
         VkImageView depthImageView = VK_NULL_HANDLE;
 
         Device &device;
+        IWindow *window = nullptr;
         VkExtent2D windowExtent;
 
         VkSwapchainKHR swapChain;
         std::shared_ptr<SwapChain> oldSwapChain;
+        ScopedSubscription resizeSubscription;
     };
 } // namespace Engine
