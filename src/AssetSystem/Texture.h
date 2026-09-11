@@ -10,11 +10,11 @@
 #include <string>
 
 namespace Engine {
-    class Device;
+    class VulkanDevice;
     class Texture
     {
     public:
-        Device *device = nullptr;
+        VulkanDevice *device = nullptr;
         VkImage image = VK_NULL_HANDLE;
         VkImageLayout imageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         VmaAllocation allocation = VK_NULL_HANDLE;
@@ -85,7 +85,7 @@ namespace Engine {
     public:
         void loadFromFile(std::string filename,
                           VkFormat format,
-                          Device *device,
+                          VulkanDevice *device,
                           ResourceHeap &resourceHeap,
                           VkFilter filter = VK_FILTER_LINEAR,
                           VkImageUsageFlags imageUsageFlags = VK_IMAGE_USAGE_SAMPLED_BIT,
@@ -95,14 +95,14 @@ namespace Engine {
                         VkFormat format,
                         uint32_t texWidth,
                         uint32_t texHeight,
-                        Device *device,
+                        VulkanDevice *device,
                         ResourceHeap &resourceHeap,
                         VkFilter filter = VK_FILTER_LINEAR,
                         VkImageUsageFlags imageUsageFlags = VK_IMAGE_USAGE_SAMPLED_BIT,
                         VkImageLayout imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
         void fromKTXPtr(void *ktxTexPtr,
-                        Device *device,
+                        VulkanDevice *device,
                         ResourceHeap &resourceHeap,
                         bool isSRGB = false,
                         VkFilter filter = VK_FILTER_LINEAR,
@@ -110,7 +110,7 @@ namespace Engine {
                         VkImageLayout imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
         void createDefaultTexture(
-            Device *device, uint8_t r, uint8_t g, uint8_t b, uint8_t a, ResourceHeap &resourceHeap);
+            VulkanDevice *device, uint8_t r, uint8_t g, uint8_t b, uint8_t a, ResourceHeap &resourceHeap);
     };
 
     class Texture2DArray: public Texture
@@ -118,7 +118,7 @@ namespace Engine {
     public:
         void loadFromFile(std::string filename,
                           VkFormat format,
-                          Device *device,
+                          VulkanDevice *device,
                           ResourceHeap &resourceHeap,
                           VkImageUsageFlags imageUsageFlags = VK_IMAGE_USAGE_SAMPLED_BIT,
                           VkImageLayout imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -129,14 +129,14 @@ namespace Engine {
     public:
         void loadFromFile(std::string filename,
                           VkFormat format,
-                          Device *device,
+                          VulkanDevice *device,
                           ResourceHeap &resourceHeap,
                           VkImageUsageFlags imageUsageFlags = VK_IMAGE_USAGE_SAMPLED_BIT,
                           VkImageLayout imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
         void loadFromFileSTB(std::array<std::string, 6> filenames,
                              VkFormat format,
-                             Device *device,
+                             VulkanDevice *device,
                              ResourceHeap &resourceHeap,
                              VkImageUsageFlags imageUsageFlags = VK_IMAGE_USAGE_SAMPLED_BIT,
                              VkImageLayout imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);

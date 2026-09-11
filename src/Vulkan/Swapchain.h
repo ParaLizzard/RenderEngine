@@ -5,7 +5,7 @@
 #include <memory>
 #include <vector>
 #include <vulkan/vulkan.h>
-#include "Vulkan/Device.h"
+#include "Vulkan/VulkanDevice.h"
 #include "System/Window/IWindow.h"
 #include "System/Events/EventDispatcher.h"
 #include "System/Events/WindowEvents.h"
@@ -14,9 +14,9 @@ namespace Engine {
     class SwapChain
     {
     public:
-        SwapChain(Device &deviceRef, IWindow &window, std::shared_ptr<SwapChain> previous = nullptr);
-        SwapChain(Device &deviceRef, VkExtent2D windowExtent);
-        SwapChain(Device &deviceRef, VkExtent2D windowExtent, std::shared_ptr<SwapChain> previous);
+        SwapChain(VulkanDevice &deviceRef, IWindow &window, std::shared_ptr<SwapChain> previous = nullptr);
+        SwapChain(VulkanDevice &deviceRef, VkExtent2D windowExtent);
+        SwapChain(VulkanDevice &deviceRef, VkExtent2D windowExtent, std::shared_ptr<SwapChain> previous);
         ~SwapChain();
 
         SwapChain(const SwapChain &) = delete;
@@ -102,7 +102,7 @@ namespace Engine {
         VmaAllocation depthAllocation = VK_NULL_HANDLE;
         VkImageView depthImageView = VK_NULL_HANDLE;
 
-        Device &device;
+        VulkanDevice &device;
         IWindow *window = nullptr;
         VkExtent2D windowExtent;
 

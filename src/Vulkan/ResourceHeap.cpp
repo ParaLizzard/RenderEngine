@@ -6,12 +6,12 @@
 #include "Core/EngineConstants.h"
 #include "Renderer/Renderer.h"
 #include "AssetSystem/Texture.h"
-#include "Vulkan/Device.h"
+#include "Vulkan/VulkanDevice.h"
 
 namespace Engine {
 
 
-    ResourceHeap::ResourceHeap(Device &device, uint32_t maxTextures): device(device), maxDescriptors(maxTextures)
+    ResourceHeap::ResourceHeap(VulkanDevice &device, uint32_t maxTextures): device(device), maxDescriptors(maxTextures)
     {
         slots.resize(maxDescriptors);
 
@@ -37,13 +37,13 @@ namespace Engine {
         poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
         poolInfo.pPoolSizes = poolSizes.data();
 
-        ENGINE_VERIFY(vkCreateDescriptorPool(device.getDevice(), &poolInfo, nullptr, &globalDescriptorPool) == VK_SUCCESS,
+        ENGINE_VERIFY(vkCreateDescriptorPool(device.GetHandle(), &poolInfo, nullptr, &globalDescriptorPool) == VK_SUCCESS,
             "ResourceHeap: Failed to create bindless descriptor pool");
 
         std::array<VkDescriptorSetLayoutBinding, 13> bindings {};
 
         VkShaderStageFlags meshStages = 0;
-        if (device.isMeshShaderSupported()) {
+        if (device.IsMeshShaderSupported()) {
             meshStages = VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT;
         }
 
@@ -154,7 +154,7 @@ namespace Engine {
         layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
         layoutInfo.pBindings = bindings.data();
 
-        ENGINE_VERIFY(vkCreateDescriptorSetLayout(device.getDevice(), &layoutInfo, nullptr, &globalDescriptorSetLayout) == VK_SUCCESS,
+        ENGINE_VERIFY(vkCreateDescriptorSetLayout(device.GetHandle(), &layoutInfo, nullptr, &globalDescriptorSetLayout) == VK_SUCCESS,
             "ResourceHeap: Failed to create bindless set layout");
 
         std::vector<uint32_t> variableCounts(Constants::MAX_FRAMES_IN_FLIGHT, maxDescriptors);
@@ -172,7 +172,7 @@ namespace Engine {
         allocInfo.pSetLayouts = layouts.data();
 
         globalDescriptorSets.resize(Constants::MAX_FRAMES_IN_FLIGHT);
-        ENGINE_VERIFY(vkAllocateDescriptorSets(device.getDevice(), &allocInfo, globalDescriptorSets.data()) == VK_SUCCESS,
+        ENGINE_VERIFY(vkAllocateDescriptorSets(device.GetHandle(), &allocInfo, globalDescriptorSets.data()) == VK_SUCCESS,
             "ResourceHeap: failed to allocate descriptor sets!");
 
         fallbackWhiteTex = std::make_unique<Texture2D>();
@@ -201,7 +201,7 @@ namespace Engine {
         write.descriptorCount = 1;
         write.pBufferInfo = &bufInfo;
 
-        vkUpdateDescriptorSets(device.getDevice(), 1, &write, 0, nullptr);
+        vkUpdateDescriptorSets(device.GetHandle(), 1, &write, 0, nullptr);
     }
 
     ResourceHeap::~ResourceHeap()
@@ -212,9 +212,9 @@ namespace Engine {
             fallbackFlatNormalTex->destroy();
 
         if (globalDescriptorSetLayout != VK_NULL_HANDLE)
-            vkDestroyDescriptorSetLayout(device.getDevice(), globalDescriptorSetLayout, nullptr);
+            vkDestroyDescriptorSetLayout(device.GetHandle(), globalDescriptorSetLayout, nullptr);
         if (globalDescriptorPool != VK_NULL_HANDLE)
-            vkDestroyDescriptorPool(device.getDevice(), globalDescriptorPool, nullptr);
+            vkDestroyDescriptorPool(device.GetHandle(), globalDescriptorPool, nullptr);
     }
 
     ResourceHeap::TextureHandle ResourceHeap::registerTexture(VkDescriptorImageInfo imageInfo)
@@ -281,7 +281,7 @@ namespace Engine {
             }
         }
 
-        vkUpdateDescriptorSets(device.getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        vkUpdateDescriptorSets(device.GetHandle(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
         pendingWrites.clear();
         hasPendingWrites = false;
@@ -371,7 +371,7 @@ namespace Engine {
         }
 
         if (!writes.empty()) {
-            vkUpdateDescriptorSets(device.getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+            vkUpdateDescriptorSets(device.GetHandle(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
         }
     }
 
@@ -392,7 +392,7 @@ namespace Engine {
         write.descriptorCount = 1;
         write.pBufferInfo = &matBufInfo;
 
-        vkUpdateDescriptorSets(device.getDevice(), 1, &write, 0, nullptr);
+        vkUpdateDescriptorSets(device.GetHandle(), 1, &write, 0, nullptr);
     }
 
     void ResourceHeap::writeIBLDescriptors(VkDescriptorImageInfo irradianceInfo,
@@ -432,7 +432,7 @@ namespace Engine {
             writes.push_back(w2);
         }
 
-        vkUpdateDescriptorSets(device.getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        vkUpdateDescriptorSets(device.GetHandle(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
     }
 
     void ResourceHeap::setGeometryBuffers(std::shared_ptr<Buffer> positionBuf,
@@ -474,7 +474,7 @@ namespace Engine {
         }
 
         if (!writes.empty()) {
-            vkUpdateDescriptorSets(device.getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+            vkUpdateDescriptorSets(device.GetHandle(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
             for (auto& w : writes) delete w.pBufferInfo;
         }
     }
@@ -505,7 +505,7 @@ namespace Engine {
         }
 
         if (!writes.empty()) {
-            vkUpdateDescriptorSets(device.getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+            vkUpdateDescriptorSets(device.GetHandle(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
         }
     }
 } // namespace Engine

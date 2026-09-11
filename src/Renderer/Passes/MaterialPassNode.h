@@ -5,7 +5,7 @@
 #include <vector>
 
 namespace Engine {
-    class Device;
+    class VulkanDevice;
     class Renderer;
     class Model;
     class ResourceHeap;
@@ -31,7 +31,7 @@ namespace Engine {
     class MaterialPassNode: public RenderPassNode
     {
     public:
-        MaterialPassNode(Device &device,
+        MaterialPassNode(VulkanDevice &device,
                          Renderer &renderer,
                          Model &megaBuffer,
                          ResourceHeap &resourceHeap,
@@ -56,7 +56,7 @@ namespace Engine {
         void createPipelineLayout();
         void createPipeline();
 
-        Device &device;
+        VulkanDevice &device;
         Model &megaBuffer;
         Renderer &renderer;
         ResourceHeap &resourceHeap;

@@ -6,6 +6,7 @@
 #include <glm/glm.hpp>
 
 namespace Engine {
+    class VulkanDevice;
     class CullPassNode;
     struct VisibilityPushConstants
     {
@@ -26,7 +27,7 @@ namespace Engine {
     class VisibilityPassNode: public RenderPassNode
     {
     public:
-        VisibilityPassNode(Device &device, Renderer &renderer, Model &megaBuffer, CullPassNode &cullPass, ResourceHeap &resourceHeap, uint32_t phase = 0);
+        VisibilityPassNode(VulkanDevice &device, Renderer &renderer, Model &megaBuffer, CullPassNode &cullPass, ResourceHeap &resourceHeap, uint32_t phase = 0);
         ~VisibilityPassNode();
 
         VisibilityPassNode(const VisibilityPassNode &) = delete;
@@ -46,7 +47,7 @@ namespace Engine {
         void createMeshPipeline();
         void createMaskedPipeline();
 
-        Device &device;
+        VulkanDevice &device;
         Renderer &renderer;
         Model &megaBuffer;
         CullPassNode &cullPass;

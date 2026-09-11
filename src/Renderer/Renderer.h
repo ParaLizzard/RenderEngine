@@ -3,7 +3,7 @@
 #include "Core/Assert.h"
 #include "Core/EngineConstants.h"
 #include <vulkan/vulkan.h>
-#include "Vulkan/Device.h"
+#include "Vulkan/VulkanDevice.h"
 #include "System/Window/IWindow.h"
 #include "Vulkan/Swapchain.h"
 #include "System/Events/EventDispatcher.h"
@@ -22,7 +22,7 @@ namespace Engine {
     class Renderer
     {
     public:
-        Renderer(IWindow &window, Device &device);
+        Renderer(IWindow &window, VulkanDevice &device);
         ~Renderer();
 
         Renderer(const Renderer &) = delete;
@@ -74,7 +74,7 @@ namespace Engine {
         void recreateSwapChain();
 
         IWindow &window;
-        Device &device;
+        VulkanDevice &device;
         ScopedSubscription resizeSubscription;
     };
 } // namespace Engine

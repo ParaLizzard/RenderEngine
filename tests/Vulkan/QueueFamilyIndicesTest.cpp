@@ -1,65 +1,88 @@
 #include <gtest/gtest.h>
-#include "Vulkan/Device.h"
+#include "Vulkan/VulkanDevice.h"
 
 class QueueFamilyIndicesTest : public ::testing::Test {};
 
 TEST_F(QueueFamilyIndicesTest, DefaultIsNotComplete)
 {
-    Engine::QueueFamilyIndices indices {};
-    EXPECT_FALSE(indices.isComplete());
-    EXPECT_FALSE(indices.graphicsFamilyHasValue);
-    EXPECT_FALSE(indices.presentFamilyHasValue);
+    Engine::QueueFamilyIndices indices{};
+    EXPECT_FALSE(indices.IsComplete());
+    EXPECT_EQ(indices.graphicsFamily, VK_QUEUE_FAMILY_IGNORED);
+    EXPECT_EQ(indices.computeFamily, VK_QUEUE_FAMILY_IGNORED);
+    EXPECT_EQ(indices.transferFamily, VK_QUEUE_FAMILY_IGNORED);
+    EXPECT_EQ(indices.presentFamily, VK_QUEUE_FAMILY_IGNORED);
 }
 
-TEST_F(QueueFamilyIndicesTest, OnlyGraphicsSetIsNotComplete)
+TEST_F(QueueFamilyIndicesTest, PartialCompletionIsNotComplete)
 {
-    Engine::QueueFamilyIndices indices {};
+    Engine::QueueFamilyIndices indices{};
     indices.graphicsFamily = 0;
-    indices.graphicsFamilyHasValue = true;
+    EXPECT_FALSE(indices.IsComplete());
 
-    EXPECT_FALSE(indices.isComplete());
-}
+    indices.computeFamily = 1;
+    EXPECT_FALSE(indices.IsComplete());
 
-TEST_F(QueueFamilyIndicesTest, OnlyPresentSetIsNotComplete)
-{
-    Engine::QueueFamilyIndices indices {};
-    indices.presentFamily = 1;
-    indices.presentFamilyHasValue = true;
+    indices.transferFamily = 2;
+    EXPECT_FALSE(indices.IsComplete());
 
-    EXPECT_FALSE(indices.isComplete());
-}
-
-TEST_F(QueueFamilyIndicesTest, BothSetIsComplete)
-{
-    Engine::QueueFamilyIndices indices {};
-    indices.graphicsFamily = 0;
-    indices.graphicsFamilyHasValue = true;
     indices.presentFamily = 0;
-    indices.presentFamilyHasValue = true;
-
-    EXPECT_TRUE(indices.isComplete());
+    EXPECT_TRUE(indices.IsComplete());
 }
 
-TEST_F(QueueFamilyIndicesTest, DifferentFamilyIndicesStillComplete)
+TEST_F(QueueFamilyIndicesTest, AllSetIsComplete)
 {
-    Engine::QueueFamilyIndices indices {};
+    Engine::QueueFamilyIndices indices{};
     indices.graphicsFamily = 0;
-    indices.graphicsFamilyHasValue = true;
-    indices.presentFamily = 2;
-    indices.presentFamilyHasValue = true;
+    indices.computeFamily = 1;
+    indices.transferFamily = 2;
+    indices.presentFamily = 3;
 
-    EXPECT_TRUE(indices.isComplete());
-    EXPECT_NE(indices.graphicsFamily, indices.presentFamily);
+    EXPECT_TRUE(indices.IsComplete());
 }
 
-TEST_F(QueueFamilyIndicesTest, SameFamilyIndexForBothQueues)
+TEST_F(QueueFamilyIndicesTest, SharedFamilyIndicesStillComplete)
 {
-    Engine::QueueFamilyIndices indices {};
-    indices.graphicsFamily = 3;
-    indices.graphicsFamilyHasValue = true;
-    indices.presentFamily = 3;
-    indices.presentFamilyHasValue = true;
+    Engine::QueueFamilyIndices indices{};
+    indices.graphicsFamily = 0;
+    indices.computeFamily = 0;
+    indices.transferFamily = 0;
+    indices.presentFamily = 0;
 
-    EXPECT_TRUE(indices.isComplete());
-    EXPECT_EQ(indices.graphicsFamily, indices.presentFamily);
+    EXPECT_TRUE(indices.IsComplete());
+}
+
+TEST_F(QueueFamilyIndicesTest, DedicatedQueueChecks)
+{
+    // Case 1: Shared queue family for everything
+    Engine::QueueFamilyIndices shared{};
+    shared.graphicsFamily = 0;
+    shared.computeFamily = 0;
+    shared.transferFamily = 0;
+    shared.presentFamily = 0;
+
+    EXPECT_FALSE(shared.IsComputeDedicated());
+    EXPECT_FALSE(shared.IsTransferDedicated());
+    EXPECT_FALSE(shared.IsTransferAsync());
+
+    // Case 2: Dedicated compute and dedicated transfer
+    Engine::QueueFamilyIndices dedicated{};
+    dedicated.graphicsFamily = 0;
+    dedicated.computeFamily = 1;
+    dedicated.transferFamily = 2;
+    dedicated.presentFamily = 0;
+
+    EXPECT_TRUE(dedicated.IsComputeDedicated());
+    EXPECT_TRUE(dedicated.IsTransferDedicated());
+    EXPECT_TRUE(dedicated.IsTransferAsync());
+
+    // Case 3: Transfer shares family with compute, but differs from graphics
+    Engine::QueueFamilyIndices asyncOnly{};
+    asyncOnly.graphicsFamily = 0;
+    asyncOnly.computeFamily = 1;
+    asyncOnly.transferFamily = 1;
+    asyncOnly.presentFamily = 0;
+
+    EXPECT_TRUE(asyncOnly.IsComputeDedicated());
+    EXPECT_FALSE(asyncOnly.IsTransferDedicated());
+    EXPECT_TRUE(asyncOnly.IsTransferAsync());
 }

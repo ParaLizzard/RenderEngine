@@ -15,7 +15,7 @@
 #include "Scene/GameObject.h"
 #include "Scene/KeyboardMovement.h"
 #include "AssetSystem/Texture.h"
-#include "Vulkan/Device.h"
+#include "Vulkan/VulkanDevice.h"
 #include "System/Window/IWindow.h"
 #include "System/Input/InputSubsystem.h"
 #include "AssetSystem/IBL.h"
@@ -55,7 +55,7 @@ namespace Engine {
         void updateSceneGraph();
 
         IWindow &window;
-        Device device {window};
+        VulkanDevice device {window};
         Renderer renderer {window, device};
         Model megaBuffer {device};
         ResourceHeap resourceHeap {device};

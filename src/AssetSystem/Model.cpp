@@ -4,16 +4,16 @@
 #include "Core/EngineConstants.h"
 #include "Core/Log.h"
 #include "Vulkan/Buffer.h"
-#include "Vulkan/Device.h"
+#include "Vulkan/VulkanDevice.h"
 
 
 namespace Engine {
-    Model::Model(Device &device): device(device)
+    Model::Model(VulkanDevice &device): device(device)
     {}
 
     Model::~Model()
     {
-        vkDeviceWaitIdle(device.getDevice());
+        vkDeviceWaitIdle(device.GetHandle());
     }
 
     std::vector<VkVertexInputBindingDescription> Model::VertexPosition::getBindingDescriptions()
@@ -152,7 +152,7 @@ namespace Engine {
         if (cpuPositions.empty() || cpuIndices.empty())
             return;
 
-        vkDeviceWaitIdle(device.getDevice());
+        vkDeviceWaitIdle(device.GetHandle());
 
         LOG_DEBUG("Model",
             "cpuPositions={}, cpuMeshlets={}, cpuMeshletVerts={}, cpuMeshletTris={}, totalAllocatedVertices={}, totalAllocatedMeshlets={}",
@@ -198,7 +198,7 @@ namespace Engine {
         auto expandedMeshletVertBuffer = createExpandedBuffer(oldMeshletVertSize, newMeshletVertSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
         auto expandedMeshletTriBuffer = createExpandedBuffer(oldMeshletTriSize, newMeshletTriSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
-        VkCommandBuffer copyCmd = device.beginSingleTimeCommands();
+        VkCommandBuffer copyCmd = device.BeginSingleTimeCommands(QueueType::Graphics);
 
         auto copyOldBuffer = [&](const std::shared_ptr<Buffer>& oldBuf, const std::shared_ptr<Buffer>& newBuf, VkDeviceSize size) {
             if (size > 0) {
@@ -228,10 +228,10 @@ namespace Engine {
         copyNewBuffer(stagingMeshletVerts, expandedMeshletVertBuffer, oldMeshletVertSize, newMeshletVertSize);
         copyNewBuffer(stagingMeshletTris, expandedMeshletTriBuffer, oldMeshletTriSize, newMeshletTriSize);
 
-        device.endSingleTimeCommands(copyCmd);
+        device.EndSingleTimeCommands(copyCmd, QueueType::Graphics);
 
         if (oldPosSize > 0 || oldIdxSize > 0) {
-            vkDeviceWaitIdle(device.getDevice());
+            vkDeviceWaitIdle(device.GetHandle());
         }
 
         positionBuffer = std::move(expandedPosBuffer);

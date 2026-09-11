@@ -57,7 +57,7 @@ namespace Engine {
 
     Application::~Application()
     {
-        vkDeviceWaitIdle(device.getDevice());
+        vkDeviceWaitIdle(device.GetHandle());
     }
 
     void Application::run()

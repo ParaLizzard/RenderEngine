@@ -13,6 +13,7 @@
 #define SSAO_NOISE_DIM 4
 
 namespace Engine {
+    class VulkanDevice;
     class Renderer;
 
     struct SsaoUbo
@@ -28,7 +29,7 @@ namespace Engine {
     class SsaoPassNode: public RenderPassNode
     {
     public:
-        SsaoPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap);
+        SsaoPassNode(VulkanDevice &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap);
         ~SsaoPassNode() override;
 
         SsaoPassNode(const SsaoPassNode &) = delete;
@@ -42,7 +43,7 @@ namespace Engine {
         void createNoiseTexture();
         void createPipelines();
 
-        Device &device;
+        VulkanDevice &device;
         Renderer &renderer;
         Model &megaBuffer;
         ResourceHeap &resourceHeap;

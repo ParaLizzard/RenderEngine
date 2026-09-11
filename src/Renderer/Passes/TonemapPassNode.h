@@ -8,12 +8,13 @@
 #include "Renderer/FrameInfo.h"
 
 namespace Engine {
+    class VulkanDevice;
     class Renderer;
 
     class TonemapPassNode: public RenderPassNode
     {
     public:
-        TonemapPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap);
+        TonemapPassNode(VulkanDevice &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap);
         ~TonemapPassNode() override;
 
         TonemapPassNode(const TonemapPassNode &) = delete;
@@ -29,7 +30,7 @@ namespace Engine {
         void createPipelineLayout();
         void createPipeline();
 
-        Device &device;
+        VulkanDevice &device;
         Renderer &renderer;
         Model &megaBuffer;
         ResourceHeap &resourceHeap;

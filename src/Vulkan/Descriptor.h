@@ -8,7 +8,7 @@
 #include <vector>
 
 namespace Engine {
-    class Device;
+    class VulkanDevice;
 
     class DescriptorSetLayout
     {
@@ -16,7 +16,7 @@ namespace Engine {
         class Builder
         {
         public:
-            Builder(Device &device): device {device}
+            Builder(VulkanDevice &device): device {device}
             {}
 
             Builder &addBinding(uint32_t binding,
@@ -30,12 +30,12 @@ namespace Engine {
             std::unique_ptr<DescriptorSetLayout> build() const;
 
         private:
-            Device &device;
+            VulkanDevice &device;
             std::unordered_map<uint32_t, VkDescriptorSetLayoutBinding> bindings {};
             std::unordered_map<uint32_t, VkDescriptorBindingFlags> bindingFlags {};
         };
 
-        DescriptorSetLayout(Device &device,
+        DescriptorSetLayout(VulkanDevice &device,
                             std::unordered_map<uint32_t, VkDescriptorSetLayoutBinding> bindings,
                             std::unordered_map<uint32_t, VkDescriptorBindingFlags> bindingFlags = {});
         ~DescriptorSetLayout();
@@ -48,7 +48,7 @@ namespace Engine {
         }
 
     private:
-        Device &device;
+        VulkanDevice &device;
         VkDescriptorSetLayout descriptorSetLayout;
         std::unordered_map<uint32_t, VkDescriptorSetLayoutBinding> bindings;
 
@@ -62,7 +62,7 @@ namespace Engine {
         class Builder
         {
         public:
-            Builder(Device &device): device {device}
+            Builder(VulkanDevice &device): device {device}
             {}
 
             Builder &addPoolSize(VkDescriptorType descriptorType, uint32_t count);
@@ -71,13 +71,13 @@ namespace Engine {
             std::unique_ptr<DescriptorPool> build() const;
 
         private:
-            Device &device;
+            VulkanDevice &device;
             std::vector<VkDescriptorPoolSize> poolSizes {};
             uint32_t maxSets = 1000;
             VkDescriptorPoolCreateFlags poolFlags = 0;
         };
 
-        DescriptorPool(Device &device,
+        DescriptorPool(VulkanDevice &device,
                        uint32_t maxSets,
                        VkDescriptorPoolCreateFlags poolFlags,
                        const std::vector<VkDescriptorPoolSize> &poolSizes);
@@ -92,7 +92,7 @@ namespace Engine {
         void resetPool();
 
     private:
-        Device &device;
+        VulkanDevice &device;
         VkDescriptorPool descriptorPool;
 
         friend class DescriptorWriter;

@@ -11,7 +11,7 @@
 #include "Renderer/ShaderUtils.h"
 
 namespace Engine {
-    TaaPassNode::TaaPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap) :
+    TaaPassNode::TaaPassNode(VulkanDevice &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap) :
     RenderPassNode("TAA Pass"),
     device(device),
     renderer(renderer),
@@ -28,7 +28,7 @@ namespace Engine {
         samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        vkCreateSampler(device.getDevice(), &samplerInfo, nullptr, &linearSampler);
+        vkCreateSampler(device.GetHandle(), &samplerInfo, nullptr, &linearSampler);
 
         VkSamplerCreateInfo samplerInfo2 {};
         samplerInfo2.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -37,7 +37,7 @@ namespace Engine {
         samplerInfo2.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         samplerInfo2.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         samplerInfo2.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        vkCreateSampler(device.getDevice(), &samplerInfo2, nullptr, &nearestSampler);
+        vkCreateSampler(device.GetHandle(), &samplerInfo2, nullptr, &nearestSampler);
 
         descriptorPool = DescriptorPool::Builder(device)
                          .setMaxSets(Constants::MAX_FRAMES_IN_FLIGHT)
@@ -67,13 +67,13 @@ namespace Engine {
         destroyHistoryResources();
 
         if (linearSampler != VK_NULL_HANDLE)
-            vkDestroySampler(device.getDevice(), linearSampler, nullptr);
+            vkDestroySampler(device.GetHandle(), linearSampler, nullptr);
         if (nearestSampler != VK_NULL_HANDLE)
-            vkDestroySampler(device.getDevice(), nearestSampler, nullptr);
+            vkDestroySampler(device.GetHandle(), nearestSampler, nullptr);
         if (pipeline != VK_NULL_HANDLE)
-            vkDestroyPipeline(device.getDevice(), pipeline, nullptr);
+            vkDestroyPipeline(device.GetHandle(), pipeline, nullptr);
         if (pipelineLayout != VK_NULL_HANDLE)
-            vkDestroyPipelineLayout(device.getDevice(), pipelineLayout, nullptr);
+            vkDestroyPipelineLayout(device.GetHandle(), pipelineLayout, nullptr);
     }
 
     void TaaPassNode::setup(RenderGraphBuilder &renderGraph)
@@ -193,7 +193,7 @@ namespace Engine {
         VkDescriptorSetLayout sLayout = setLayout->getDescriptorSetLayout();
         pipelineLayoutInfo.pSetLayouts = &sLayout;
 
-        ENGINE_VERIFY(vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &pipelineLayout) == VK_SUCCESS,
+        ENGINE_VERIFY(vkCreatePipelineLayout(device.GetHandle(), &pipelineLayoutInfo, nullptr, &pipelineLayout) == VK_SUCCESS,
             "TAA: failed to create pipeline layout");
     }
 
@@ -201,7 +201,7 @@ namespace Engine {
     {
         auto CompCode = ShaderUtils::readFile("shaders/taa.comp.spv");
 
-        VkShaderModule compModule = ShaderUtils::createShaderModule(device.getDevice(), CompCode);
+        VkShaderModule compModule = ShaderUtils::createShaderModule(device.GetHandle(), CompCode);
 
         struct SpecializationData
         {
@@ -225,9 +225,9 @@ namespace Engine {
         computePipelineInfo.stage = computeStage;
 
         vkCreateComputePipelines(
-            device.getDevice(), device.getPipelineCache(), 1, &computePipelineInfo, nullptr, &pipeline);
+            device.GetHandle(), device.getPipelineCache(), 1, &computePipelineInfo, nullptr, &pipeline);
 
-        vkDestroyShaderModule(device.getDevice(), compModule, nullptr);
+        vkDestroyShaderModule(device.GetHandle(), compModule, nullptr);
     }
 
     void TaaPassNode::createHistoryResources()
@@ -258,7 +258,7 @@ namespace Engine {
             viewInfo.subresourceRange.baseMipLevel = 0;
             viewInfo.subresourceRange.levelCount = 1;
 
-            vkCreateImageView(device.getDevice(), &viewInfo, nullptr, &historyBuffers[i].view);
+            vkCreateImageView(device.GetHandle(), &viewInfo, nullptr, &historyBuffers[i].view);
         }
 
         VkImageCreateInfo velocityImageInfo{};
@@ -287,7 +287,7 @@ namespace Engine {
             viewInfo.subresourceRange.baseMipLevel = 0;
             viewInfo.subresourceRange.levelCount = 1;
 
-            vkCreateImageView(device.getDevice(), &viewInfo, nullptr, &velocityHistoryBuffers[i].view);
+            vkCreateImageView(device.GetHandle(), &viewInfo, nullptr, &velocityHistoryBuffers[i].view);
         }
     }
 
@@ -295,7 +295,7 @@ namespace Engine {
     {
         for(uint32_t i = 0; i < 2; i++) {
             if (historyBuffers[i].view != VK_NULL_HANDLE) {
-                vkDestroyImageView(device.getDevice(), historyBuffers[i].view, nullptr);
+                vkDestroyImageView(device.GetHandle(), historyBuffers[i].view, nullptr);
                 historyBuffers[i].view = VK_NULL_HANDLE;
             }
             if (historyBuffers[i].image != VK_NULL_HANDLE) {
@@ -303,7 +303,7 @@ namespace Engine {
                 historyBuffers[i].image = VK_NULL_HANDLE;
             }
             if (velocityHistoryBuffers[i].view != VK_NULL_HANDLE) {
-                vkDestroyImageView(device.getDevice(), velocityHistoryBuffers[i].view, nullptr);
+                vkDestroyImageView(device.GetHandle(), velocityHistoryBuffers[i].view, nullptr);
                 velocityHistoryBuffers[i].view = VK_NULL_HANDLE;
             }
             if (velocityHistoryBuffers[i].image != VK_NULL_HANDLE) {

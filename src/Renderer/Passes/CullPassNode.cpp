@@ -12,7 +12,7 @@
 #include "Vulkan/VkUtils.h"
 
 namespace Engine {
-    CullPassNode::CullPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap, uint32_t phase, CullPassNode *parentCullPass):
+    CullPassNode::CullPassNode(VulkanDevice &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap, uint32_t phase, CullPassNode *parentCullPass):
         RenderPassNode(phase == 0 ? "Cull Pass Phase 1" : "Cull Pass Phase 2"), device(device), megaBuffer(megaBuffer), renderer(renderer), resourceHeap(resourceHeap), phase(phase), parentCullPass(parentCullPass)
     {
         VkSamplerCreateInfo samplerInfo {};
@@ -25,12 +25,12 @@ namespace Engine {
         samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         samplerInfo.minLod = 0.0f;
         samplerInfo.maxLod = 16.0f;
-        vkCreateSampler(device.getDevice(), &samplerInfo, nullptr, &hizSampler);
+        vkCreateSampler(device.GetHandle(), &samplerInfo, nullptr, &hizSampler);
 
         objectDescriptorSets.resize(Constants::MAX_FRAMES_IN_FLIGHT);
 
         VkShaderStageFlags stageFlags = VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-        if (device.isMeshShaderSupported()) {
+        if (device.IsMeshShaderSupported()) {
             stageFlags |= VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT;
         }
 
@@ -78,7 +78,7 @@ namespace Engine {
         ssboBindings[8].binding = 8;
         ssboBindings[8].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         ssboBindings[8].descriptorCount = 1;
-        ssboBindings[8].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT | (device.isMeshShaderSupported() ? VK_SHADER_STAGE_TASK_BIT_EXT : 0);
+        ssboBindings[8].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT | (device.IsMeshShaderSupported() ? VK_SHADER_STAGE_TASK_BIT_EXT : 0);
 
         ssboBindings[9].binding = 9;
         ssboBindings[9].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -94,7 +94,7 @@ namespace Engine {
         layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
         layoutInfo.bindingCount = static_cast<uint32_t>(ssboBindings.size());
         layoutInfo.pBindings = ssboBindings.data();
-        vkCreateDescriptorSetLayout(device.getDevice(), &layoutInfo, nullptr, &objectSetLayout);
+        vkCreateDescriptorSetLayout(device.GetHandle(), &layoutInfo, nullptr, &objectSetLayout);
 
         std::array<VkDescriptorPoolSize, 2> poolSizes {};
         poolSizes[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -107,7 +107,7 @@ namespace Engine {
         poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
         poolInfo.pPoolSizes = poolSizes.data();
         poolInfo.maxSets = Constants::MAX_FRAMES_IN_FLIGHT * 2;
-        vkCreateDescriptorPool(device.getDevice(), &poolInfo, nullptr, &objectDescriptorPool);
+        vkCreateDescriptorPool(device.GetHandle(), &poolInfo, nullptr, &objectDescriptorPool);
 
         objectDescriptorSets.resize(Constants::MAX_FRAMES_IN_FLIGHT);
         maskedObjectDescriptorSets.resize(Constants::MAX_FRAMES_IN_FLIGHT);
@@ -334,9 +334,9 @@ namespace Engine {
             allocInfo.descriptorPool = objectDescriptorPool;
             allocInfo.descriptorSetCount = 1;
             allocInfo.pSetLayouts = &objectSetLayout;
-            ENGINE_VERIFY(vkAllocateDescriptorSets(device.getDevice(), &allocInfo, &objectDescriptorSets[i]) == VK_SUCCESS,
+            ENGINE_VERIFY(vkAllocateDescriptorSets(device.GetHandle(), &allocInfo, &objectDescriptorSets[i]) == VK_SUCCESS,
                 "Failed to allocate object descriptor sets in CullPassNode");
-            ENGINE_VERIFY(vkAllocateDescriptorSets(device.getDevice(), &allocInfo, &maskedObjectDescriptorSets[i]) == VK_SUCCESS,
+            ENGINE_VERIFY(vkAllocateDescriptorSets(device.GetHandle(), &allocInfo, &maskedObjectDescriptorSets[i]) == VK_SUCCESS,
                 "Failed to allocate masked object descriptor sets in CullPassNode");
 
             VkDescriptorBufferInfo dispatchInfo = gpuDispatchCommandBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
@@ -428,7 +428,7 @@ namespace Engine {
             descriptorWrites[9].descriptorCount = 1;
             descriptorWrites[9].pBufferInfo = &candObjInfo;
 
-            vkUpdateDescriptorSets(device.getDevice(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+            vkUpdateDescriptorSets(device.GetHandle(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 
             VkDescriptorBufferInfo maskedDispatchInfo = gpuMaskedDispatchCommandBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
             VkDescriptorBufferInfo maskedVisibleObjInfo = gpuMaskedVisibleObjectBuffers[i]->descriptorInfo(VK_WHOLE_SIZE, 0);
@@ -458,7 +458,7 @@ namespace Engine {
             maskedDescriptorWrites[8].pBufferInfo = &maskedCandDispatchInfo;
             maskedDescriptorWrites[9].pBufferInfo = &maskedCandObjInfo;
 
-            vkUpdateDescriptorSets(device.getDevice(), static_cast<uint32_t>(maskedDescriptorWrites.size()), maskedDescriptorWrites.data(), 0, nullptr);
+            vkUpdateDescriptorSets(device.GetHandle(), static_cast<uint32_t>(maskedDescriptorWrites.size()), maskedDescriptorWrites.data(), 0, nullptr);
         }
 
         createPipeline();
@@ -467,36 +467,36 @@ namespace Engine {
     CullPassNode::~CullPassNode()
     {
         if (hizSampler != VK_NULL_HANDLE)
-            vkDestroySampler(device.getDevice(), hizSampler, nullptr);
+            vkDestroySampler(device.GetHandle(), hizSampler, nullptr);
         if (objectDescriptorPool != VK_NULL_HANDLE)
-            vkDestroyDescriptorPool(device.getDevice(), objectDescriptorPool, nullptr);
+            vkDestroyDescriptorPool(device.GetHandle(), objectDescriptorPool, nullptr);
         if (objectSetLayout != VK_NULL_HANDLE)
-            vkDestroyDescriptorSetLayout(device.getDevice(), objectSetLayout, nullptr);
+            vkDestroyDescriptorSetLayout(device.GetHandle(), objectSetLayout, nullptr);
         if (objectCullPipeline != VK_NULL_HANDLE)
-            vkDestroyPipeline(device.getDevice(), objectCullPipeline, nullptr);
+            vkDestroyPipeline(device.GetHandle(), objectCullPipeline, nullptr);
         if (taskSubmitPipeline != VK_NULL_HANDLE)
-            vkDestroyPipeline(device.getDevice(), taskSubmitPipeline, nullptr);
+            vkDestroyPipeline(device.GetHandle(), taskSubmitPipeline, nullptr);
         if (meshletCullPipeline != VK_NULL_HANDLE)
-            vkDestroyPipeline(device.getDevice(), meshletCullPipeline, nullptr);
+            vkDestroyPipeline(device.GetHandle(), meshletCullPipeline, nullptr);
         if (triangleCullPipeline != VK_NULL_HANDLE)
-            vkDestroyPipeline(device.getDevice(), triangleCullPipeline, nullptr);
+            vkDestroyPipeline(device.GetHandle(), triangleCullPipeline, nullptr);
         if (computePipelineLayout != VK_NULL_HANDLE)
-            vkDestroyPipelineLayout(device.getDevice(), computePipelineLayout, nullptr);
+            vkDestroyPipelineLayout(device.GetHandle(), computePipelineLayout, nullptr);
     }
 
     void CullPassNode::createPipeline()
     {
         auto objCode = ShaderUtils::readFile("shaders/object_cull.comp.spv");
-        VkShaderModule objModule = ShaderUtils::createShaderModule(device.getDevice(), objCode);
+        VkShaderModule objModule = ShaderUtils::createShaderModule(device.GetHandle(), objCode);
 
         auto taskSubmitCode = ShaderUtils::readFile("shaders/task_submit.comp.spv");
-        VkShaderModule taskSubmitModule = ShaderUtils::createShaderModule(device.getDevice(), taskSubmitCode);
+        VkShaderModule taskSubmitModule = ShaderUtils::createShaderModule(device.GetHandle(), taskSubmitCode);
 
         auto meshletCode = ShaderUtils::readFile("shaders/meshlet_cull.comp.spv");
-        VkShaderModule meshletModule = ShaderUtils::createShaderModule(device.getDevice(), meshletCode);
+        VkShaderModule meshletModule = ShaderUtils::createShaderModule(device.GetHandle(), meshletCode);
 
         auto triangleCode = ShaderUtils::readFile("shaders/triangle_cull.comp.spv");
-        VkShaderModule triangleModule = ShaderUtils::createShaderModule(device.getDevice(), triangleCode);
+        VkShaderModule triangleModule = ShaderUtils::createShaderModule(device.GetHandle(), triangleCode);
 
         VkPushConstantRange pushConstantRange {};
         pushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
@@ -512,7 +512,7 @@ namespace Engine {
         pipelineLayoutInfo.pushConstantRangeCount = 1;
         pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
-        ENGINE_VERIFY(vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &computePipelineLayout) == VK_SUCCESS,
+        ENGINE_VERIFY(vkCreatePipelineLayout(device.GetHandle(), &pipelineLayoutInfo, nullptr, &computePipelineLayout) == VK_SUCCESS,
             "CullPassNode: failed to create compute pipeline layout");
 
         uint32_t workgroupSize = Constants::CULL_WORKGROUP_SIZE;
@@ -558,7 +558,7 @@ namespace Engine {
         objPipelineInfo.layout = computePipelineLayout;
         objPipelineInfo.stage = objStageInfo;
 
-        ENGINE_VERIFY(vkCreateComputePipelines(device.getDevice(), VK_NULL_HANDLE, 1, &objPipelineInfo, nullptr, &objectCullPipeline) == VK_SUCCESS,
+        ENGINE_VERIFY(vkCreateComputePipelines(device.GetHandle(), VK_NULL_HANDLE, 1, &objPipelineInfo, nullptr, &objectCullPipeline) == VK_SUCCESS,
             "CullPassNode: failed to create object cull compute pipeline");
 
         VkComputePipelineCreateInfo taskSubmitPipelineInfo {};
@@ -566,7 +566,7 @@ namespace Engine {
         taskSubmitPipelineInfo.layout = computePipelineLayout;
         taskSubmitPipelineInfo.stage = taskSubmitStageInfo;
 
-        ENGINE_VERIFY(vkCreateComputePipelines(device.getDevice(), VK_NULL_HANDLE, 1, &taskSubmitPipelineInfo, nullptr, &taskSubmitPipeline) == VK_SUCCESS,
+        ENGINE_VERIFY(vkCreateComputePipelines(device.GetHandle(), VK_NULL_HANDLE, 1, &taskSubmitPipelineInfo, nullptr, &taskSubmitPipeline) == VK_SUCCESS,
             "CullPassNode: failed to create task submit compute pipeline");
 
         VkComputePipelineCreateInfo meshletPipelineInfo {};
@@ -574,7 +574,7 @@ namespace Engine {
         meshletPipelineInfo.layout = computePipelineLayout;
         meshletPipelineInfo.stage = meshletStageInfo;
 
-        ENGINE_VERIFY(vkCreateComputePipelines(device.getDevice(), VK_NULL_HANDLE, 1, &meshletPipelineInfo, nullptr, &meshletCullPipeline) == VK_SUCCESS,
+        ENGINE_VERIFY(vkCreateComputePipelines(device.GetHandle(), VK_NULL_HANDLE, 1, &meshletPipelineInfo, nullptr, &meshletCullPipeline) == VK_SUCCESS,
             "CullPassNode: failed to create meshlet cull compute pipeline");
 
         VkComputePipelineCreateInfo trianglePipelineInfo {};
@@ -582,13 +582,13 @@ namespace Engine {
         trianglePipelineInfo.layout = computePipelineLayout;
         trianglePipelineInfo.stage = triangleStageInfo;
 
-        ENGINE_VERIFY(vkCreateComputePipelines(device.getDevice(), VK_NULL_HANDLE, 1, &trianglePipelineInfo, nullptr, &triangleCullPipeline) == VK_SUCCESS,
+        ENGINE_VERIFY(vkCreateComputePipelines(device.GetHandle(), VK_NULL_HANDLE, 1, &trianglePipelineInfo, nullptr, &triangleCullPipeline) == VK_SUCCESS,
             "CullPassNode: failed to create triangle cull compute pipeline");
 
-        vkDestroyShaderModule(device.getDevice(), objModule, nullptr);
-        vkDestroyShaderModule(device.getDevice(), taskSubmitModule, nullptr);
-        vkDestroyShaderModule(device.getDevice(), meshletModule, nullptr);
-        vkDestroyShaderModule(device.getDevice(), triangleModule, nullptr);
+        vkDestroyShaderModule(device.GetHandle(), objModule, nullptr);
+        vkDestroyShaderModule(device.GetHandle(), taskSubmitModule, nullptr);
+        vkDestroyShaderModule(device.GetHandle(), meshletModule, nullptr);
+        vkDestroyShaderModule(device.GetHandle(), triangleModule, nullptr);
     }
 
     void CullPassNode::setup(RenderGraphBuilder &renderGraph)
@@ -598,7 +598,7 @@ namespace Engine {
                               VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                               VK_ACCESS_2_SHADER_READ_BIT);
 
-        if (!device.isMeshShaderSupported()) {
+        if (!device.IsMeshShaderSupported()) {
             renderGraph.writeBuffer("CompactedIndexBuffer",
                                  VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                                  VK_ACCESS_2_SHADER_WRITE_BIT);
@@ -753,7 +753,7 @@ namespace Engine {
                     VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT));
             }
 
-            if (device.isMeshShaderSupported()) {
+            if (device.IsMeshShaderSupported()) {
                 VkDispatchIndirectCommand taskDispatchCmd{0, 1, 1};
                 vkCmdUpdateBuffer(cmd, taskDispatchCommandBuffers[currentFrame]->getBuffer(), 0, sizeof(VkDispatchIndirectCommand), &taskDispatchCmd);
 
@@ -852,7 +852,7 @@ namespace Engine {
                 objCullDep.pMemoryBarriers = &objCullBarrier;
                 vkCmdPipelineBarrier2(cmd, &objCullDep);
 
-                if (device.isMeshShaderSupported() && alphaModeTag == 0) {
+                if (device.IsMeshShaderSupported() && alphaModeTag == 0) {
                     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, taskSubmitPipeline);
                     vkCmdDispatchIndirect(cmd, gpuDispatchCommandBuffers[currentFrame]->getBuffer(), 0);
 
@@ -932,7 +932,7 @@ namespace Engine {
             writes[1] = writes[0];
             writes[1].dstSet = maskedObjectDescriptorSets[currentFrame];
 
-            vkUpdateDescriptorSets(device.getDevice(), 2, writes, 0, nullptr);
+            vkUpdateDescriptorSets(device.GetHandle(), 2, writes, 0, nullptr);
         }
     }
 }

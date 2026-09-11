@@ -2,7 +2,7 @@
 #include "Scene/GameObject.h"
 #include "AssetSystem/LoaderGLTF.h"
 #include "AssetSystem/Texture.h"
-#include "Vulkan/Device.h"
+#include "Vulkan/VulkanDevice.h"
 #include "AssetSystem/Model.h"
 
 #include "Renderer/ShaderUtils.h"
@@ -11,7 +11,7 @@
 
 namespace Engine {
     IBL::IBL(
-        Device &device, TextureCubeMap &skyboxTexture, ResourceHeap &resourceHeap, Model &megaBuffer, GameObject &cube):
+        VulkanDevice &device, TextureCubeMap &skyboxTexture, ResourceHeap &resourceHeap, Model &megaBuffer, GameObject &cube):
         device(device), skyboxTexture(skyboxTexture), resourceHeap(resourceHeap), cube(cube), megaBuffer(megaBuffer)
     {
         generateBRDFLUT();
@@ -23,20 +23,20 @@ namespace Engine {
     IBL::~IBL()
     {
         if (BRDFLUT.image) {
-            vkDestroyImageView(device.getDevice(), BRDFLUT.imageView, nullptr);
-            vkDestroySampler(device.getDevice(), BRDFLUT.sampler, nullptr);
+            vkDestroyImageView(device.GetHandle(), BRDFLUT.imageView, nullptr);
+            vkDestroySampler(device.GetHandle(), BRDFLUT.sampler, nullptr);
             vmaDestroyImage(device.getAllocator(), BRDFLUT.image, BRDFallocation);
         }
 
         if (irradianceCube.image) {
-            vkDestroyImageView(device.getDevice(), irradianceCube.imageView, nullptr);
-            vkDestroySampler(device.getDevice(), irradianceCube.sampler, nullptr);
+            vkDestroyImageView(device.GetHandle(), irradianceCube.imageView, nullptr);
+            vkDestroySampler(device.GetHandle(), irradianceCube.sampler, nullptr);
             vmaDestroyImage(device.getAllocator(), irradianceCube.image, irradianceAllocation);
         }
 
         if (prefilteredCube.image) {
-            vkDestroyImageView(device.getDevice(), prefilteredCube.imageView, nullptr);
-            vkDestroySampler(device.getDevice(), prefilteredCube.sampler, nullptr);
+            vkDestroyImageView(device.GetHandle(), prefilteredCube.imageView, nullptr);
+            vkDestroySampler(device.GetHandle(), prefilteredCube.sampler, nullptr);
             vmaDestroyImage(device.getAllocator(), prefilteredCube.image, prefilterAllocation);
         }
     }
@@ -75,7 +75,7 @@ namespace Engine {
         viewCI.subresourceRange.layerCount = 1;
         viewCI.image = BRDFLUT.image;
         ENGINE_VERIFY(
-            vkCreateImageView(device.getDevice(), &viewCI, nullptr, &BRDFLUT.imageView) == VK_SUCCESS,
+            vkCreateImageView(device.GetHandle(), &viewCI, nullptr, &BRDFLUT.imageView) == VK_SUCCESS,
             "IBL: Failed to create Vulkan image views!");
 
         VkSamplerCreateInfo samplerCI {};
@@ -91,7 +91,7 @@ namespace Engine {
         samplerCI.maxLod = 1.0f;
         samplerCI.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
         ENGINE_VERIFY(
-            vkCreateSampler(device.getDevice(), &samplerCI, nullptr, &BRDFLUT.sampler) == VK_SUCCESS,
+            vkCreateSampler(device.GetHandle(), &samplerCI, nullptr, &BRDFLUT.sampler) == VK_SUCCESS,
             "IBL: Failed to create Vulkan texture samplers!");
 
         VkPipelineLayout pipelinelayout;
@@ -100,7 +100,7 @@ namespace Engine {
         pipelineLayoutCI.setLayoutCount = 0;
         pipelineLayoutCI.pSetLayouts = nullptr;
         ENGINE_VERIFY(
-            vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutCI, nullptr, &pipelinelayout) == VK_SUCCESS,
+            vkCreatePipelineLayout(device.GetHandle(), &pipelineLayoutCI, nullptr, &pipelinelayout) == VK_SUCCESS,
             "IBL: Failed to create pipeline layout");
 
         VkPipelineInputAssemblyStateCreateInfo inputAssemblyState {};
@@ -188,8 +188,8 @@ namespace Engine {
         auto vertCode = ShaderUtils::readFile("shaders/genbrdflut.vert.spv");
         auto fragCode = ShaderUtils::readFile("shaders/genbrdflut.frag.spv");
 
-        VkShaderModule vertShaderModule = ShaderUtils::createShaderModule(device.getDevice(), vertCode);
-        VkShaderModule fragShaderModule = ShaderUtils::createShaderModule(device.getDevice(), fragCode);
+        VkShaderModule vertShaderModule = ShaderUtils::createShaderModule(device.GetHandle(), vertCode);
+        VkShaderModule fragShaderModule = ShaderUtils::createShaderModule(device.GetHandle(), fragCode);
 
         shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         shaderStages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -203,7 +203,7 @@ namespace Engine {
 
         VkPipeline pipeline;
         ENGINE_VERIFY(
-            vkCreateGraphicsPipelines(device.getDevice(), VK_NULL_HANDLE, 1, &pipelineCI, nullptr, &pipeline) ==
+            vkCreateGraphicsPipelines(device.GetHandle(), VK_NULL_HANDLE, 1, &pipelineCI, nullptr, &pipeline) ==
                 VK_SUCCESS,
             "IBL: Failed to create pipeline!");
 
@@ -236,7 +236,7 @@ namespace Engine {
         subresourceRange.levelCount = 1;
         subresourceRange.layerCount = 1;
 
-        VkCommandBuffer cmdBuf = device.beginSingleTimeCommands();
+        VkCommandBuffer cmdBuf = device.BeginSingleTimeCommands(QueueType::Graphics);
 
         device.transitionImageLayout(cmdBuf,
                                      BRDFLUT.image,
@@ -271,12 +271,12 @@ namespace Engine {
                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                      subresourceRange);
 
-        device.endSingleTimeCommands(cmdBuf);
+        device.EndSingleTimeCommands(cmdBuf, QueueType::Graphics);
 
-        vkDestroyPipeline(device.getDevice(), pipeline, nullptr);
-        vkDestroyShaderModule(device.getDevice(), vertShaderModule, nullptr);
-        vkDestroyShaderModule(device.getDevice(), fragShaderModule, nullptr);
-        vkDestroyPipelineLayout(device.getDevice(), pipelinelayout, nullptr);
+        vkDestroyPipeline(device.GetHandle(), pipeline, nullptr);
+        vkDestroyShaderModule(device.GetHandle(), vertShaderModule, nullptr);
+        vkDestroyShaderModule(device.GetHandle(), fragShaderModule, nullptr);
+        vkDestroyPipelineLayout(device.GetHandle(), pipelinelayout, nullptr);
     }
 
     void IBL::generateIrradiance()
@@ -307,7 +307,7 @@ namespace Engine {
         viewCI.format = format;
         viewCI.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, numMips, 0, 6};
         viewCI.image = irradianceCube.image;
-        vkCreateImageView(device.getDevice(), &viewCI, nullptr, &irradianceCube.imageView);
+        vkCreateImageView(device.GetHandle(), &viewCI, nullptr, &irradianceCube.imageView);
 
         VkSamplerCreateInfo samplerCI {};
         samplerCI.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -320,7 +320,7 @@ namespace Engine {
         samplerCI.minLod = 0.0f;
         samplerCI.maxLod = static_cast<float>(numMips);
         samplerCI.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
-        vkCreateSampler(device.getDevice(), &samplerCI, nullptr, &irradianceCube.sampler);
+        vkCreateSampler(device.GetHandle(), &samplerCI, nullptr, &irradianceCube.sampler);
 
         VkImage offscreenImage;
         VmaAllocation offscreenAlloc;
@@ -335,7 +335,7 @@ namespace Engine {
         viewCI.viewType = VK_IMAGE_VIEW_TYPE_2D;
         viewCI.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
         viewCI.image = offscreenImage;
-        vkCreateImageView(device.getDevice(), &viewCI, nullptr, &offscreenView);
+        vkCreateImageView(device.GetHandle(), &viewCI, nullptr, &offscreenView);
 
         VkDescriptorSetLayout descriptorsetlayout;
         VkDescriptorSetLayoutBinding samplerLayoutBinding {};
@@ -349,7 +349,7 @@ namespace Engine {
         descriptorsetlayoutCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
         descriptorsetlayoutCI.pBindings = &samplerLayoutBinding;
         descriptorsetlayoutCI.bindingCount = 1;
-        vkCreateDescriptorSetLayout(device.getDevice(), &descriptorsetlayoutCI, nullptr, &descriptorsetlayout);
+        vkCreateDescriptorSetLayout(device.GetHandle(), &descriptorsetlayoutCI, nullptr, &descriptorsetlayout);
 
         VkDescriptorPoolSize poolSize {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
         VkDescriptorPoolCreateInfo descriptorPoolCI {};
@@ -358,7 +358,7 @@ namespace Engine {
         descriptorPoolCI.pPoolSizes = &poolSize;
         descriptorPoolCI.maxSets = 2;
         VkDescriptorPool descriptorpool;
-        vkCreateDescriptorPool(device.getDevice(), &descriptorPoolCI, nullptr, &descriptorpool);
+        vkCreateDescriptorPool(device.GetHandle(), &descriptorPoolCI, nullptr, &descriptorpool);
 
         VkDescriptorSet descriptorset;
         VkDescriptorSetAllocateInfo allocSetInfo {};
@@ -366,7 +366,7 @@ namespace Engine {
         allocSetInfo.descriptorPool = descriptorpool;
         allocSetInfo.pSetLayouts = &descriptorsetlayout;
         allocSetInfo.descriptorSetCount = 1;
-        vkAllocateDescriptorSets(device.getDevice(), &allocSetInfo, &descriptorset);
+        vkAllocateDescriptorSets(device.GetHandle(), &allocSetInfo, &descriptorset);
 
         VkDescriptorImageInfo imageInfo {};
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -381,7 +381,7 @@ namespace Engine {
         descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         descriptorWrite.descriptorCount = 1;
         descriptorWrite.pImageInfo = &imageInfo;
-        vkUpdateDescriptorSets(device.getDevice(), 1, &descriptorWrite, 0, nullptr);
+        vkUpdateDescriptorSets(device.GetHandle(), 1, &descriptorWrite, 0, nullptr);
 
         struct PushBlock
         {
@@ -402,7 +402,7 @@ namespace Engine {
         pipelineLayoutCI.pSetLayouts = &descriptorsetlayout;
         pipelineLayoutCI.pushConstantRangeCount = 1;
         pipelineLayoutCI.pPushConstantRanges = &pushConstantRange;
-        vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutCI, nullptr, &pipelinelayout);
+        vkCreatePipelineLayout(device.GetHandle(), &pipelineLayoutCI, nullptr, &pipelinelayout);
 
         VkPipelineInputAssemblyStateCreateInfo inputAssemblyState {};
         inputAssemblyState.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -467,8 +467,8 @@ namespace Engine {
         auto fragCode = ShaderUtils::readFile("shaders/irradiancecube.frag.spv");
 
 
-        VkShaderModule vertShaderModule = ShaderUtils::createShaderModule(device.getDevice(), vertCode);
-        VkShaderModule fragShaderModule = ShaderUtils::createShaderModule(device.getDevice(), fragCode);
+        VkShaderModule vertShaderModule = ShaderUtils::createShaderModule(device.GetHandle(), vertCode);
+        VkShaderModule fragShaderModule = ShaderUtils::createShaderModule(device.GetHandle(), fragCode);
 
         std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages {};
         shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -502,9 +502,9 @@ namespace Engine {
         pipelineCI.pStages = shaderStages.data();
         pipelineCI.pVertexInputState = &vertexInputState;
         VkPipeline pipeline;
-        vkCreateGraphicsPipelines(device.getDevice(), VK_NULL_HANDLE, 1, &pipelineCI, nullptr, &pipeline);
+        vkCreateGraphicsPipelines(device.GetHandle(), VK_NULL_HANDLE, 1, &pipelineCI, nullptr, &pipeline);
 
-        VkCommandBuffer cmdBuf = device.beginSingleTimeCommands();
+        VkCommandBuffer cmdBuf = device.BeginSingleTimeCommands(QueueType::Graphics);
 
         VkImageSubresourceRange cubeSubresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, numMips, 0, 6};
         device.transitionImageLayout(cmdBuf,
@@ -616,16 +616,16 @@ namespace Engine {
                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                      cubeSubresourceRange);
 
-        device.endSingleTimeCommands(cmdBuf);
+        device.EndSingleTimeCommands(cmdBuf, QueueType::Graphics);
 
-        vkDestroyImageView(device.getDevice(), offscreenView, nullptr);
+        vkDestroyImageView(device.GetHandle(), offscreenView, nullptr);
         vmaDestroyImage(device.getAllocator(), offscreenImage, offscreenAlloc);
-        vkDestroyPipeline(device.getDevice(), pipeline, nullptr);
-        vkDestroyPipelineLayout(device.getDevice(), pipelinelayout, nullptr);
-        vkDestroyDescriptorPool(device.getDevice(), descriptorpool, nullptr);
-        vkDestroyDescriptorSetLayout(device.getDevice(), descriptorsetlayout, nullptr);
-        vkDestroyShaderModule(device.getDevice(), vertShaderModule, nullptr);
-        vkDestroyShaderModule(device.getDevice(), fragShaderModule, nullptr);
+        vkDestroyPipeline(device.GetHandle(), pipeline, nullptr);
+        vkDestroyPipelineLayout(device.GetHandle(), pipelinelayout, nullptr);
+        vkDestroyDescriptorPool(device.GetHandle(), descriptorpool, nullptr);
+        vkDestroyDescriptorSetLayout(device.GetHandle(), descriptorsetlayout, nullptr);
+        vkDestroyShaderModule(device.GetHandle(), vertShaderModule, nullptr);
+        vkDestroyShaderModule(device.GetHandle(), fragShaderModule, nullptr);
     }
 
     void IBL::generatePrefilter()
@@ -657,7 +657,7 @@ namespace Engine {
         viewCI.format = format;
         viewCI.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, numMips, 0, 6};
         viewCI.image = prefilteredCube.image;
-        vkCreateImageView(device.getDevice(), &viewCI, nullptr, &prefilteredCube.imageView);
+        vkCreateImageView(device.GetHandle(), &viewCI, nullptr, &prefilteredCube.imageView);
 
         VkSamplerCreateInfo samplerCI {};
         samplerCI.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -670,7 +670,7 @@ namespace Engine {
         samplerCI.minLod = 0.0f;
         samplerCI.maxLod = static_cast<float>(numMips);
         samplerCI.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
-        vkCreateSampler(device.getDevice(), &samplerCI, nullptr, &prefilteredCube.sampler);
+        vkCreateSampler(device.GetHandle(), &samplerCI, nullptr, &prefilteredCube.sampler);
 
         VkImage offscreenImage;
         VmaAllocation offscreenAlloc;
@@ -685,7 +685,7 @@ namespace Engine {
         viewCI.viewType = VK_IMAGE_VIEW_TYPE_2D;
         viewCI.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
         viewCI.image = offscreenImage;
-        vkCreateImageView(device.getDevice(), &viewCI, nullptr, &offscreenView);
+        vkCreateImageView(device.GetHandle(), &viewCI, nullptr, &offscreenView);
 
         VkDescriptorSetLayout descriptorsetlayout;
         VkDescriptorSetLayoutBinding samplerLayoutBinding {};
@@ -699,7 +699,7 @@ namespace Engine {
         descriptorsetlayoutCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
         descriptorsetlayoutCI.pBindings = &samplerLayoutBinding;
         descriptorsetlayoutCI.bindingCount = 1;
-        vkCreateDescriptorSetLayout(device.getDevice(), &descriptorsetlayoutCI, nullptr, &descriptorsetlayout);
+        vkCreateDescriptorSetLayout(device.GetHandle(), &descriptorsetlayoutCI, nullptr, &descriptorsetlayout);
 
         VkDescriptorPoolSize poolSize {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
         VkDescriptorPoolCreateInfo descriptorPoolCI {};
@@ -708,7 +708,7 @@ namespace Engine {
         descriptorPoolCI.pPoolSizes = &poolSize;
         descriptorPoolCI.maxSets = 2;
         VkDescriptorPool descriptorpool;
-        vkCreateDescriptorPool(device.getDevice(), &descriptorPoolCI, nullptr, &descriptorpool);
+        vkCreateDescriptorPool(device.GetHandle(), &descriptorPoolCI, nullptr, &descriptorpool);
 
         VkDescriptorSet descriptorset;
         VkDescriptorSetAllocateInfo allocSetInfo {};
@@ -716,7 +716,7 @@ namespace Engine {
         allocSetInfo.descriptorPool = descriptorpool;
         allocSetInfo.pSetLayouts = &descriptorsetlayout;
         allocSetInfo.descriptorSetCount = 1;
-        vkAllocateDescriptorSets(device.getDevice(), &allocSetInfo, &descriptorset);
+        vkAllocateDescriptorSets(device.GetHandle(), &allocSetInfo, &descriptorset);
 
         VkDescriptorImageInfo imageInfo {};
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -731,7 +731,7 @@ namespace Engine {
         descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         descriptorWrite.descriptorCount = 1;
         descriptorWrite.pImageInfo = &imageInfo;
-        vkUpdateDescriptorSets(device.getDevice(), 1, &descriptorWrite, 0, nullptr);
+        vkUpdateDescriptorSets(device.GetHandle(), 1, &descriptorWrite, 0, nullptr);
 
 
         struct PushBlock
@@ -753,7 +753,7 @@ namespace Engine {
         pipelineLayoutCI.pSetLayouts = &descriptorsetlayout;
         pipelineLayoutCI.pushConstantRangeCount = 1;
         pipelineLayoutCI.pPushConstantRanges = &pushConstantRange;
-        vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutCI, nullptr, &pipelinelayout);
+        vkCreatePipelineLayout(device.GetHandle(), &pipelineLayoutCI, nullptr, &pipelinelayout);
 
         VkPipelineInputAssemblyStateCreateInfo inputAssemblyState {};
         inputAssemblyState.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -817,8 +817,8 @@ namespace Engine {
         auto vertCode = ShaderUtils::readFile("shaders/filtercube.vert.spv");
         auto fragCode = ShaderUtils::readFile("shaders/prefilterenvmap.frag.spv");
 
-        VkShaderModule vertShaderModule = ShaderUtils::createShaderModule(device.getDevice(), vertCode);
-        VkShaderModule fragShaderModule = ShaderUtils::createShaderModule(device.getDevice(), fragCode);
+        VkShaderModule vertShaderModule = ShaderUtils::createShaderModule(device.GetHandle(), vertCode);
+        VkShaderModule fragShaderModule = ShaderUtils::createShaderModule(device.GetHandle(), fragCode);
 
         std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages {};
         shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -853,9 +853,9 @@ namespace Engine {
         pipelineCI.pVertexInputState = &vertexInputState;
 
         VkPipeline pipeline;
-        vkCreateGraphicsPipelines(device.getDevice(), VK_NULL_HANDLE, 1, &pipelineCI, nullptr, &pipeline);
+        vkCreateGraphicsPipelines(device.GetHandle(), VK_NULL_HANDLE, 1, &pipelineCI, nullptr, &pipeline);
 
-        VkCommandBuffer cmdBuf = device.beginSingleTimeCommands();
+        VkCommandBuffer cmdBuf = device.BeginSingleTimeCommands(QueueType::Graphics);
 
         VkImageSubresourceRange cubeSubresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, numMips, 0, 6};
         device.transitionImageLayout(cmdBuf,
@@ -969,15 +969,15 @@ namespace Engine {
                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                      cubeSubresourceRange);
 
-        device.endSingleTimeCommands(cmdBuf);
+        device.EndSingleTimeCommands(cmdBuf, QueueType::Graphics);
 
-        vkDestroyImageView(device.getDevice(), offscreenView, nullptr);
+        vkDestroyImageView(device.GetHandle(), offscreenView, nullptr);
         vmaDestroyImage(device.getAllocator(), offscreenImage, offscreenAlloc);
-        vkDestroyPipeline(device.getDevice(), pipeline, nullptr);
-        vkDestroyPipelineLayout(device.getDevice(), pipelinelayout, nullptr);
-        vkDestroyDescriptorPool(device.getDevice(), descriptorpool, nullptr);
-        vkDestroyDescriptorSetLayout(device.getDevice(), descriptorsetlayout, nullptr);
-        vkDestroyShaderModule(device.getDevice(), vertShaderModule, nullptr);
-        vkDestroyShaderModule(device.getDevice(), fragShaderModule, nullptr);
+        vkDestroyPipeline(device.GetHandle(), pipeline, nullptr);
+        vkDestroyPipelineLayout(device.GetHandle(), pipelinelayout, nullptr);
+        vkDestroyDescriptorPool(device.GetHandle(), descriptorpool, nullptr);
+        vkDestroyDescriptorSetLayout(device.GetHandle(), descriptorsetlayout, nullptr);
+        vkDestroyShaderModule(device.GetHandle(), vertShaderModule, nullptr);
+        vkDestroyShaderModule(device.GetHandle(), fragShaderModule, nullptr);
     }
 } // namespace Engine

@@ -1,6 +1,6 @@
 
 #include "Scene/KeyboardMovement.h"
-#include "Vulkan/Device.h"
+#include "Vulkan/VulkanDevice.h"
 #include <memory>
 #include <cmath>
 

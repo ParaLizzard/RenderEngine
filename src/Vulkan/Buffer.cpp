@@ -11,10 +11,10 @@
 #include <vulkan/vulkan.h>
 
 #include "Core/Assert.h"
-#include "Vulkan/Device.h"
+#include "Vulkan/VulkanDevice.h"
 
 namespace Engine {
-    Buffer::Buffer(Device &device,
+    Buffer::Buffer(VulkanDevice &device,
                    VkDeviceSize instanceSize,
                    uint32_t instanceCount,
                    VkBufferUsageFlags usageFlags,
@@ -79,7 +79,7 @@ namespace Engine {
 
     void Buffer::copyBuffer(VkBuffer dstBuffer, VkDeviceSize size)
     {
-        VkCommandBuffer commandBuffer = device.beginSingleTimeCommands();
+        VkCommandBuffer commandBuffer = device.BeginSingleTimeCommands(QueueType::Graphics);
 
         VkBufferCopy copyRegion {};
         copyRegion.srcOffset = 0;
@@ -87,12 +87,12 @@ namespace Engine {
         copyRegion.size = size;
         vkCmdCopyBuffer(commandBuffer, buffer, dstBuffer, 1, &copyRegion);
 
-        device.endSingleTimeCommands(commandBuffer);
+        device.EndSingleTimeCommands(commandBuffer, QueueType::Graphics);
     }
 
     void Buffer::copyBufferToImage(VkImage image, uint32_t width, uint32_t height, uint32_t layerCount)
     {
-        VkCommandBuffer commandBuffer = device.beginSingleTimeCommands();
+        VkCommandBuffer commandBuffer = device.BeginSingleTimeCommands(QueueType::Graphics);
 
         VkBufferImageCopy region {};
         region.bufferOffset = 0;
@@ -108,7 +108,7 @@ namespace Engine {
         region.imageExtent = {width, height, 1};
 
         vkCmdCopyBufferToImage(commandBuffer, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-        device.endSingleTimeCommands(commandBuffer);
+        device.EndSingleTimeCommands(commandBuffer, QueueType::Graphics);
     }
 
     VkDeviceSize Buffer::getAlignment(VkDeviceSize instanceSize, VkDeviceSize minOffsetAlignment)

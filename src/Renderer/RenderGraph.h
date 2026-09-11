@@ -14,6 +14,7 @@
 #include <iostream>
 
 namespace Engine {
+    class VulkanDevice;
 
     struct GraphImage
     {
@@ -109,7 +110,7 @@ namespace Engine {
     class RenderGraph
     {
     public:
-        RenderGraph(Device &device);
+        RenderGraph(VulkanDevice &device);
 
         ~RenderGraph();
 
@@ -159,7 +160,7 @@ namespace Engine {
     private:
         void printProfileSummaryTable();
 
-        Device &device;
+        VulkanDevice &device;
 
         std::vector<PassExecutionInfo> registeredPasses;
         std::unordered_map<std::string, GraphImage> imageRegistry;

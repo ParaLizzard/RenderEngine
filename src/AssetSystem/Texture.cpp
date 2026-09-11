@@ -1,5 +1,5 @@
 #include "AssetSystem/Texture.h"
-#include "Vulkan/Device.h"
+#include "Vulkan/VulkanDevice.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 #include "Vulkan/VkUtils.h"
@@ -23,7 +23,7 @@ namespace Engine {
             return;
 
         if (view != VK_NULL_HANDLE) {
-            vkDestroyImageView(device->getDevice(), view, nullptr);
+            vkDestroyImageView(device->GetHandle(), view, nullptr);
             view = VK_NULL_HANDLE;
         }
         if (image != VK_NULL_HANDLE && allocation != VK_NULL_HANDLE) {
@@ -32,7 +32,7 @@ namespace Engine {
             allocation = VK_NULL_HANDLE;
         }
         if (sampler != VK_NULL_HANDLE) {
-            vkDestroySampler(device->getDevice(), sampler, nullptr);
+            vkDestroySampler(device->GetHandle(), sampler, nullptr);
             sampler = VK_NULL_HANDLE;
         }
     }
@@ -98,7 +98,7 @@ namespace Engine {
 
     void Texture2D::loadFromFile(std::string filename,
                                  VkFormat format,
-                                 Device *device,
+                                 VulkanDevice *device,
                                  ResourceHeap &resourceHeap,
                                  VkFilter filter,
                                  VkImageUsageFlags imageUsageFlags,
@@ -160,7 +160,7 @@ namespace Engine {
             vmaCreateImage(device->getAllocator(), &imageCreateInfo, &allocInfo, &image, &allocation, {});
         ENGINE_VERIFY(imageResult == VK_SUCCESS, "Failed to allocate texture image for: {}", filename);
 
-        VkCommandBuffer copyCmd = device->beginSingleTimeCommands();
+        VkCommandBuffer copyCmd = device->BeginSingleTimeCommands(QueueType::Graphics);
 
         VkImageSubresourceRange subresourceRange = {};
         subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -181,7 +181,7 @@ namespace Engine {
         this->imageLayout = imageLayout;
         transitionImageLayout(copyCmd, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, imageLayout, subresourceRange);
 
-        device->endSingleTimeCommands(copyCmd);
+        device->EndSingleTimeCommands(copyCmd, QueueType::Graphics);
 
         ktxTexture_Destroy(ktxTexture);
 
@@ -200,7 +200,7 @@ namespace Engine {
                                                .maxLod = (float)mipLevels,
                                                .borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE};
         ENGINE_VERIFY(
-            vkCreateSampler(device->getDevice(), &samplerCreateInfo, nullptr, &sampler) == VK_SUCCESS,
+            vkCreateSampler(device->GetHandle(), &samplerCreateInfo, nullptr, &sampler) == VK_SUCCESS,
             "Texture: Failed to create sampler for texture: {}", filename);
 
         VkImageViewCreateInfo viewCreateInfo {.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -209,7 +209,7 @@ namespace Engine {
                                               .format = format,
                                               .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, mipLevels, 0, 1}};
         ENGINE_VERIFY(
-            vkCreateImageView(device->getDevice(), &viewCreateInfo, nullptr, &view) == VK_SUCCESS,
+            vkCreateImageView(device->GetHandle(), &viewCreateInfo, nullptr, &view) == VK_SUCCESS,
             "Texture: failed to create texture image view!");
 
         updateDescriptor();
@@ -222,7 +222,7 @@ namespace Engine {
                            VkFormat format,
                            uint32_t texWidth,
                            uint32_t texHeight,
-                           Device *device,
+                           VulkanDevice *device,
                            ResourceHeap &resourceHeap,
                            VkFilter filter,
                            VkImageUsageFlags imageUsageFlags,
@@ -293,7 +293,7 @@ namespace Engine {
         vmaCreateImage(device->getAllocator(), &imageCreateInfo, &allocInfo, &image, &allocation, {});
     ENGINE_VERIFY(imageResult == VK_SUCCESS, "Failed to allocate texture image");
 
-    VkCommandBuffer commandBuffer = device->beginSingleTimeCommands();
+    VkCommandBuffer commandBuffer = device->BeginSingleTimeCommands(QueueType::Graphics);
 
     VkImageSubresourceRange subresourceRange {};
     subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -398,7 +398,7 @@ namespace Engine {
 
     this->imageLayout = imageLayout;
 
-    device->endSingleTimeCommands(commandBuffer);
+    device->EndSingleTimeCommands(commandBuffer, QueueType::Graphics);
 
     VkImageViewCreateInfo viewInfo {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
     viewInfo.image = image;
@@ -407,7 +407,7 @@ namespace Engine {
     viewInfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, mipLevels, 0, 1};
 
     ENGINE_VERIFY(
-        vkCreateImageView(device->getDevice(), &viewInfo, nullptr, &view) == VK_SUCCESS,
+        vkCreateImageView(device->GetHandle(), &viewInfo, nullptr, &view) == VK_SUCCESS,
         "Texture: failed to create texture image view!");
 
     VkSamplerCreateInfo samplerInfo {VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
@@ -425,7 +425,7 @@ namespace Engine {
     samplerInfo.maxAnisotropy = std::min(Constants::MATERIAL_MAX_ANISOTROPY, device->getMaxAnisotropy());
 
     ENGINE_VERIFY(
-        vkCreateSampler(device->getDevice(), &samplerInfo, nullptr, &sampler) == VK_SUCCESS,
+        vkCreateSampler(device->GetHandle(), &samplerInfo, nullptr, &sampler) == VK_SUCCESS,
         "Texture: failed to create texture sampler!");
 
     updateDescriptor();
@@ -434,7 +434,7 @@ namespace Engine {
 }
 
     void Texture2D::fromKTXPtr(void *ktxTexPtr,
-                           Device *device,
+                           VulkanDevice *device,
                            ResourceHeap &resourceHeap,
                            bool isSRGB,
                            VkFilter filter,
@@ -527,7 +527,7 @@ namespace Engine {
         vmaCreateImage(device->getAllocator(), &imageCreateInfo, &allocInfo, &image, &allocation, {}) == VK_SUCCESS,
         "Failed to allocate KTX texture image");
 
-    VkCommandBuffer copyCmd = device->beginSingleTimeCommands();
+    VkCommandBuffer copyCmd = device->BeginSingleTimeCommands(QueueType::Graphics);
     VkImageSubresourceRange subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, mipLevels, 0, 1};
 
     transitionImageLayout(
@@ -543,7 +543,7 @@ namespace Engine {
     this->imageLayout = imageLayout;
     transitionImageLayout(copyCmd, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, imageLayout, subresourceRange);
 
-    device->endSingleTimeCommands(copyCmd);
+    device->EndSingleTimeCommands(copyCmd, QueueType::Graphics);
 
     ktxTexture_Destroy(ktxTexture);
 
@@ -555,7 +555,7 @@ namespace Engine {
         .subresourceRange = subresourceRange
     };
     ENGINE_VERIFY(
-        vkCreateImageView(device->getDevice(), &viewCreateInfo, nullptr, &view) == VK_SUCCESS,
+        vkCreateImageView(device->GetHandle(), &viewCreateInfo, nullptr, &view) == VK_SUCCESS,
         "Texture: Failed to create image view for KTX texture");
 
     VkSamplerCreateInfo samplerCreateInfo {
@@ -575,7 +575,7 @@ namespace Engine {
         .borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE
     };
     ENGINE_VERIFY(
-        vkCreateSampler(device->getDevice(), &samplerCreateInfo, nullptr, &sampler) == VK_SUCCESS,
+        vkCreateSampler(device->GetHandle(), &samplerCreateInfo, nullptr, &sampler) == VK_SUCCESS,
         "Texture: Failed to create sampler for KTX texture");
 
     updateDescriptor();
@@ -583,7 +583,7 @@ namespace Engine {
 }
 
     void Texture2D::createDefaultTexture(
-        Device *device, uint8_t r, uint8_t g, uint8_t b, uint8_t a, ResourceHeap &resourceHeap)
+        VulkanDevice *device, uint8_t r, uint8_t g, uint8_t b, uint8_t a, ResourceHeap &resourceHeap)
     {
         VkDeviceSize imageSize = 4;
         unsigned char pixels[4] = {r, g, b, a};
@@ -614,7 +614,7 @@ namespace Engine {
             vmaCreateImage(device->getAllocator(), &imageCreateInfo, &allocInfo, &image, &allocation, {});
         ENGINE_VERIFY(imageResult == VK_SUCCESS, "Failed to allocate texture image");
 
-        VkCommandBuffer commandBuffer = device->beginSingleTimeCommands();
+        VkCommandBuffer commandBuffer = device->BeginSingleTimeCommands(QueueType::Graphics);
 
 
         VkImageMemoryBarrier2 barrier = VkUtils::imageBarrier(
@@ -646,7 +646,7 @@ namespace Engine {
         depInfo2.pImageMemoryBarriers = &barrier2;
         vkCmdPipelineBarrier2(commandBuffer, &depInfo2);
 
-        device->endSingleTimeCommands(commandBuffer);
+        device->EndSingleTimeCommands(commandBuffer, QueueType::Graphics);
 
         VkImageViewCreateInfo viewInfo {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
         viewInfo.image = image;
@@ -655,7 +655,7 @@ namespace Engine {
         viewInfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
         ENGINE_VERIFY(
-            vkCreateImageView(device->getDevice(), &viewInfo, nullptr, &view) == VK_SUCCESS,
+            vkCreateImageView(device->GetHandle(), &viewInfo, nullptr, &view) == VK_SUCCESS,
             "Texture: Failed to create default texture image view");
 
         VkSamplerCreateInfo samplerInfo {VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
@@ -673,7 +673,7 @@ namespace Engine {
         samplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
 
         ENGINE_VERIFY(
-            vkCreateSampler(device->getDevice(), &samplerInfo, nullptr, &sampler) == VK_SUCCESS,
+            vkCreateSampler(device->GetHandle(), &samplerInfo, nullptr, &sampler) == VK_SUCCESS,
             "Texture: Failed to create default texture sampler");
 
         this->device = device;
@@ -690,7 +690,7 @@ namespace Engine {
 
     void Texture2DArray::loadFromFile(std::string filename,
                                       VkFormat format,
-                                      Device *device,
+                                      VulkanDevice *device,
                                       ResourceHeap &resourceHeap,
                                       VkImageUsageFlags imageUsageFlags,
                                       VkImageLayout imageLayout)
@@ -755,7 +755,7 @@ namespace Engine {
             vmaCreateImage(device->getAllocator(), &imageCreateInfo, &allocInfo, &image, &allocation, {});
         ENGINE_VERIFY(imageResult == VK_SUCCESS, "Failed to allocate texture array image for: {}", filename);
 
-        VkCommandBuffer copyCmd = device->beginSingleTimeCommands();
+        VkCommandBuffer copyCmd = device->BeginSingleTimeCommands(QueueType::Graphics);
 
         VkImageSubresourceRange subresourceRange = {};
         subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -778,7 +778,7 @@ namespace Engine {
 
         transitionImageLayout(copyCmd, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, imageLayout, subresourceRange);
 
-        device->endSingleTimeCommands(copyCmd);
+        device->EndSingleTimeCommands(copyCmd, QueueType::Graphics);
 
         ktxTexture_Destroy(ktxTexture);
 
@@ -797,7 +797,7 @@ namespace Engine {
                                                .maxLod = (float)mipLevels,
                                                .borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE};
         ENGINE_VERIFY(
-            vkCreateSampler(device->getDevice(), &samplerCreateInfo, nullptr, &sampler) == VK_SUCCESS,
+            vkCreateSampler(device->GetHandle(), &samplerCreateInfo, nullptr, &sampler) == VK_SUCCESS,
             "Texture: Failed to create sampler for texture: {}", filename);
 
         VkImageViewCreateInfo viewCreateInfo {
@@ -807,7 +807,7 @@ namespace Engine {
             .format = format,
             .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, mipLevels, 0, layerCount}};
         ENGINE_VERIFY(
-            vkCreateImageView(device->getDevice(), &viewCreateInfo, nullptr, &view) == VK_SUCCESS,
+            vkCreateImageView(device->GetHandle(), &viewCreateInfo, nullptr, &view) == VK_SUCCESS,
             "Texture: failed to create texture image view!");
 
         updateDescriptor();
@@ -817,7 +817,7 @@ namespace Engine {
 
     void TextureCubeMap::loadFromFile(std::string filename,
                                       VkFormat format,
-                                      Device *device,
+                                      VulkanDevice *device,
                                       ResourceHeap &resourceHeap,
                                       VkImageUsageFlags imageUsageFlags,
                                       VkImageLayout imageLayout)
@@ -881,7 +881,7 @@ namespace Engine {
             vmaCreateImage(device->getAllocator(), &imageCreateInfo, &allocInfo, &image, &allocation, {});
         ENGINE_VERIFY(imageResult == VK_SUCCESS, "Texture: Failed to allocate cubemap image for: {}", filename);
 
-        VkCommandBuffer copyCmd = device->beginSingleTimeCommands();
+        VkCommandBuffer copyCmd = device->BeginSingleTimeCommands(QueueType::Graphics);
 
         VkImageSubresourceRange subresourceRange = {};
         subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -904,7 +904,7 @@ namespace Engine {
 
         transitionImageLayout(copyCmd, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, imageLayout, subresourceRange);
 
-        device->endSingleTimeCommands(copyCmd);
+        device->EndSingleTimeCommands(copyCmd, QueueType::Graphics);
 
         ktxTexture_Destroy(ktxTexture);
 
@@ -923,7 +923,7 @@ namespace Engine {
                                                .maxLod = (float)mipLevels,
                                                .borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE};
         ENGINE_VERIFY(
-            vkCreateSampler(device->getDevice(), &samplerCreateInfo, nullptr, &sampler) == VK_SUCCESS,
+            vkCreateSampler(device->GetHandle(), &samplerCreateInfo, nullptr, &sampler) == VK_SUCCESS,
             "Texture: Failed to create sampler for texture: {}", filename);
 
         VkImageViewCreateInfo viewCreateInfo {.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -932,7 +932,7 @@ namespace Engine {
                                               .format = format,
                                               .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, mipLevels, 0, 6}};
         ENGINE_VERIFY(
-            vkCreateImageView(device->getDevice(), &viewCreateInfo, nullptr, &view) == VK_SUCCESS,
+            vkCreateImageView(device->GetHandle(), &viewCreateInfo, nullptr, &view) == VK_SUCCESS,
             "Texture: failed to create texture image view!");
 
         updateDescriptor();
@@ -942,7 +942,7 @@ namespace Engine {
 
     void TextureCubeMap::loadFromFileSTB(std::array<std::string, 6> filenames,
                                          VkFormat format,
-                                         Device *device,
+                                         VulkanDevice *device,
                                          ResourceHeap &resourceHeap,
                                          VkImageUsageFlags imageUsageFlags,
                                          VkImageLayout imageLayout)
@@ -1012,7 +1012,7 @@ namespace Engine {
                 VK_SUCCESS,
             "TextureCubeMap: Failed to allocate cubemap image");
 
-        VkCommandBuffer copyCmd = device->beginSingleTimeCommands();
+        VkCommandBuffer copyCmd = device->BeginSingleTimeCommands(QueueType::Graphics);
 
         VkImageSubresourceRange subresourceRange = {};
         subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -1100,7 +1100,7 @@ namespace Engine {
         vkCmdPipelineBarrier2(copyCmd, &depInfoFinal);
 
         this->imageLayout = imageLayout;
-        device->endSingleTimeCommands(copyCmd);
+        device->EndSingleTimeCommands(copyCmd, QueueType::Graphics);
 
         VkSamplerCreateInfo samplerCreateInfo {.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
                                                .magFilter = VK_FILTER_LINEAR,
@@ -1118,7 +1118,7 @@ namespace Engine {
                                                .borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE};
 
         ENGINE_VERIFY(
-            vkCreateSampler(device->getDevice(), &samplerCreateInfo, nullptr, &sampler) == VK_SUCCESS,
+            vkCreateSampler(device->GetHandle(), &samplerCreateInfo, nullptr, &sampler) == VK_SUCCESS,
             "TextureCubeMap: Failed to create sampler");
 
         VkImageViewCreateInfo viewCreateInfo {.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -1128,7 +1128,7 @@ namespace Engine {
                                               .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, mipLevels, 0, 6}};
 
         ENGINE_VERIFY(
-            vkCreateImageView(device->getDevice(), &viewCreateInfo, nullptr, &view) == VK_SUCCESS,
+            vkCreateImageView(device->GetHandle(), &viewCreateInfo, nullptr, &view) == VK_SUCCESS,
             "TextureCubeMap: Failed to create image view");
 
         updateDescriptor();

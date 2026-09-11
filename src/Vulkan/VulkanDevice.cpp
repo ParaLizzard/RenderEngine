@@ -60,6 +60,13 @@ namespace Engine {
           extFn(other.extFn),
           isDeviceLost(other.isDeviceLost)
     {
+        for (size_t i = 0; i < immediateContexts.size(); ++i) {
+            immediateContexts[i].pool = other.immediateContexts[i].pool;
+            immediateContexts[i].fence = other.immediateContexts[i].fence;
+            other.immediateContexts[i].pool = VK_NULL_HANDLE;
+            other.immediateContexts[i].fence = VK_NULL_HANDLE;
+        }
+
         other.device = VK_NULL_HANDLE;
         other.physicalDevice = VK_NULL_HANDLE;
         other.graphicsQueue = VK_NULL_HANDLE;
@@ -93,6 +100,13 @@ namespace Engine {
             supportedExtensions = std::move(other.supportedExtensions);
             extFn = other.extFn;
             isDeviceLost = other.isDeviceLost;
+
+            for (size_t i = 0; i < immediateContexts.size(); ++i) {
+                immediateContexts[i].pool = other.immediateContexts[i].pool;
+                immediateContexts[i].fence = other.immediateContexts[i].fence;
+                other.immediateContexts[i].pool = VK_NULL_HANDLE;
+                other.immediateContexts[i].fence = VK_NULL_HANDLE;
+            }
 
             other.device = VK_NULL_HANDLE;
             other.physicalDevice = VK_NULL_HANDLE;
@@ -493,7 +507,7 @@ namespace Engine {
         vkGetPhysicalDeviceQueueFamilyProperties(physDevice, &queueFamilyCount, nullptr);
         std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
         vkGetPhysicalDeviceQueueFamilyProperties(physDevice, &queueFamilyCount, queueFamilies.data());
-        
+
         for (uint32_t i = 0; i < queueFamilyCount; ++i) {
             if (queueFamilies[i].queueCount == 0) {
                 continue;
@@ -605,7 +619,7 @@ namespace Engine {
         }
 
         std::vector<const char*> enabledExtensions;
-        if (surface != VK_NULL_HANDLE || IsExtensionSupported(VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
+        if (surface != VK_NULL_HANDLE && IsExtensionSupported(VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
             enabledExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
         }
 

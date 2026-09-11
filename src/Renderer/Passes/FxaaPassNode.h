@@ -8,12 +8,13 @@
 #include "Renderer/FrameInfo.h"
 
 namespace Engine {
+    class VulkanDevice;
     class Renderer;
 
     class FxaaPassNode: public RenderPassNode
     {
     public:
-        FxaaPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap);
+        FxaaPassNode(VulkanDevice &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap);
         ~FxaaPassNode() override;
 
         FxaaPassNode(const FxaaPassNode &) = delete;
@@ -29,7 +30,7 @@ namespace Engine {
         void createPipelineLayout();
         void createPipeline();
 
-        Device &device;
+        VulkanDevice &device;
         Renderer &renderer;
         Model &megaBuffer;
         ResourceHeap &resourceHeap;

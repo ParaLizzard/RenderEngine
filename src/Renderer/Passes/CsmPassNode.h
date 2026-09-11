@@ -9,10 +9,12 @@
 
 namespace Engine {
 
+    class VulkanDevice;
+
     class CsmPassNode : public RenderPassNode
     {
     public:
-        CsmPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap, CullPassNode &cullPass);
+        CsmPassNode(VulkanDevice &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap, CullPassNode &cullPass);
         ~CsmPassNode() override;
 
         CsmPassNode(const CsmPassNode &) = delete;
@@ -60,7 +62,7 @@ namespace Engine {
         void createMaskedPipeline();
         void updateDescriptors();
 
-        Device &device;
+        VulkanDevice &device;
         Renderer &renderer;
         Model &megaBuffer;
         ResourceHeap &resourceHeap;

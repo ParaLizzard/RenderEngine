@@ -4,7 +4,7 @@
 #include "Core/EngineConstants.h"
 
 #include "Renderer/RenderGraph.h"
-#include "Vulkan/Device.h"
+#include "Vulkan/VulkanDevice.h"
 #include "Renderer/Renderer.h"
 
 #define A_CPU
@@ -15,7 +15,7 @@
 
 namespace Engine
 {
-    HiZPassNode::HiZPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap):
+    HiZPassNode::HiZPassNode(VulkanDevice &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap):
     RenderPassNode("Hi-Z Pass"),
     device(device),
     renderer(renderer),
@@ -29,7 +29,7 @@ namespace Engine
         samplerInfo2.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         samplerInfo2.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         samplerInfo2.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        vkCreateSampler(device.getDevice(), &samplerInfo2, nullptr, &nearestSampler);
+        vkCreateSampler(device.GetHandle(), &samplerInfo2, nullptr, &nearestSampler);
 
         atomicCounterBuffer = std::make_unique<Buffer>(
             device,
@@ -68,11 +68,11 @@ namespace Engine
         destroyHiZResources();
 
         if (nearestSampler != VK_NULL_HANDLE)
-            vkDestroySampler(device.getDevice(), nearestSampler, nullptr);
+            vkDestroySampler(device.GetHandle(), nearestSampler, nullptr);
         if (pipeline != VK_NULL_HANDLE)
-            vkDestroyPipeline(device.getDevice(), pipeline, nullptr);
+            vkDestroyPipeline(device.GetHandle(), pipeline, nullptr);
         if (pipelineLayout != VK_NULL_HANDLE)
-            vkDestroyPipelineLayout(device.getDevice(), pipelineLayout, nullptr);
+            vkDestroyPipelineLayout(device.GetHandle(), pipelineLayout, nullptr);
     }
 
     void HiZPassNode::setup(RenderGraphBuilder &renderGraph)
@@ -203,7 +203,7 @@ namespace Engine
         VkDescriptorSetLayout sLayout = setLayout->getDescriptorSetLayout();
         pipelineLayoutInfo.pSetLayouts = &sLayout;
 
-        ENGINE_VERIFY(vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &pipelineLayout) == VK_SUCCESS,
+        ENGINE_VERIFY(vkCreatePipelineLayout(device.GetHandle(), &pipelineLayoutInfo, nullptr, &pipelineLayout) == VK_SUCCESS,
             "HiZ: failed to create pipeline layout");
     }
 
@@ -211,7 +211,7 @@ namespace Engine
     {
         auto CompCode = ShaderUtils::readFile("shaders/hiz_generate.comp.spv");
 
-        VkShaderModule compModule = ShaderUtils::createShaderModule(device.getDevice(), CompCode);
+        VkShaderModule compModule = ShaderUtils::createShaderModule(device.GetHandle(), CompCode);
 
         VkPipelineShaderStageCreateInfo computeStage {};
         computeStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -225,9 +225,9 @@ namespace Engine
         computePipelineInfo.stage = computeStage;
 
         vkCreateComputePipelines(
-            device.getDevice(), device.getPipelineCache(), 1, &computePipelineInfo, nullptr, &pipeline);
+            device.GetHandle(), device.getPipelineCache(), 1, &computePipelineInfo, nullptr, &pipeline);
 
-        vkDestroyShaderModule(device.getDevice(), compModule, nullptr);
+        vkDestroyShaderModule(device.GetHandle(), compModule, nullptr);
     }
 
     void HiZPassNode::createHiZResources(VkExtent2D depthExtent)
@@ -259,13 +259,13 @@ namespace Engine
         viewInfo.subresourceRange.layerCount = 1;
         viewInfo.subresourceRange.baseArrayLayer = 0;
 
-        vkCreateImageView(device.getDevice(), &viewInfo, nullptr, &HiZImageView);
+        vkCreateImageView(device.GetHandle(), &viewInfo, nullptr, &HiZImageView);
 
         HizMipViews.resize(hizMipLevels);
         for (uint32_t i = 0; i < hizMipLevels; i++) {
             viewInfo.subresourceRange.baseMipLevel = i;
             viewInfo.subresourceRange.levelCount = 1;
-            vkCreateImageView(device.getDevice(), &viewInfo, nullptr, &HizMipViews[i]);
+            vkCreateImageView(device.GetHandle(), &viewInfo, nullptr, &HizMipViews[i]);
         }
 
     }
@@ -274,14 +274,14 @@ namespace Engine
     {
         for (auto &view : HizMipViews) {
             if (view != VK_NULL_HANDLE) {
-                vkDestroyImageView(device.getDevice(), view, nullptr);
+                vkDestroyImageView(device.GetHandle(), view, nullptr);
                 view = VK_NULL_HANDLE;
             }
         }
         HizMipViews.clear();
 
         if (HiZImageView != VK_NULL_HANDLE) {
-            vkDestroyImageView(device.getDevice(), HiZImageView, nullptr);
+            vkDestroyImageView(device.GetHandle(), HiZImageView, nullptr);
             HiZImageView = VK_NULL_HANDLE;
         }
 

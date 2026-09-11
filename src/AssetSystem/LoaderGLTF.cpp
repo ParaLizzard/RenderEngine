@@ -1,5 +1,5 @@
 #include "AssetSystem/LoaderGLTF.h"
-#include "Vulkan/Device.h"
+#include "Vulkan/VulkanDevice.h"
 #include "Threading/JobSystem.h"
 #include <iostream>
 #include <stb_image.h>
@@ -371,7 +371,7 @@ namespace Engine {
     }
 
     std::vector<GameObject> LoaderGLTF::finalize(ParsedGLTF &parsedData,
-                                                 Device &device,
+                                                 VulkanDevice &device,
                                                  Model &megaBuffer,
                                                  ResourceHeap &resourceHeap,
                                                  std::deque<Texture2D> &outTextures)

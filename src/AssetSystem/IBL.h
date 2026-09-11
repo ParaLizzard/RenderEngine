@@ -13,7 +13,7 @@ namespace Engine {
     class TextureCubeMap;
     class ResourceHeap;
     class Model;
-    class Device;
+    class VulkanDevice;
     struct TextureData
     {
         VkImage image = VK_NULL_HANDLE;
@@ -25,7 +25,7 @@ namespace Engine {
     class IBL
     {
     public:
-        IBL(Device &device,
+        IBL(VulkanDevice &device,
             TextureCubeMap &skyboxTexture,
             ResourceHeap &resourceHeap,
             Model &megaBuffer,
@@ -40,7 +40,7 @@ namespace Engine {
         TextureData prefilteredCube;
 
     private:
-        Device &device;
+        VulkanDevice &device;
         TextureCubeMap &skyboxTexture;
         ResourceHeap &resourceHeap;
 

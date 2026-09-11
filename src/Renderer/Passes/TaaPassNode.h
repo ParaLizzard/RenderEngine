@@ -6,13 +6,14 @@
 #include "vma/vk_mem_alloc.h"
 
 namespace Engine {
+    class VulkanDevice;
     class Renderer;
     class Model;
 
     class TaaPassNode: public RenderPassNode
     {
     public:
-        TaaPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap);
+        TaaPassNode(VulkanDevice &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap);
         ~TaaPassNode() override;
 
         TaaPassNode(const TaaPassNode &) = delete;
@@ -33,7 +34,7 @@ namespace Engine {
         
 
     private:
-        Device &device;
+        VulkanDevice &device;
         Renderer &renderer;
         Model &megabBuffer;
         ResourceHeap &resourceHeap;

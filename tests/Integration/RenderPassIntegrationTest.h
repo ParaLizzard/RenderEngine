@@ -5,7 +5,7 @@
 #include <iostream>
 
 #include "System/Window/WindowWin32.h"
-#include "Vulkan/Device.h"
+#include "Vulkan/VulkanDevice.h"
 #include "Renderer/Renderer.h"
 #include "Vulkan/ResourceHeap.h"
 #include "Renderer/RenderGraph.h"
@@ -16,7 +16,7 @@
 class RenderPassIntegrationTest : public ::testing::Test {
 protected:
     std::unique_ptr<Engine::WindowWin32> window;
-    std::unique_ptr<Engine::Device> device;
+    std::unique_ptr<Engine::VulkanDevice> device;
     std::unique_ptr<Engine::Renderer> renderer;
     std::unique_ptr<Engine::Model> megaBuffer;
     std::unique_ptr<Engine::ResourceHeap> resourceHeap;
@@ -26,7 +26,7 @@ protected:
         try {
             // Use a small 800x600 window to minimize screen flash during tests
             window = std::make_unique<Engine::WindowWin32>(Engine::WindowProps{.title = "RenderPass Integration Test", .width = 800, .height = 600});
-            device = std::make_unique<Engine::Device>(*window);
+            device = std::make_unique<Engine::VulkanDevice>(*window);
             renderer = std::make_unique<Engine::Renderer>(*window, *device);
             megaBuffer = std::make_unique<Engine::Model>(*device);
             resourceHeap = std::make_unique<Engine::ResourceHeap>(*device);
@@ -38,7 +38,7 @@ protected:
 
     void TearDown() override {
         if (device) {
-            vkDeviceWaitIdle(device->getDevice());
+            vkDeviceWaitIdle(device->GetHandle());
         }
         
         // Reset in reverse order of creation

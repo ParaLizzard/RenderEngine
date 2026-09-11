@@ -8,6 +8,7 @@
 #include "Renderer/Renderer.h"
 
 namespace Engine {
+    class VulkanDevice;
 
     struct ObjectData
     {
@@ -23,7 +24,7 @@ namespace Engine {
     class TransformUpdatePassNode: public RenderPassNode
     {
     public:
-        TransformUpdatePassNode(Device &device, Renderer &renderer);
+        TransformUpdatePassNode(VulkanDevice &device, Renderer &renderer);
         ~TransformUpdatePassNode() = default;
 
         TransformUpdatePassNode(const TransformUpdatePassNode &) = delete;
@@ -54,7 +55,7 @@ namespace Engine {
         }
 
     private:
-        Device &device;
+        VulkanDevice &device;
         Renderer &renderer;
 
         std::vector<ObjectData> objectDataArray;

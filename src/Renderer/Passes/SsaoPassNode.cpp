@@ -3,6 +3,7 @@
 #include "Core/EngineConstants.h"
 #include "Renderer/RenderSettings.h"
 #include "Vulkan/Buffer.h"
+#include "Vulkan/VulkanDevice.h"
 
 #include <array>
 #include <random>
@@ -12,7 +13,7 @@
 #include "Vulkan/VkUtils.h"
 
 namespace Engine {
-    SsaoPassNode::SsaoPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap):
+    SsaoPassNode::SsaoPassNode(VulkanDevice &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap):
         RenderPassNode("SSAO Pass"), device(device), renderer(renderer), megaBuffer(megaBuffer), resourceHeap(resourceHeap)
     {
         createNoiseTexture();
@@ -31,25 +32,25 @@ namespace Engine {
     SsaoPassNode::~SsaoPassNode()
     {
         if (noiseSampler != VK_NULL_HANDLE)
-            vkDestroySampler(device.getDevice(), noiseSampler, nullptr);
+            vkDestroySampler(device.GetHandle(), noiseSampler, nullptr);
         if (colorSampler != VK_NULL_HANDLE)
-            vkDestroySampler(device.getDevice(), colorSampler, nullptr);
+            vkDestroySampler(device.GetHandle(), colorSampler, nullptr);
 
         if (noiseView != VK_NULL_HANDLE)
-            vkDestroyImageView(device.getDevice(), noiseView, nullptr);
+            vkDestroyImageView(device.GetHandle(), noiseView, nullptr);
         if (noiseImage != VK_NULL_HANDLE) {
             vmaDestroyImage(device.getAllocator(), noiseImage, noiseAllocation);
         }
 
         if (ssaoPipeline != VK_NULL_HANDLE)
-            vkDestroyPipeline(device.getDevice(), ssaoPipeline, nullptr);
+            vkDestroyPipeline(device.GetHandle(), ssaoPipeline, nullptr);
         if (ssaoPipelineLayout != VK_NULL_HANDLE)
-            vkDestroyPipelineLayout(device.getDevice(), ssaoPipelineLayout, nullptr);
+            vkDestroyPipelineLayout(device.GetHandle(), ssaoPipelineLayout, nullptr);
 
         if (blurPipeline != VK_NULL_HANDLE)
-            vkDestroyPipeline(device.getDevice(), blurPipeline, nullptr);
+            vkDestroyPipeline(device.GetHandle(), blurPipeline, nullptr);
         if (blurPipelineLayout != VK_NULL_HANDLE)
-            vkDestroyPipelineLayout(device.getDevice(), blurPipelineLayout, nullptr);
+            vkDestroyPipelineLayout(device.GetHandle(), blurPipelineLayout, nullptr);
     }
 
     void SsaoPassNode::setup(RenderGraphBuilder &renderGraph)
@@ -214,7 +215,7 @@ namespace Engine {
         allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
         vmaCreateImage(device.getAllocator(), &imageInfo, &allocInfo, &noiseImage, &noiseAllocation, nullptr);
 
-        VkCommandBuffer cmd = device.beginSingleTimeCommands();
+        VkCommandBuffer cmd = device.BeginSingleTimeCommands(QueueType::Graphics);
 
         VkImageSubresourceRange range {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
@@ -235,11 +236,11 @@ namespace Engine {
                                 VK_PIPELINE_STAGE_2_TRANSFER_BIT,
                                 VK_ACCESS_2_TRANSFER_WRITE_BIT,
                                 {b1}, {});
-        device.endSingleTimeCommands(cmd);
+        device.EndSingleTimeCommands(cmd, QueueType::Graphics);
 
         stagingBuffer.copyBufferToImage(noiseImage, SSAO_NOISE_DIM, SSAO_NOISE_DIM, 1);
 
-        cmd = device.beginSingleTimeCommands();
+        cmd = device.BeginSingleTimeCommands(QueueType::Graphics);
 
         VkImageMemoryBarrier2 b2 = VkUtils::imageBarrier(
             noiseImage,
@@ -258,7 +259,7 @@ namespace Engine {
                                 VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                                 VK_ACCESS_2_SHADER_READ_BIT,
                                 {b2}, {});
-        device.endSingleTimeCommands(cmd);
+        device.EndSingleTimeCommands(cmd, QueueType::Graphics);
 
         VkSamplerCreateInfo samplerInfo {};
         samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -268,7 +269,7 @@ namespace Engine {
         samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
         samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
         samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        vkCreateSampler(device.getDevice(), &samplerInfo, nullptr, &noiseSampler);
+        vkCreateSampler(device.GetHandle(), &samplerInfo, nullptr, &noiseSampler);
 
         VkImageViewCreateInfo viewInfo {};
         viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -278,7 +279,7 @@ namespace Engine {
         viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         viewInfo.subresourceRange.levelCount = 1;
         viewInfo.subresourceRange.layerCount = 1;
-        vkCreateImageView(device.getDevice(), &viewInfo, nullptr, &noiseView);
+        vkCreateImageView(device.GetHandle(), &viewInfo, nullptr, &noiseView);
     }
 
     void SsaoPassNode::createPipelines()
@@ -290,7 +291,7 @@ namespace Engine {
         samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        vkCreateSampler(device.getDevice(), &samplerInfo, nullptr, &colorSampler);
+        vkCreateSampler(device.GetHandle(), &samplerInfo, nullptr, &colorSampler);
 
         descriptorPool = DescriptorPool::Builder(device)
                              .setMaxSets(Constants::MAX_FRAMES_IN_FLIGHT * 2)
@@ -355,17 +356,17 @@ namespace Engine {
 
         VkDescriptorSetLayout sLayout = ssaoSetLayout->getDescriptorSetLayout();
         pipelineLayoutInfo.pSetLayouts = &sLayout;
-        vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &ssaoPipelineLayout);
+        vkCreatePipelineLayout(device.GetHandle(), &pipelineLayoutInfo, nullptr, &ssaoPipelineLayout);
 
         VkDescriptorSetLayout bLayout = blurSetLayout->getDescriptorSetLayout();
         pipelineLayoutInfo.pSetLayouts = &bLayout;
-        vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &blurPipelineLayout);
+        vkCreatePipelineLayout(device.GetHandle(), &pipelineLayoutInfo, nullptr, &blurPipelineLayout);
 
         auto ssaoCompCode = ShaderUtils::readFile("shaders/ssao.comp.spv");
         auto blurCompCode = ShaderUtils::readFile("shaders/ssao_blur.comp.spv");
 
-        VkShaderModule ssaoCompModule = ShaderUtils::createShaderModule(device.getDevice(), ssaoCompCode);
-        VkShaderModule blurCompModule = ShaderUtils::createShaderModule(device.getDevice(), blurCompCode);
+        VkShaderModule ssaoCompModule = ShaderUtils::createShaderModule(device.GetHandle(), ssaoCompCode);
+        VkShaderModule blurCompModule = ShaderUtils::createShaderModule(device.GetHandle(), blurCompCode);
 
         struct SpecializationData
         {
@@ -393,7 +394,7 @@ namespace Engine {
         computePipelineInfo.stage = ssaoComputeStage;
 
         vkCreateComputePipelines(
-            device.getDevice(), device.getPipelineCache(), 1, &computePipelineInfo, nullptr, &ssaoPipeline);
+            device.GetHandle(), device.getPipelineCache(), 1, &computePipelineInfo, nullptr, &ssaoPipeline);
 
         VkPipelineShaderStageCreateInfo blurComputeStage {};
         blurComputeStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -407,9 +408,9 @@ namespace Engine {
         blurPipelineInfo.stage = blurComputeStage;
 
         vkCreateComputePipelines(
-            device.getDevice(), device.getPipelineCache(), 1, &blurPipelineInfo, nullptr, &blurPipeline);
+            device.GetHandle(), device.getPipelineCache(), 1, &blurPipelineInfo, nullptr, &blurPipeline);
 
-        vkDestroyShaderModule(device.getDevice(), ssaoCompModule, nullptr);
-        vkDestroyShaderModule(device.getDevice(), blurCompModule, nullptr);
+        vkDestroyShaderModule(device.GetHandle(), ssaoCompModule, nullptr);
+        vkDestroyShaderModule(device.GetHandle(), blurCompModule, nullptr);
     }
 } // namespace Engine

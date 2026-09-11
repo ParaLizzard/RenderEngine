@@ -18,7 +18,7 @@ namespace Engine {
     class RenderGraph;
     class ResourceHeap;
     class Renderer;
-    class Device;
+    class VulkanDevice;
     class Model;
 
 
@@ -33,7 +33,7 @@ namespace Engine {
         InputSubsystem *input = nullptr;
         std::vector<GameObject> *gameObjects;
 
-        Device *device = nullptr;
+        VulkanDevice *device = nullptr;
         RenderGraph *renderGraph = nullptr;
         Renderer *renderer = nullptr;
         Model *megaBuffer = nullptr;

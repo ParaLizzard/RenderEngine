@@ -2,12 +2,13 @@
 #include "Core/Assert.h"
 #include "Core/EngineConstants.h"
 #include "Renderer/RenderSettings.h"
+#include "Vulkan/VulkanDevice.h"
 
 #include "Renderer/Renderer.h"
 #include "Renderer/ShaderUtils.h"
 
 namespace Engine {
-    FxaaPassNode::FxaaPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap):
+    FxaaPassNode::FxaaPassNode(VulkanDevice &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap):
         RenderPassNode("FXAA Pass"), device(device), renderer(renderer), megaBuffer(megaBuffer), resourceHeap(resourceHeap)
     {
         createPipelineLayout();
@@ -17,16 +18,16 @@ namespace Engine {
     FxaaPassNode::~FxaaPassNode()
     {
         if (sampler != VK_NULL_HANDLE)
-            vkDestroySampler(device.getDevice(), sampler, nullptr);
+            vkDestroySampler(device.GetHandle(), sampler, nullptr);
         if (descriptorPool != VK_NULL_HANDLE)
-            vkDestroyDescriptorPool(device.getDevice(), descriptorPool, nullptr);
+            vkDestroyDescriptorPool(device.GetHandle(), descriptorPool, nullptr);
         if (descriptorSetLayout != VK_NULL_HANDLE)
-            vkDestroyDescriptorSetLayout(device.getDevice(), descriptorSetLayout, nullptr);
+            vkDestroyDescriptorSetLayout(device.GetHandle(), descriptorSetLayout, nullptr);
 
         if (graphicsPipeline != VK_NULL_HANDLE)
-            vkDestroyPipeline(device.getDevice(), graphicsPipeline, nullptr);
+            vkDestroyPipeline(device.GetHandle(), graphicsPipeline, nullptr);
         if (pipelineLayout != VK_NULL_HANDLE)
-            vkDestroyPipelineLayout(device.getDevice(), pipelineLayout, nullptr);
+            vkDestroyPipelineLayout(device.GetHandle(), pipelineLayout, nullptr);
     }
 
     void FxaaPassNode::setup(RenderGraphBuilder &renderGraph)
@@ -68,7 +69,7 @@ namespace Engine {
         descriptorWrite.descriptorCount = 1;
         descriptorWrite.pImageInfo = &imageInfo;
 
-        vkUpdateDescriptorSets(device.getDevice(), 1, &descriptorWrite, 0, nullptr);
+        vkUpdateDescriptorSets(device.GetHandle(), 1, &descriptorWrite, 0, nullptr);
     }
 
     void FxaaPassNode::execute(VkCommandBuffer &cmd, FrameInfo &frameInfo)
@@ -141,7 +142,7 @@ namespace Engine {
         samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
 
-        ENGINE_VERIFY(vkCreateSampler(device.getDevice(), &samplerInfo, nullptr, &sampler) == VK_SUCCESS,
+        ENGINE_VERIFY(vkCreateSampler(device.GetHandle(), &samplerInfo, nullptr, &sampler) == VK_SUCCESS,
             "Fxaa: failed to create sampler!");
 
         VkDescriptorSetLayoutBinding samplerLayoutBinding {};
@@ -156,7 +157,7 @@ namespace Engine {
         layoutInfo.bindingCount = 1;
         layoutInfo.pBindings = &samplerLayoutBinding;
 
-        ENGINE_VERIFY(vkCreateDescriptorSetLayout(device.getDevice(), &layoutInfo, nullptr, &descriptorSetLayout) == VK_SUCCESS,
+        ENGINE_VERIFY(vkCreateDescriptorSetLayout(device.GetHandle(), &layoutInfo, nullptr, &descriptorSetLayout) == VK_SUCCESS,
             "Fxaa: failed to create descriptor set layout!");
 
         VkDescriptorPoolSize poolSize {};
@@ -170,7 +171,7 @@ namespace Engine {
         poolInfo.maxSets = static_cast<uint32_t>(Constants::MAX_FRAMES_IN_FLIGHT);
         ;
 
-        ENGINE_VERIFY(vkCreateDescriptorPool(device.getDevice(), &poolInfo, nullptr, &descriptorPool) == VK_SUCCESS,
+        ENGINE_VERIFY(vkCreateDescriptorPool(device.GetHandle(), &poolInfo, nullptr, &descriptorPool) == VK_SUCCESS,
             "Fxaa: failed to create descriptor pool!");
 
         std::vector<VkDescriptorSetLayout> layouts(Constants::MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
@@ -181,7 +182,7 @@ namespace Engine {
         allocInfo.pSetLayouts = layouts.data();
 
         descriptorSets.resize(Constants::MAX_FRAMES_IN_FLIGHT);
-        ENGINE_VERIFY(vkAllocateDescriptorSets(device.getDevice(), &allocInfo, descriptorSets.data()) == VK_SUCCESS,
+        ENGINE_VERIFY(vkAllocateDescriptorSets(device.GetHandle(), &allocInfo, descriptorSets.data()) == VK_SUCCESS,
             "Fxaa: failed to allocate descriptor sets!");
 
         VkPushConstantRange pushConstantRange {};
@@ -196,7 +197,7 @@ namespace Engine {
         pipelineLayoutInfo.pushConstantRangeCount = 1;
         pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
-        ENGINE_VERIFY(vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &pipelineLayout) == VK_SUCCESS,
+        ENGINE_VERIFY(vkCreatePipelineLayout(device.GetHandle(), &pipelineLayoutInfo, nullptr, &pipelineLayout) == VK_SUCCESS,
             "failed to create pipeline layout");
     }
 
@@ -205,8 +206,8 @@ namespace Engine {
         auto vertCode = ShaderUtils::readFile("shaders/fxaa.vert.spv");
         auto fragCode = ShaderUtils::readFile("shaders/fxaa.frag.spv");
 
-        VkShaderModule vertShaderModule = ShaderUtils::createShaderModule(device.getDevice(), vertCode);
-        VkShaderModule fragShaderModule = ShaderUtils::createShaderModule(device.getDevice(), fragCode);
+        VkShaderModule vertShaderModule = ShaderUtils::createShaderModule(device.GetHandle(), vertCode);
+        VkShaderModule fragShaderModule = ShaderUtils::createShaderModule(device.GetHandle(), fragCode);
 
         VkPipelineShaderStageCreateInfo shaderStages[2] {};
         shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -305,10 +306,10 @@ namespace Engine {
         pipelineInfo.subpass = 0;
 
         ENGINE_VERIFY(vkCreateGraphicsPipelines(
-                device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, nullptr, &graphicsPipeline) == VK_SUCCESS,
+                device.GetHandle(), device.getPipelineCache(), 1, &pipelineInfo, nullptr, &graphicsPipeline) == VK_SUCCESS,
             "failed to create graphics pipeline");
 
-        vkDestroyShaderModule(device.getDevice(), vertShaderModule, nullptr);
-        vkDestroyShaderModule(device.getDevice(), fragShaderModule, nullptr);
+        vkDestroyShaderModule(device.GetHandle(), vertShaderModule, nullptr);
+        vkDestroyShaderModule(device.GetHandle(), fragShaderModule, nullptr);
     }
 } // namespace Engine

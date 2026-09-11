@@ -19,7 +19,7 @@
 
 namespace Engine {
     class JobSystem;
-    class Device;
+    class VulkanDevice;
 
     enum class TextureType {
         Albedo,
@@ -72,7 +72,7 @@ namespace Engine {
         static std::future<ParsedGLTF> loadAsync(JobSystem &jobSystem, const std::filesystem::path &filePath);
 
         static std::vector<GameObject> finalize(ParsedGLTF &parsedData,
-                                                Device &device,
+                                                VulkanDevice &device,
                                                 Model &megaBuffer,
                                                 ResourceHeap &resourceHeap,
                                                 std::deque<Texture2D> &outTextures);

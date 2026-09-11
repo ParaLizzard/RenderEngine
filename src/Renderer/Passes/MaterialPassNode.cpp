@@ -6,7 +6,7 @@
 
 #include "Vulkan/Buffer.h"
 #include "Vulkan/Descriptor.h"
-#include "Vulkan/Device.h"
+#include "Vulkan/VulkanDevice.h"
 #include "Renderer/RenderGraph.h"
 #include "Renderer/Renderer.h"
 #include "Vulkan/ResourceHeap.h"
@@ -14,7 +14,7 @@
 #include "Renderer/Passes/CullPassNode.h"
 
 namespace Engine {
-    MaterialPassNode::MaterialPassNode(Device &device,
+    MaterialPassNode::MaterialPassNode(VulkanDevice &device,
                      Renderer &renderer,
                      Model &megaBuffer,
                      ResourceHeap &resourceHeap,
@@ -49,7 +49,7 @@ namespace Engine {
         samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
         samplerInfo.maxAnisotropy = device.getMaxAnisotropy();
         samplerInfo.pNext = VK_NULL_HANDLE;
-        ENGINE_VERIFY(vkCreateSampler(device.getDevice(), &samplerInfo, nullptr, &sampler) == VK_SUCCESS,
+        ENGINE_VERIFY(vkCreateSampler(device.GetHandle(), &samplerInfo, nullptr, &sampler) == VK_SUCCESS,
             "MaterialPassNode: Failed to create texture sampler");
 
         VkSamplerCreateInfo nearestSamplerInfo{};
@@ -64,7 +64,7 @@ namespace Engine {
         nearestSamplerInfo.maxLod = VK_LOD_CLAMP_NONE;
         nearestSamplerInfo.maxAnisotropy = 1.0f;
         nearestSamplerInfo.pNext = VK_NULL_HANDLE;
-        ENGINE_VERIFY(vkCreateSampler(device.getDevice(), &nearestSamplerInfo, nullptr, &nearestSampler) == VK_SUCCESS,
+        ENGINE_VERIFY(vkCreateSampler(device.GetHandle(), &nearestSamplerInfo, nullptr, &nearestSampler) == VK_SUCCESS,
             "MaterialPassNode: Failed to create nearest texture sampler");
 
         VkSamplerCreateInfo shadowSamplerInfo{};
@@ -78,12 +78,12 @@ namespace Engine {
         shadowSamplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
         shadowSamplerInfo.maxAnisotropy = 1.0f;
         shadowSamplerInfo.pNext = VK_NULL_HANDLE;
-        ENGINE_VERIFY(vkCreateSampler(device.getDevice(), &shadowSamplerInfo, nullptr, &shadowSampler) == VK_SUCCESS,
+        ENGINE_VERIFY(vkCreateSampler(device.GetHandle(), &shadowSamplerInfo, nullptr, &shadowSampler) == VK_SUCCESS,
             "MaterialPassNode: Failed to create shadow sampler");
 
         shadowSamplerInfo.compareEnable = VK_TRUE;
         shadowSamplerInfo.compareOp = VK_COMPARE_OP_LESS;
-        ENGINE_VERIFY(vkCreateSampler(device.getDevice(), &shadowSamplerInfo, nullptr, &hardwareShadowSampler) == VK_SUCCESS,
+        ENGINE_VERIFY(vkCreateSampler(device.GetHandle(), &shadowSamplerInfo, nullptr, &hardwareShadowSampler) == VK_SUCCESS,
             "MaterialPassNode: Failed to create hardware shadow sampler");
 
         descriptorSets.resize(Constants::MAX_FRAMES_IN_FLIGHT);
@@ -100,17 +100,17 @@ namespace Engine {
     MaterialPassNode::~MaterialPassNode()
     {
         if (nearestSampler != VK_NULL_HANDLE)
-            vkDestroySampler(device.getDevice(), nearestSampler, nullptr);
+            vkDestroySampler(device.GetHandle(), nearestSampler, nullptr);
         if (sampler != VK_NULL_HANDLE)
-            vkDestroySampler(device.getDevice(), sampler, nullptr);
+            vkDestroySampler(device.GetHandle(), sampler, nullptr);
         if (shadowSampler != VK_NULL_HANDLE)
-            vkDestroySampler(device.getDevice(), shadowSampler, nullptr);
+            vkDestroySampler(device.GetHandle(), shadowSampler, nullptr);
         if (hardwareShadowSampler != VK_NULL_HANDLE)
-            vkDestroySampler(device.getDevice(), hardwareShadowSampler, nullptr);
+            vkDestroySampler(device.GetHandle(), hardwareShadowSampler, nullptr);
         if (pipeline != VK_NULL_HANDLE)
-            vkDestroyPipeline(device.getDevice(), pipeline, nullptr);
+            vkDestroyPipeline(device.GetHandle(), pipeline, nullptr);
         if (pipelineLayout != VK_NULL_HANDLE)
-            vkDestroyPipelineLayout(device.getDevice(), pipelineLayout, nullptr);
+            vkDestroyPipelineLayout(device.GetHandle(), pipelineLayout, nullptr);
     }
 
     void MaterialPassNode::setup(RenderGraphBuilder &renderGraph)
@@ -265,14 +265,14 @@ namespace Engine {
         pipelineLayoutInfo.pushConstantRangeCount = 1;
         pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
-        ENGINE_VERIFY(vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &pipelineLayout) == VK_SUCCESS,
+        ENGINE_VERIFY(vkCreatePipelineLayout(device.GetHandle(), &pipelineLayoutInfo, nullptr, &pipelineLayout) == VK_SUCCESS,
             "MaterialPassNode: Failed to create compute pipeline layout");
     }
 
     void MaterialPassNode::createPipeline()
     {
         auto compCode = ShaderUtils::readFile("shaders/material.comp.spv");
-        VkShaderModule compModule = ShaderUtils::createShaderModule(device.getDevice(), compCode);
+        VkShaderModule compModule = ShaderUtils::createShaderModule(device.GetHandle(), compCode);
 
         VkPipelineShaderStageCreateInfo computeStageInfo{};
         computeStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -311,9 +311,9 @@ namespace Engine {
         pipelineInfo.layout = pipelineLayout;
         pipelineInfo.stage = computeStageInfo;
 
-        ENGINE_VERIFY(vkCreateComputePipelines(device.getDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) == VK_SUCCESS,
+        ENGINE_VERIFY(vkCreateComputePipelines(device.GetHandle(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) == VK_SUCCESS,
             "MaterialPassNode: Failed to create material compute pipeline");
-        vkDestroyShaderModule(device.getDevice(), compModule, nullptr);
+        vkDestroyShaderModule(device.GetHandle(), compModule, nullptr);
     }
 } // namespace Engine
 

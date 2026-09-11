@@ -4,19 +4,19 @@
 
 
 namespace Engine {
-    SwapChain::SwapChain(Device &device, IWindow &window, std::shared_ptr<SwapChain> previous):
+    SwapChain::SwapChain(VulkanDevice &device, IWindow &window, std::shared_ptr<SwapChain> previous):
         device(device), window(&window), windowExtent(window.GetExtent())
     {
         oldSwapChain = std::move(previous);
         init();
     }
 
-    SwapChain::SwapChain(Device &device, VkExtent2D windowExtent): device(device), windowExtent(windowExtent)
+    SwapChain::SwapChain(VulkanDevice &device, VkExtent2D windowExtent): device(device), windowExtent(windowExtent)
     {
         init();
     }
 
-    SwapChain::SwapChain(Device &device, VkExtent2D windowExtent, std::shared_ptr<SwapChain> previous):
+    SwapChain::SwapChain(VulkanDevice &device, VkExtent2D windowExtent, std::shared_ptr<SwapChain> previous):
         device(device), windowExtent(windowExtent)
     {
         oldSwapChain = std::move(previous);
@@ -26,18 +26,18 @@ namespace Engine {
     SwapChain::~SwapChain()
     {
         if (depthImageView != VK_NULL_HANDLE) {
-            vkDestroyImageView(device.getDevice(), depthImageView, nullptr);
+            vkDestroyImageView(device.GetHandle(), depthImageView, nullptr);
         }
         if (depthImage != VK_NULL_HANDLE) {
             vmaDestroyImage(device.getAllocator(), depthImage, depthAllocation);
         }
 
         for (auto view: swapChainImageViews) {
-            vkDestroyImageView(device.getDevice(), view, nullptr);
+            vkDestroyImageView(device.GetHandle(), view, nullptr);
         }
 
         if (swapChain != VK_NULL_HANDLE) {
-            vkDestroySwapchainKHR(device.getDevice(), swapChain, nullptr);
+            vkDestroySwapchainKHR(device.GetHandle(), swapChain, nullptr);
             swapChain = VK_NULL_HANDLE;
         }
     }
@@ -45,7 +45,7 @@ namespace Engine {
     VkResult SwapChain::acquireNextImage(VkSemaphore imageAvailableSemaphore, uint32_t *imageIndex)
     {
         return vkAcquireNextImageKHR(
-            device.getDevice(), swapChain, UINT64_MAX, imageAvailableSemaphore, VK_NULL_HANDLE, imageIndex);
+            device.GetHandle(), swapChain, UINT64_MAX, imageAvailableSemaphore, VK_NULL_HANDLE, imageIndex);
     }
 
     VkResult SwapChain::presentImage(VkSemaphore renderFinishedSemaphore, uint32_t imageIndex)
@@ -58,7 +58,7 @@ namespace Engine {
         presentInfo.pSwapchains = &swapChain;
         presentInfo.pImageIndices = &imageIndex;
 
-        return vkQueuePresentKHR(device.getPresentQueue(), &presentInfo);
+        return vkQueuePresentKHR(device.GetPresentQueue(), &presentInfo);
     }
 
     void SwapChain::init()
@@ -76,7 +76,7 @@ namespace Engine {
 
     void SwapChain::createSwapChain()
     {
-        SwapChainSupportDetails details = device.querySwapChainSupport(device.getPhysicalDevice());
+        SwapChainSupportDetails details = device.QuerySwapChainSupport(device.GetPhysicalDevice());
 
         VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(details.formats);
         VkPresentModeKHR presentMode = chooseSwapPresentMode(details.presentModes);
@@ -89,7 +89,7 @@ namespace Engine {
 
         VkSwapchainCreateInfoKHR swapChainInfo {};
         swapChainInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-        swapChainInfo.surface = device.getSurface();
+        swapChainInfo.surface = device.GetSurface();
         swapChainInfo.minImageCount = imageCount;
         swapChainInfo.imageFormat = surfaceFormat.format;
         swapChainInfo.imageColorSpace = surfaceFormat.colorSpace;
@@ -97,8 +97,8 @@ namespace Engine {
         swapChainInfo.imageArrayLayers = 1;
         swapChainInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
-        uint32_t graphicsFamilyIndex = device.getGraphicsFamilyIndex();
-        uint32_t presentFamilyIndex = device.getPresentFamilyIndex();
+        uint32_t graphicsFamilyIndex = device.GetGraphicsQueueFamily();
+        uint32_t presentFamilyIndex = device.GetPresentQueueFamily();
 
         if (graphicsFamilyIndex == presentFamilyIndex) {
             swapChainInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -117,12 +117,12 @@ namespace Engine {
 
         swapChainInfo.oldSwapchain = oldSwapChain ? oldSwapChain->swapChain : VK_NULL_HANDLE;
 
-        ENGINE_VERIFY(vkCreateSwapchainKHR(device.getDevice(), &swapChainInfo, nullptr, &swapChain) == VK_SUCCESS,
+        ENGINE_VERIFY(vkCreateSwapchainKHR(device.GetHandle(), &swapChainInfo, nullptr, &swapChain) == VK_SUCCESS,
             "Failed to create family swap chain");
 
-        vkGetSwapchainImagesKHR(device.getDevice(), swapChain, &imageCount, nullptr);
+        vkGetSwapchainImagesKHR(device.GetHandle(), swapChain, &imageCount, nullptr);
         swapChainImages.resize(imageCount);
-        vkGetSwapchainImagesKHR(device.getDevice(), swapChain, &imageCount, swapChainImages.data());
+        vkGetSwapchainImagesKHR(device.GetHandle(), swapChain, &imageCount, swapChainImages.data());
 
         swapChainImageFormat = surfaceFormat.format;
         swapChainExtent = extent;
@@ -147,7 +147,7 @@ namespace Engine {
             viewInfo.subresourceRange.layerCount = 1;
             viewInfo.subresourceRange.baseArrayLayer = 0;
 
-            ENGINE_VERIFY(vkCreateImageView(device.getDevice(), &viewInfo, nullptr, &swapChainImageViews[i]) == VK_SUCCESS,
+            ENGINE_VERIFY(vkCreateImageView(device.GetHandle(), &viewInfo, nullptr, &swapChainImageViews[i]) == VK_SUCCESS,
             "Failed to create image views");
         }
     }
@@ -234,7 +234,7 @@ namespace Engine {
         viewInfo.subresourceRange.baseArrayLayer = 0;
         viewInfo.subresourceRange.layerCount = 1;
 
-        ENGINE_VERIFY(vkCreateImageView(device.getDevice(), &viewInfo, nullptr, &depthImageView) == VK_SUCCESS,
+        ENGINE_VERIFY(vkCreateImageView(device.GetHandle(), &viewInfo, nullptr, &depthImageView) == VK_SUCCESS,
            "Failed to create depth image view");
     }
 } // namespace Engine

@@ -11,6 +11,7 @@
 #include <glm/glm.hpp>
 
 namespace Engine {
+    class VulkanDevice;
     class GameObject;
     struct ComputePushConstants
     {
@@ -33,7 +34,7 @@ namespace Engine {
     public:
         static constexpr uint32_t WORKGROUP_SIZE = Constants::CULL_WORKGROUP_SIZE;
 
-        CullPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap, uint32_t phase = 0, CullPassNode *parentCullPass = nullptr);
+        CullPassNode(VulkanDevice &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap, uint32_t phase = 0, CullPassNode *parentCullPass = nullptr);
         ~CullPassNode();
 
         CullPassNode(const CullPassNode &) = delete;
@@ -140,7 +141,7 @@ namespace Engine {
     private:
         void createPipeline();
 
-        Device &device;
+        VulkanDevice &device;
         Model &megaBuffer;
         Renderer &renderer;
         ResourceHeap &resourceHeap;

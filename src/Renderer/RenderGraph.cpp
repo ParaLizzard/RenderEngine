@@ -3,7 +3,7 @@
 #include "Core/Log.h"
 #include "Core/EngineConstants.h"
 #include "Renderer/RenderSettings.h"
-#include "Vulkan/Device.h"
+#include "Vulkan/VulkanDevice.h"
 #include "Vulkan/VkUtils.h"
 
 #ifdef _WIN32
@@ -14,7 +14,7 @@
 #endif
 
 namespace Engine {
-    RenderGraph::RenderGraph(Device &device): device(device)
+    RenderGraph::RenderGraph(VulkanDevice &device): device(device)
     {
         startTime = std::chrono::high_resolution_clock::now();
 
@@ -29,12 +29,12 @@ namespace Engine {
     RenderGraph::~RenderGraph()
     {
         if (profilerQueryPool != VK_NULL_HANDLE) {
-            vkDestroyQueryPool(device.getDevice(), profilerQueryPool, nullptr);
+            vkDestroyQueryPool(device.GetHandle(), profilerQueryPool, nullptr);
             profilerQueryPool = VK_NULL_HANDLE;
         }
 
         for (auto &pair: transientCache) {
-            vkDestroyImageView(device.getDevice(), pair.second.view, nullptr);
+            vkDestroyImageView(device.GetHandle(), pair.second.view, nullptr);
             vmaDestroyImage(device.getAllocator(), pair.second.image, pair.second.allocation);
         }
 
@@ -130,7 +130,7 @@ namespace Engine {
                     TransientResource &cached = transientCache[decl.name];
 
                     if (cached.extent.width != decl.extent.width || cached.extent.height != decl.extent.height) {
-                        vkDestroyImageView(device.getDevice(), cached.view, nullptr);
+                        vkDestroyImageView(device.GetHandle(), cached.view, nullptr);
                         vmaDestroyImage(device.getAllocator(), cached.image, cached.allocation);
                         transientCache.erase(decl.name);
                     } else {
@@ -171,7 +171,7 @@ namespace Engine {
                 imageViewInfo.subresourceRange.levelCount = 1;
                 imageViewInfo.subresourceRange.layerCount = decl.arrayLayers;
 
-                vkCreateImageView(device.getDevice(), &imageViewInfo, nullptr, &transientImageView);
+                vkCreateImageView(device.GetHandle(), &imageViewInfo, nullptr, &transientImageView);
 
                 TransientResource res {};
                 res.name = decl.name;
@@ -213,11 +213,11 @@ namespace Engine {
             queryPoolInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
             queryPoolInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
             queryPoolInfo.queryCount = Constants::MAX_FRAMES_IN_FLIGHT * 256;
-            if (vkCreateQueryPool(device.getDevice(), &queryPoolInfo, nullptr, &profilerQueryPool) != VK_SUCCESS) {
+            if (vkCreateQueryPool(device.GetHandle(), &queryPoolInfo, nullptr, &profilerQueryPool) != VK_SUCCESS) {
                 profilerQueryPool = VK_NULL_HANDLE;
             } else {
 
-                vkResetQueryPool(device.getDevice(), profilerQueryPool, 0, Constants::MAX_FRAMES_IN_FLIGHT * 256);
+                vkResetQueryPool(device.GetHandle(), profilerQueryPool, 0, Constants::MAX_FRAMES_IN_FLIGHT * 256);
             }
         }
 
@@ -336,7 +336,7 @@ namespace Engine {
             if (queryCount > 0) {
                 std::vector<uint64_t> timestamps(queryCount, 0);
                 VkResult res = vkGetQueryPoolResults(
-                    device.getDevice(),
+                    device.GetHandle(),
                     profilerQueryPool,
                     prevOffset,
                     queryCount,
@@ -347,7 +347,7 @@ namespace Engine {
                 );
 
                 if (res == VK_SUCCESS) {
-                    float periodNs = device.getDeviceProperties().limits.timestampPeriod;
+                    float periodNs = device.GetPhysicalDeviceLimits().timestampPeriod;
                     for (const auto &marker : prevMarkers) {
                         uint64_t tStart = timestamps[marker.queryIndexStart];
                         uint64_t tEnd = timestamps[marker.queryIndexEnd];

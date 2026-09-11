@@ -9,7 +9,7 @@
 
 namespace Engine {
     class Buffer;
-    class Device;
+    class VulkanDevice;
     class Model
     {
     public:
@@ -56,7 +56,7 @@ namespace Engine {
             uint32_t normal_oct {};
         };
 
-        Model(Device &device);
+        Model(VulkanDevice &device);
         ~Model();
 
         Model(const Model &) = delete;
@@ -102,7 +102,7 @@ namespace Engine {
         [[nodiscard]] uint32_t getMeshletCount() const {return  totalAllocatedMeshlets;}
 
     private:
-        Device &device;
+        VulkanDevice &device;
 
         uint32_t totalAllocatedVertices = 0;
         uint32_t totalAllocatedIndices = 0;

@@ -13,6 +13,8 @@ set(TEST_SOURCES
         Vulkan/BufferDescriptorInfoTest.cpp
         Vulkan/VkUtilsTest.cpp
         Vulkan/QueueFamilyIndicesTest.cpp
+        Vulkan/VulkanDeviceInitTest.cpp
+        Vulkan/VulkanMemoryBudgetTest.cpp
 
         # Renderer
         Renderer/RenderSettingsTest.cpp
@@ -64,4 +66,59 @@ target_include_directories(RenderEngineTests PRIVATE
 
 include(GoogleTest)
 gtest_discover_tests(RenderEngineTests WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+# ---------------------------------------------------------------------------
+# Step 2.1 — VulkanDeviceInitTest Standalone Test Executable
+# ---------------------------------------------------------------------------
+add_executable(VulkanDeviceInitTest
+        TestMain.cpp
+        Common/VulkanTestContext.cpp
+        Vulkan/VulkanDeviceInitTest.cpp
+        Vulkan/QueueFamilyIndicesTest.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanDevice.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanMemory.cpp
+        ${CMAKE_SOURCE_DIR}/src/Core/Log.cpp
+)
+
+target_include_directories(VulkanDeviceInitTest PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_BINARY_DIR}/_deps/ktx-src/other_include
+)
+
+target_link_libraries(VulkanDeviceInitTest PRIVATE
+        Vulkan::Vulkan
+        GTest::gtest
+        GTest::gmock
+)
+
+gtest_discover_tests(VulkanDeviceInitTest WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+# ---------------------------------------------------------------------------
+# Step 2.2 — VulkanMemoryBudgetTest Standalone Test Executable
+# ---------------------------------------------------------------------------
+add_executable(VulkanMemoryBudgetTest
+        TestMain.cpp
+        Common/VulkanTestContext.cpp
+        Vulkan/VulkanMemoryBudgetTest.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanDevice.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanMemory.cpp
+        ${CMAKE_SOURCE_DIR}/src/Core/Log.cpp
+)
+
+target_include_directories(VulkanMemoryBudgetTest PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_BINARY_DIR}/_deps/ktx-src/other_include
+)
+
+target_link_libraries(VulkanMemoryBudgetTest PRIVATE
+        Vulkan::Vulkan
+        GTest::gtest
+        GTest::gmock
+)
+
+gtest_discover_tests(VulkanMemoryBudgetTest WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+
 

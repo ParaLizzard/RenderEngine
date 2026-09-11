@@ -3,12 +3,12 @@
 #include "vma/vk_mem_alloc.h"
 
 namespace Engine {
-    class Device;
+    class VulkanDevice;
 
     class Buffer
     {
     public:
-        Buffer(Device &device,
+        Buffer(VulkanDevice &device,
                VkDeviceSize instanceSize,
                uint32_t instanceCount,
                VkBufferUsageFlags usageFlags,
@@ -73,7 +73,7 @@ namespace Engine {
         VkResult invalidateIndex(int index);
 
     private:
-        Device &device;
+        VulkanDevice &device;
         uint32_t instanceCount;
         VkDeviceSize instanceSize;
         VkDeviceSize alignmentSize;

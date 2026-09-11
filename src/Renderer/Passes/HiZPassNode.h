@@ -7,12 +7,14 @@
 
 namespace Engine
 {
+    class VulkanDevice;
+
     class HiZPassNode: public RenderPassNode
     {
     public:
         static constexpr uint32_t WORKGROUP_SIZE = Constants::HIZ_MIP_GENERATION_WORKGROUP_SIZE;
 
-        HiZPassNode(Device& device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap);
+        HiZPassNode(VulkanDevice& device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap);
         ~HiZPassNode();
 
         HiZPassNode(const HiZPassNode &) = delete;
@@ -32,7 +34,7 @@ namespace Engine
         void destroyHiZResources();
 
     private:
-        Device& device;
+        VulkanDevice& device;
         Renderer &renderer;
         Model &megaBuffer;
         ResourceHeap &resourceHeap;

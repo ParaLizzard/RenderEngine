@@ -6,7 +6,7 @@
 #include <vector>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
-#include "Vulkan/Device.h"
+#include "Vulkan/VulkanDevice.h"
 
 #include "Vulkan/Buffer.h"
 #include "Core/EngineConstants.h"
@@ -59,7 +59,7 @@ namespace Engine {
 
 
 
-        ResourceHeap(Device &device, uint32_t maxTextures = Constants::MAX_TEXTURES);
+        ResourceHeap(VulkanDevice &device, uint32_t maxTextures = Constants::MAX_TEXTURES);
         ~ResourceHeap();
 
         ResourceHeap(ResourceHeap const &) = delete;
@@ -138,7 +138,7 @@ namespace Engine {
             uint32_t generation = 0;
         };
 
-        Device &device;
+        VulkanDevice &device;
 
         uint32_t maxDescriptors;
         VkDescriptorPool globalDescriptorPool = VK_NULL_HANDLE;

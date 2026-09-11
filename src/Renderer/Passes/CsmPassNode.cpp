@@ -7,17 +7,18 @@
 #include "Renderer/ShaderUtils.h"
 #include "Vulkan/ResourceHeap.h"
 #include "Vulkan/VkUtils.h"
+#include "Vulkan/VulkanDevice.h"
 
 namespace Engine {
-    CsmPassNode::CsmPassNode(Device &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap, CullPassNode &cullPass)
+    CsmPassNode::CsmPassNode(VulkanDevice &device, Renderer &renderer, Model &megaBuffer, ResourceHeap &resourceHeap, CullPassNode &cullPass)
         : RenderPassNode("CSM Pass"), device(device), renderer(renderer), megaBuffer(megaBuffer), resourceHeap(resourceHeap), cullPass(cullPass)
     {
         objectDescriptorSets.resize(Constants::MAX_FRAMES_IN_FLIGHT);
 
         VkShaderStageFlags stageFlags = VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-        if (device.isMeshShaderSupported()) {
+        if (device.IsMeshShaderSupported()) {
             stageFlags |= VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT;
-            pfn_vkCmdDrawMeshTasksIndirectEXT = (PFN_vkCmdDrawMeshTasksIndirectEXT)vkGetInstanceProcAddr(device.getInstance(), "vkCmdDrawMeshTasksIndirectEXT");
+            pfn_vkCmdDrawMeshTasksIndirectEXT = (PFN_vkCmdDrawMeshTasksIndirectEXT)vkGetInstanceProcAddr(device.GetInstance(), "vkCmdDrawMeshTasksIndirectEXT");
         }
 
         std::array<VkDescriptorSetLayoutBinding, 11> ssboBindings {};
@@ -32,7 +33,7 @@ namespace Engine {
         layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
         layoutInfo.bindingCount = static_cast<uint32_t>(ssboBindings.size());
         layoutInfo.pBindings = ssboBindings.data();
-        vkCreateDescriptorSetLayout(device.getDevice(), &layoutInfo, nullptr, &objectSetLayout);
+        vkCreateDescriptorSetLayout(device.GetHandle(), &layoutInfo, nullptr, &objectSetLayout);
 
         std::array<VkDescriptorPoolSize, 1> poolSizes {};
         poolSizes[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -43,7 +44,7 @@ namespace Engine {
         poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
         poolInfo.pPoolSizes = poolSizes.data();
         poolInfo.maxSets = Constants::MAX_FRAMES_IN_FLIGHT;
-        vkCreateDescriptorPool(device.getDevice(), &poolInfo, nullptr, &objectDescriptorPool);
+        vkCreateDescriptorPool(device.GetHandle(), &poolInfo, nullptr, &objectDescriptorPool);
 
         gpuDispatchCommandBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
         gpuVisibleObjectBuffers.resize(Constants::MAX_FRAMES_IN_FLIGHT);
@@ -162,11 +163,11 @@ namespace Engine {
             allocInfo.descriptorPool = objectDescriptorPool;
             allocInfo.descriptorSetCount = 1;
             allocInfo.pSetLayouts = &objectSetLayout;
-            vkAllocateDescriptorSets(device.getDevice(), &allocInfo, &objectDescriptorSets[i]);
+            vkAllocateDescriptorSets(device.GetHandle(), &allocInfo, &objectDescriptorSets[i]);
         }
         createPipelineLayout();
         createPipeline();
-        if (device.isMeshShaderSupported()) {
+        if (device.IsMeshShaderSupported()) {
             createMeshPipeline();
             createMaskedMeshPipeline();
         }
@@ -175,35 +176,35 @@ namespace Engine {
     CsmPassNode::~CsmPassNode()
     {
         if (objectDescriptorPool != VK_NULL_HANDLE)
-            vkDestroyDescriptorPool(device.getDevice(), objectDescriptorPool, nullptr);
+            vkDestroyDescriptorPool(device.GetHandle(), objectDescriptorPool, nullptr);
         if (objectSetLayout != VK_NULL_HANDLE)
-            vkDestroyDescriptorSetLayout(device.getDevice(), objectSetLayout, nullptr);
+            vkDestroyDescriptorSetLayout(device.GetHandle(), objectSetLayout, nullptr);
 
         if (objectCullPipeline != VK_NULL_HANDLE)
-            vkDestroyPipeline(device.getDevice(), objectCullPipeline, nullptr);
+            vkDestroyPipeline(device.GetHandle(), objectCullPipeline, nullptr);
         if (taskSubmitPipeline != VK_NULL_HANDLE)
-            vkDestroyPipeline(device.getDevice(), taskSubmitPipeline, nullptr);
+            vkDestroyPipeline(device.GetHandle(), taskSubmitPipeline, nullptr);
         if (meshletCullPipeline != VK_NULL_HANDLE)
-            vkDestroyPipeline(device.getDevice(), meshletCullPipeline, nullptr);
+            vkDestroyPipeline(device.GetHandle(), meshletCullPipeline, nullptr);
         if (triangleCullPipeline != VK_NULL_HANDLE)
-            vkDestroyPipeline(device.getDevice(), triangleCullPipeline, nullptr);
+            vkDestroyPipeline(device.GetHandle(), triangleCullPipeline, nullptr);
         if (computePipelineLayout != VK_NULL_HANDLE)
-            vkDestroyPipelineLayout(device.getDevice(), computePipelineLayout, nullptr);
+            vkDestroyPipelineLayout(device.GetHandle(), computePipelineLayout, nullptr);
 
         if (meshPipeline != VK_NULL_HANDLE)
-            vkDestroyPipeline(device.getDevice(), meshPipeline, nullptr);
+            vkDestroyPipeline(device.GetHandle(), meshPipeline, nullptr);
         if (maskedMeshPipeline != VK_NULL_HANDLE)
-            vkDestroyPipeline(device.getDevice(), maskedMeshPipeline, nullptr);
+            vkDestroyPipeline(device.GetHandle(), maskedMeshPipeline, nullptr);
         if (meshPipelineLayout != VK_NULL_HANDLE)
-            vkDestroyPipelineLayout(device.getDevice(), meshPipelineLayout, nullptr);
+            vkDestroyPipelineLayout(device.GetHandle(), meshPipelineLayout, nullptr);
         if (maskedPipeline != VK_NULL_HANDLE)
-            vkDestroyPipeline(device.getDevice(), maskedPipeline, nullptr);
+            vkDestroyPipeline(device.GetHandle(), maskedPipeline, nullptr);
         if (maskedPipelineLayout != VK_NULL_HANDLE)
-            vkDestroyPipelineLayout(device.getDevice(), maskedPipelineLayout, nullptr);
+            vkDestroyPipelineLayout(device.GetHandle(), maskedPipelineLayout, nullptr);
         if (pipeline != VK_NULL_HANDLE)
-            vkDestroyPipeline(device.getDevice(), pipeline, nullptr);
+            vkDestroyPipeline(device.GetHandle(), pipeline, nullptr);
         if (pipelineLayout != VK_NULL_HANDLE)
-            vkDestroyPipelineLayout(device.getDevice(), pipelineLayout, nullptr);
+            vkDestroyPipelineLayout(device.GetHandle(), pipelineLayout, nullptr);
     }
 
     void CsmPassNode::setup(RenderGraphBuilder &renderGraph)
@@ -319,7 +320,7 @@ namespace Engine {
             descriptorWrites[10].descriptorCount = 1;
             descriptorWrites[10].pBufferInfo = &maskedTaskDispatchInfo;
 
-            vkUpdateDescriptorSets(device.getDevice(),
+            vkUpdateDescriptorSets(device.GetHandle(),
                                    static_cast<uint32_t>(descriptorWrites.size()),
                                    descriptorWrites.data(),
                                    0,
@@ -373,7 +374,7 @@ namespace Engine {
                 VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
                 VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT));
 
-            if (device.isMeshShaderSupported()) {
+            if (device.IsMeshShaderSupported()) {
                 VkDispatchIndirectCommand taskDispatchCmd[SHADOW_MAP_CASCADES] = {
                     {0, 1, 1},
                     {0, 1, 1},
@@ -444,7 +445,7 @@ namespace Engine {
             objCullDep.pMemoryBarriers = &objCullBarrier;
             vkCmdPipelineBarrier2(cmd, &objCullDep);
 
-            if (!device.isMeshShaderSupported()) {
+            if (!device.IsMeshShaderSupported()) {
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, meshletCullPipeline);
                 vkCmdDispatchIndirect(cmd, gpuDispatchCommandBuffers[currentFrame]->getBuffer(), 0);
 
@@ -522,7 +523,7 @@ namespace Engine {
 
             if (totalObjects > 0) {
                 CsmMeshPushConstants meshPc { c, Constants::MAX_SCENE_OBJECTS * 10 };
-                if (device.isMeshShaderSupported()) {
+                if (device.IsMeshShaderSupported()) {
                     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipeline);
                     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipelineLayout, 0, 2, sets, 0, nullptr);
                     vkCmdPushConstants(cmd, meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT, 0, sizeof(CsmMeshPushConstants), &meshPc);
@@ -563,9 +564,9 @@ namespace Engine {
         pipelineLayoutInfo.setLayoutCount = 2;
         pipelineLayoutInfo.pSetLayouts = layouts;
 
-        vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &pipelineLayout);
-        vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &meshPipelineLayout);
-        vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &maskedPipelineLayout);
+        vkCreatePipelineLayout(device.GetHandle(), &pipelineLayoutInfo, nullptr, &pipelineLayout);
+        vkCreatePipelineLayout(device.GetHandle(), &pipelineLayoutInfo, nullptr, &meshPipelineLayout);
+        vkCreatePipelineLayout(device.GetHandle(), &pipelineLayoutInfo, nullptr, &maskedPipelineLayout);
 
         VkPushConstantRange pushConstantRangeCompute {};
         pushConstantRangeCompute.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
@@ -579,7 +580,7 @@ namespace Engine {
         pipelineLayoutComputeInfo.pushConstantRangeCount = 1;
         pipelineLayoutComputeInfo.pPushConstantRanges = &pushConstantRangeCompute;
 
-        vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutComputeInfo, nullptr, &computePipelineLayout);
+        vkCreatePipelineLayout(device.GetHandle(), &pipelineLayoutComputeInfo, nullptr, &computePipelineLayout);
     }
 
     void CsmPassNode::createPipeline()
@@ -590,11 +591,11 @@ namespace Engine {
         auto meshletCode = ShaderUtils::readFile("shaders/csm_meshlet_cull.comp.spv");
         auto triangleCode = ShaderUtils::readFile("shaders/csm_triangle_cull.comp.spv");
 
-        VkShaderModule vertShaderModule = ShaderUtils::createShaderModule(device.getDevice(), vertCode);
-        VkShaderModule objModule = ShaderUtils::createShaderModule(device.getDevice(), objCode);
-        VkShaderModule taskSubmitModule = ShaderUtils::createShaderModule(device.getDevice(), taskSubmitCode);
-        VkShaderModule meshletModule = ShaderUtils::createShaderModule(device.getDevice(), meshletCode);
-        VkShaderModule triangleModule = ShaderUtils::createShaderModule(device.getDevice(), triangleCode);
+        VkShaderModule vertShaderModule = ShaderUtils::createShaderModule(device.GetHandle(), vertCode);
+        VkShaderModule objModule = ShaderUtils::createShaderModule(device.GetHandle(), objCode);
+        VkShaderModule taskSubmitModule = ShaderUtils::createShaderModule(device.GetHandle(), taskSubmitCode);
+        VkShaderModule meshletModule = ShaderUtils::createShaderModule(device.GetHandle(), meshletCode);
+        VkShaderModule triangleModule = ShaderUtils::createShaderModule(device.GetHandle(), triangleCode);
 
         VkPipelineShaderStageCreateInfo shaderStages[1] {};
         shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -674,9 +675,9 @@ namespace Engine {
         pipelineInfo.layout = pipelineLayout;
 
         vkCreateGraphicsPipelines(
-            device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, VK_NULL_HANDLE, &pipeline);
+            device.GetHandle(), device.getPipelineCache(), 1, &pipelineInfo, VK_NULL_HANDLE, &pipeline);
 
-        vkDestroyShaderModule(device.getDevice(), vertShaderModule, nullptr);
+        vkDestroyShaderModule(device.GetHandle(), vertShaderModule, nullptr);
 
         auto createCompPipeline = [&](VkShaderModule module, VkPipeline &outPipeline) {
             VkPipelineShaderStageCreateInfo stageInfo {};
@@ -690,7 +691,7 @@ namespace Engine {
             cpInfo.layout = computePipelineLayout;
             cpInfo.stage = stageInfo;
 
-            vkCreateComputePipelines(device.getDevice(), VK_NULL_HANDLE, 1, &cpInfo, nullptr, &outPipeline);
+            vkCreateComputePipelines(device.GetHandle(), VK_NULL_HANDLE, 1, &cpInfo, nullptr, &outPipeline);
         };
 
         createCompPipeline(objModule, objectCullPipeline);
@@ -698,10 +699,10 @@ namespace Engine {
         createCompPipeline(meshletModule, meshletCullPipeline);
         createCompPipeline(triangleModule, triangleCullPipeline);
 
-        vkDestroyShaderModule(device.getDevice(), objModule, nullptr);
-        vkDestroyShaderModule(device.getDevice(), taskSubmitModule, nullptr);
-        vkDestroyShaderModule(device.getDevice(), meshletModule, nullptr);
-        vkDestroyShaderModule(device.getDevice(), triangleModule, nullptr);
+        vkDestroyShaderModule(device.GetHandle(), objModule, nullptr);
+        vkDestroyShaderModule(device.GetHandle(), taskSubmitModule, nullptr);
+        vkDestroyShaderModule(device.GetHandle(), meshletModule, nullptr);
+        vkDestroyShaderModule(device.GetHandle(), triangleModule, nullptr);
 
         createMaskedPipeline();
     }
@@ -711,8 +712,8 @@ namespace Engine {
         auto taskCode = ShaderUtils::readFile("shaders/csm_meshlet.task.spv");
         auto meshCode = ShaderUtils::readFile("shaders/csm_triangle.mesh.spv");
 
-        VkShaderModule taskShaderModule = ShaderUtils::createShaderModule(device.getDevice(), taskCode);
-        VkShaderModule meshShaderModule = ShaderUtils::createShaderModule(device.getDevice(), meshCode);
+        VkShaderModule taskShaderModule = ShaderUtils::createShaderModule(device.GetHandle(), taskCode);
+        VkShaderModule meshShaderModule = ShaderUtils::createShaderModule(device.GetHandle(), meshCode);
 
         VkPipelineShaderStageCreateInfo shaderStages[2] {};
         shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -783,11 +784,11 @@ namespace Engine {
         pipelineInfo.pDynamicState = &dynamicState;
         pipelineInfo.layout = meshPipelineLayout;
 
-        ENGINE_VERIFY(vkCreateGraphicsPipelines(device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, VK_NULL_HANDLE, &meshPipeline) == VK_SUCCESS,
+        ENGINE_VERIFY(vkCreateGraphicsPipelines(device.GetHandle(), device.getPipelineCache(), 1, &pipelineInfo, VK_NULL_HANDLE, &meshPipeline) == VK_SUCCESS,
             "CsmPassNode: failed to create mesh shadow pipeline");
 
-        vkDestroyShaderModule(device.getDevice(), taskShaderModule, nullptr);
-        vkDestroyShaderModule(device.getDevice(), meshShaderModule, nullptr);
+        vkDestroyShaderModule(device.GetHandle(), taskShaderModule, nullptr);
+        vkDestroyShaderModule(device.GetHandle(), meshShaderModule, nullptr);
     }
 
     void CsmPassNode::createMaskedMeshPipeline()
@@ -796,9 +797,9 @@ namespace Engine {
         auto meshCode = ShaderUtils::readFile("shaders/csm_triangle_masked.mesh.spv");
         auto fragCode = ShaderUtils::readFile("shaders/shadow_masked.frag.spv");
 
-        VkShaderModule taskShaderModule = ShaderUtils::createShaderModule(device.getDevice(), taskCode);
-        VkShaderModule meshShaderModule = ShaderUtils::createShaderModule(device.getDevice(), meshCode);
-        VkShaderModule fragShaderModule = ShaderUtils::createShaderModule(device.getDevice(), fragCode);
+        VkShaderModule taskShaderModule = ShaderUtils::createShaderModule(device.GetHandle(), taskCode);
+        VkShaderModule meshShaderModule = ShaderUtils::createShaderModule(device.GetHandle(), meshCode);
+        VkShaderModule fragShaderModule = ShaderUtils::createShaderModule(device.GetHandle(), fragCode);
 
         VkPipelineShaderStageCreateInfo shaderStages[3] {};
         shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -874,12 +875,12 @@ namespace Engine {
         pipelineInfo.pDynamicState = &dynamicState;
         pipelineInfo.layout = meshPipelineLayout;
 
-        ENGINE_VERIFY(vkCreateGraphicsPipelines(device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, VK_NULL_HANDLE, &maskedMeshPipeline) == VK_SUCCESS,
+        ENGINE_VERIFY(vkCreateGraphicsPipelines(device.GetHandle(), device.getPipelineCache(), 1, &pipelineInfo, VK_NULL_HANDLE, &maskedMeshPipeline) == VK_SUCCESS,
             "CsmPassNode: failed to create masked mesh shadow pipeline");
 
-        vkDestroyShaderModule(device.getDevice(), taskShaderModule, nullptr);
-        vkDestroyShaderModule(device.getDevice(), meshShaderModule, nullptr);
-        vkDestroyShaderModule(device.getDevice(), fragShaderModule, nullptr);
+        vkDestroyShaderModule(device.GetHandle(), taskShaderModule, nullptr);
+        vkDestroyShaderModule(device.GetHandle(), meshShaderModule, nullptr);
+        vkDestroyShaderModule(device.GetHandle(), fragShaderModule, nullptr);
     }
 
     void CsmPassNode::createMaskedPipeline()
@@ -887,8 +888,8 @@ namespace Engine {
         auto vertCode = ShaderUtils::readFile("shaders/shadow_masked.vert.spv");
         auto fragCode = ShaderUtils::readFile("shaders/shadow_masked.frag.spv");
 
-        VkShaderModule vertShaderModule = ShaderUtils::createShaderModule(device.getDevice(), vertCode);
-        VkShaderModule fragShaderModule = ShaderUtils::createShaderModule(device.getDevice(), fragCode);
+        VkShaderModule vertShaderModule = ShaderUtils::createShaderModule(device.GetHandle(), vertCode);
+        VkShaderModule fragShaderModule = ShaderUtils::createShaderModule(device.GetHandle(), fragCode);
 
         VkPipelineShaderStageCreateInfo shaderStages[2] {};
         shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -972,11 +973,11 @@ namespace Engine {
         pipelineInfo.pDynamicState = &dynamicState;
         pipelineInfo.layout = maskedPipelineLayout;
 
-        ENGINE_VERIFY(vkCreateGraphicsPipelines(device.getDevice(), device.getPipelineCache(), 1, &pipelineInfo, VK_NULL_HANDLE, &maskedPipeline) == VK_SUCCESS,
+        ENGINE_VERIFY(vkCreateGraphicsPipelines(device.GetHandle(), device.getPipelineCache(), 1, &pipelineInfo, VK_NULL_HANDLE, &maskedPipeline) == VK_SUCCESS,
             "CsmPassNode: failed to create masked shadow pipeline");
 
-        vkDestroyShaderModule(device.getDevice(), vertShaderModule, nullptr);
-        vkDestroyShaderModule(device.getDevice(), fragShaderModule, nullptr);
+        vkDestroyShaderModule(device.GetHandle(), vertShaderModule, nullptr);
+        vkDestroyShaderModule(device.GetHandle(), fragShaderModule, nullptr);
     }
 
     void CsmPassNode::updateCascades(SceneUbo &sceneUbo, FrameInfo &frameInfo)

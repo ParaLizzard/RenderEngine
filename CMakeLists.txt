@@ -212,6 +212,10 @@ set(VULKAN_SOURCES
         src/Vulkan/Swapchain.h
         src/Vulkan/ResourceHeap.cpp
         src/Vulkan/ResourceHeap.h
+        src/Vulkan/VulkanMemory.cpp
+        src/Vulkan/VulkanMemory.h
+        src/Vulkan/VulkanBuffer.cpp
+        src/Vulkan/VulkanBuffer.h
 )
 
 set(RENDERER_SOURCES
@@ -311,6 +315,8 @@ set(ENGINE_LIB_SOURCES
         src/System/Events/MouseEvents.h
         src/Vulkan/VulkanDevice.cpp
         src/Vulkan/VulkanDevice.h
+        src/Vulkan/VulkanMemory.cpp
+        src/Vulkan/VulkanMemory.h
 )
 
 add_library(RenderEngineLib STATIC ${ENGINE_LIB_SOURCES})
