@@ -307,15 +307,17 @@ namespace Engine {
     }
 
     void VulkanDevice::ExecuteImmediate(QueueType queueType, const std::function<void(VkCommandBuffer)>& recordFn) const {
+        auto idx = static_cast<size_t>(queueType);
+        std::lock_guard<std::mutex> lock(immediateContexts[idx].mutex);
+
         VkCommandBuffer cmd = BeginSingleTimeCommands(queueType);
         recordFn(cmd);
         EndSingleTimeCommands(cmd, queueType);
     }
 
     VkCommandBuffer VulkanDevice::BeginSingleTimeCommands(QueueType queueType) const {
-        size_t idx = static_cast<size_t>(queueType);
+        auto idx = static_cast<size_t>(queueType);
         auto& ctx = immediateContexts[idx];
-        ctx.mutex.lock();
 
         VkCommandBufferAllocateInfo allocInfo{
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -336,30 +338,32 @@ namespace Engine {
     }
 
     void VulkanDevice::EndSingleTimeCommands(VkCommandBuffer cmd, QueueType queueType) const {
-        size_t idx = static_cast<size_t>(queueType);
+        auto idx = static_cast<size_t>(queueType);
         auto& ctx = immediateContexts[idx];
 
         vkEndCommandBuffer(cmd);
 
-        VkSubmitInfo submitInfo{
-            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-            .commandBufferCount = 1,
-            .pCommandBuffers = &cmd
+        VkCommandBufferSubmitInfo cmdSubmitInfo{
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+            .commandBuffer = cmd
+        };
+
+        VkSubmitInfo2 submitInfo{
+            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+            .commandBufferInfoCount = 1,
+            .pCommandBufferInfos = &cmdSubmitInfo
         };
 
         VkQueue queue = GetQueue(queueType);
         std::mutex& queueMutex = GetQueueMutex(queueType);
-
         {
             std::lock_guard<std::mutex> lock(queueMutex);
             vkResetFences(device, 1, &ctx.fence);
-            vkQueueSubmit(queue, 1, &submitInfo, ctx.fence);
+            vkQueueSubmit2(queue, 1, &submitInfo, ctx.fence);
         }
 
         vkWaitForFences(device, 1, &ctx.fence, VK_TRUE, UINT64_MAX);
         vkFreeCommandBuffers(device, ctx.pool, 1, &cmd);
-
-        ctx.mutex.unlock();
     }
 
     void VulkanDevice::WaitIdle() const {

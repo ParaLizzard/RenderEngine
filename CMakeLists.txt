@@ -216,6 +216,8 @@ set(VULKAN_SOURCES
         src/Vulkan/VulkanMemory.h
         src/Vulkan/VulkanBuffer.cpp
         src/Vulkan/VulkanBuffer.h
+        src/Vulkan/VulkanQueueManager.cpp
+        src/Vulkan/VulkanQueueManager.h
 )
 
 set(RENDERER_SOURCES
