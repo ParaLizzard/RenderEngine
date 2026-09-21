@@ -1,0 +1,120 @@
+#pragma once
+
+#include <functional>
+#include <future>
+#include <iostream>
+#include <memory>
+#include <mutex>
+#include <queue>
+#include <stdexcept>
+#include <thread>
+#include <vector>
+#include <condition_variable>
+
+#include "Core/Assert.h"
+#include "Core/Log.h"
+
+namespace Engine {
+    class JobSystemStoppedException: public std::runtime_error
+    {
+    public:
+        JobSystemStoppedException(): std::runtime_error("JobSystem has been stopped.")
+        {}
+    };
+
+    class JobSystemOld
+    {
+    public:
+        JobSystemOld(size_t numThreads);
+        ~JobSystemOld();
+
+        JobSystemOld(const JobSystemOld &) = delete;
+        JobSystemOld &operator=(const JobSystemOld &) = delete;
+
+        template<class F, class... Args>
+        auto enqueue(F &&f, Args &&...args) -> std::future<typename std::invoke_result_t<F, Args...>>;
+
+    private:
+        std::vector<std::thread> workers;
+        std::queue<std::function<void()>> tasks;
+
+        std::mutex queueMutex;
+        std::condition_variable condition;
+        bool stop = false;
+    };
+
+
+    inline JobSystemOld::JobSystemOld(size_t numThreads)
+    {
+        for (size_t i = 0; i < numThreads; ++i) {
+            workers.emplace_back([this] {
+                while (true) {
+                    std::function<void()> task;
+
+                    {
+                        std::unique_lock<std::mutex> lock(this->queueMutex);
+
+
+                        this->condition.wait(lock, [this] { return this->stop || !this->tasks.empty(); });
+
+                        if (this->stop && this->tasks.empty())
+                            return;
+
+                        task = std::move(this->tasks.front());
+                        this->tasks.pop();
+                    }
+
+                    task();
+                }
+            });
+        }
+    }
+
+    template<class F, class... Args>
+    auto JobSystemOld::enqueue(F &&f, Args &&...args) -> std::future<typename std::invoke_result_t<F, Args...>>
+    {
+        using return_type = typename std::invoke_result_t<F, Args...>;
+
+        auto bound_task = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
+
+        auto task = std::make_shared<std::packaged_task<return_type()>>([bound_task = std::move(bound_task)]() mutable {
+            try {
+                return bound_task();
+            } catch (const std::exception &e) {
+                LOG_ERROR("JobSystem", "Exception thrown inside worker thread: {}", e.what());
+                throw;
+            } catch (...) {
+                LOG_ERROR("JobSystem", "Unknown exception thrown inside worker thread.");
+                throw;
+            }
+        });
+
+        std::future<return_type> res = task->get_future();
+
+        {
+            std::unique_lock<std::mutex> lock(queueMutex);
+
+            ENGINE_ASSERT(!stop, "JobSystem: enqueue called on stopped JobSystem");
+
+            tasks.emplace([task]() { (*task)(); });
+        }
+
+        condition.notify_one();
+        return res;
+    }
+
+
+    inline JobSystemOld::~JobSystemOld()
+    {
+        {
+            std::unique_lock<std::mutex> lock(queueMutex);
+            stop = true;
+        }
+
+        condition.notify_all();
+
+        for (std::thread &worker: workers) {
+            worker.join();
+        }
+    }
+} // namespace Engine

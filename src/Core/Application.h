@@ -7,7 +7,7 @@
 #include "SubsystemRegistry.h"
 #include "AssetSystem/AssetStreamer.h"
 #include "Scene/SceneManager.h"
-#include "Threading/JobSystem.h"
+#include "Threading/JobSystemOld.h"
 #include "Renderer/RenderGraph.h"
 #include "Renderer/Renderer.h"
 #include "Vulkan/ResourceHeap.h"
@@ -62,7 +62,7 @@ namespace Engine {
         RenderGraph renderGraph {device};
         KeyboardMovementController cameraController {};
         std::shared_ptr<GameObject> cameraObject;
-        JobSystem jobSystem {std::max(1u, std::thread::hardware_concurrency() - 1)};
+        JobSystemOld jobSystem {std::max(1u, std::thread::hardware_concurrency() - 1)};
         SceneManager sceneManager{};
         AssetStreamer assetStreamer{jobSystem};
 

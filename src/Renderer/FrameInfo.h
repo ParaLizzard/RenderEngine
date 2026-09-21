@@ -14,7 +14,7 @@
 #define SHADOW_CASCADE2_SIZE 1024
 
 namespace Engine {
-    class JobSystem;
+    class JobSystemOld;
     class RenderGraph;
     class ResourceHeap;
     class Renderer;
@@ -38,7 +38,7 @@ namespace Engine {
         Renderer *renderer = nullptr;
         Model *megaBuffer = nullptr;
         ResourceHeap *resourceHeap = nullptr;
-        const JobSystem *jobSystem;
+        const JobSystemOld *jobSystem;
 
         bool enableSSAO = true;
 

@@ -139,13 +139,14 @@ namespace Engine {
     }
 
     std::mutex& VulkanDevice::GetQueueMutex(QueueType type) const noexcept {
-        switch (type) {
-            case QueueType::Graphics: return graphicsQueueMutex;
-            case QueueType::Compute:  return computeQueueMutex;
-            case QueueType::Transfer: return transferQueueMutex;
-            case QueueType::Present:  return presentQueueMutex;
-            default:                  return graphicsQueueMutex;
+        VkQueue q = GetQueue(type);
+        if (q != VK_NULL_HANDLE) {
+            if (q == graphicsQueue) return graphicsQueueMutex;
+            if (q == computeQueue)  return computeQueueMutex;
+            if (q == transferQueue) return transferQueueMutex;
+            if (q == presentQueue)  return presentQueueMutex;
         }
+        return graphicsQueueMutex;
     }
 
     bool VulkanDevice::IsExtensionSupported(std::string_view extensionName) const noexcept {

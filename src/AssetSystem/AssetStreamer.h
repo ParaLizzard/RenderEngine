@@ -6,19 +6,19 @@
 namespace Engine
 {
     struct ParsedGLTF;
-    class JobSystem;
+    class JobSystemOld;
 
     class AssetStreamer
     {
     public:
-        AssetStreamer(JobSystem& jobSystem);
+        AssetStreamer(JobSystemOld& jobSystem);
         ~AssetStreamer() = default;
 
         void enqueueLoad(const std::filesystem::path& path);
         std::vector<ParsedGLTF> pollCompleted();
 
     private:
-        JobSystem& jobSystem;
+        JobSystemOld& jobSystem;
         std::vector<std::future<ParsedGLTF>> pendingLoads;
     };
 }

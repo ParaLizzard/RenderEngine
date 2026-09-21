@@ -42,6 +42,10 @@ set(TEST_SOURCES
         Core/SubsystemRegistryTest.cpp
         Core/EngineLifecycleTest.cpp
 
+        # Threading
+        Threading/WorkStealingQueueTest.cpp
+        Threading/JobSystemTest.cpp
+
         # System
         System/EventDispatcherTest.cpp
         System/WindowSubsystemTest.cpp
@@ -120,5 +124,28 @@ target_link_libraries(VulkanMemoryBudgetTest PRIVATE
 
 gtest_discover_tests(VulkanMemoryBudgetTest WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 
+# ---------------------------------------------------------------------------
+# Step 2.9 & 2.10 — ThreadingTests Standalone Test Executable
+# ---------------------------------------------------------------------------
+add_executable(ThreadingTests
+        TestMain.cpp
+        Threading/WorkStealingQueueTest.cpp
+        Threading/JobSystemTest.cpp
+        ${CMAKE_SOURCE_DIR}/src/Threading/JobSystem.cpp
+        ${CMAKE_SOURCE_DIR}/src/Threading/JobSubsystem.cpp
+        ${CMAKE_SOURCE_DIR}/src/Threading/TaskGraph.cpp
+        ${CMAKE_SOURCE_DIR}/src/Core/Log.cpp
+        ${CMAKE_SOURCE_DIR}/src/Core/SubsystemRegistry.cpp
+)
 
+target_include_directories(ThreadingTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+)
 
+target_link_libraries(ThreadingTests PRIVATE
+        GTest::gtest
+        GTest::gmock
+)
+
+gtest_discover_tests(ThreadingTests WORKING_DIRECTORY ${CMAKE_BINARY_DIR})

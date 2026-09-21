@@ -7,7 +7,7 @@
 
 namespace Engine
 {
-    AssetStreamer::AssetStreamer(JobSystem& jobSystem):jobSystem(jobSystem)
+    AssetStreamer::AssetStreamer(JobSystemOld& jobSystem):jobSystem(jobSystem)
     {}
 
     void AssetStreamer::enqueueLoad(const std::filesystem::path &path)

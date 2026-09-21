@@ -18,7 +18,7 @@
 #include <optional>
 
 namespace Engine {
-    class JobSystem;
+    class JobSystemOld;
     class VulkanDevice;
 
     enum class TextureType {
@@ -69,7 +69,7 @@ namespace Engine {
     class LoaderGLTF
     {
     public:
-        static std::future<ParsedGLTF> loadAsync(JobSystem &jobSystem, const std::filesystem::path &filePath);
+        static std::future<ParsedGLTF> loadAsync(JobSystemOld &jobSystem, const std::filesystem::path &filePath);
 
         static std::vector<GameObject> finalize(ParsedGLTF &parsedData,
                                                 VulkanDevice &device,
@@ -80,7 +80,7 @@ namespace Engine {
     private:
         static fastgltf::Asset loadAsset(const std::filesystem::path &filePath);
 
-        static void decodeImages(JobSystem &jobSystem,
+        static void decodeImages(JobSystemOld &jobSystem,
                                  fastgltf::Asset &asset,
                                  const std::filesystem::path &assetDir,
                                  ParsedGLTF &outData);

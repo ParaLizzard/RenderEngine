@@ -1,120 +1,67 @@
 #pragma once
-
+#include "Core/ISubsystem.h"
+#include "Threading/JobHandle.h"
+#include "Threading/WorkStealingQueue.h"
 #include <functional>
-#include <future>
-#include <iostream>
-#include <memory>
-#include <mutex>
-#include <queue>
-#include <stdexcept>
-#include <thread>
 #include <vector>
+#include <thread>
+#include <string_view>
+#include <span>
+#include <optional>
 #include <condition_variable>
-
-#include "Core/Assert.h"
-#include "Core/Log.h"
+#include <mutex>
+#include <array>
 
 namespace Engine {
-    class JobSystemStoppedException: public std::runtime_error
-    {
-    public:
-        JobSystemStoppedException(): std::runtime_error("JobSystem has been stopped.")
-        {}
+    static thread_local std::optional<uint32_t> currentWorkerIndex = std::nullopt;
+
+    enum class JobPriority : uint8_t {
+        Critical = 0,
+        Normal   = 1,
+        Background = 2,
+        Count
     };
 
-    class JobSystem
-    {
+    using JobFunction = std::function<void()>;
+    using ParallelForFunction = std::function<void(uint32_t startIndex, uint32_t endIndex)>;
+
+    struct InternalJob {
+        JobFunction function;
+        uint32_t counterIndex = JobHandle::kInvalidIndex;
+    };
+
+    class TaskGraph;
+
+    class JobSystem {
+        friend class TaskGraph;
     public:
-        JobSystem(size_t numThreads);
+        explicit JobSystem(uint32_t threadCount = 0);
         ~JobSystem();
 
-        JobSystem(const JobSystem &) = delete;
-        JobSystem &operator=(const JobSystem &) = delete;
+        JobHandle Execute(JobFunction task, JobPriority priority = JobPriority::Normal);
+        JobHandle Dispatch(uint32_t totalItemCount, uint32_t groupSize, ParallelForFunction func, JobPriority priority = JobPriority::Normal);
 
-        template<class F, class... Args>
-        auto enqueue(F &&f, Args &&...args) -> std::future<typename std::invoke_result_t<F, Args...>>;
+        void Wait(const JobHandle& handle);
+
+        ENGINE_NODISCARD bool IsCompleted(const JobHandle& handle) const noexcept;
+        ENGINE_NODISCARD uint32_t GetWorkerCount() const noexcept { return static_cast<uint32_t>(workers.size()); }
 
     private:
+        void WorkerLoop(uint32_t threadIndex);
+        bool TryExecuteLocalOrSteal(uint32_t threadIndex);
+        void FinishJob(uint32_t counterIndex);
+        JobHandle AcquireCounter(uint32_t initialCount = 1);
+        void ReleaseCounter(uint32_t index);
+
+
         std::vector<std::thread> workers;
-        std::queue<std::function<void()>> tasks;
+        std::vector<std::array<WorkStealingQueue<InternalJob>, static_cast<size_t>(JobPriority::Count)>> queues;
 
-        std::mutex queueMutex;
-        std::condition_variable condition;
-        bool stop = false;
+        static constexpr size_t MAX_COUNTERS = 4096;
+        std::vector<JobCounter> counterPool;
+        std::vector<uint32_t> freeCounterIndices;
+        std::mutex counterPoolMutex;
+        std::condition_variable nonWorkerWaitCV;
+        std::atomic<bool> running{ true };
     };
-
-
-    inline JobSystem::JobSystem(size_t numThreads)
-    {
-        for (size_t i = 0; i < numThreads; ++i) {
-            workers.emplace_back([this] {
-                while (true) {
-                    std::function<void()> task;
-
-                    {
-                        std::unique_lock<std::mutex> lock(this->queueMutex);
-
-
-                        this->condition.wait(lock, [this] { return this->stop || !this->tasks.empty(); });
-
-                        if (this->stop && this->tasks.empty())
-                            return;
-
-                        task = std::move(this->tasks.front());
-                        this->tasks.pop();
-                    }
-
-                    task();
-                }
-            });
-        }
-    }
-
-    template<class F, class... Args>
-    auto JobSystem::enqueue(F &&f, Args &&...args) -> std::future<typename std::invoke_result_t<F, Args...>>
-    {
-        using return_type = typename std::invoke_result_t<F, Args...>;
-
-        auto bound_task = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
-
-        auto task = std::make_shared<std::packaged_task<return_type()>>([bound_task = std::move(bound_task)]() mutable {
-            try {
-                return bound_task();
-            } catch (const std::exception &e) {
-                LOG_ERROR("JobSystem", "Exception thrown inside worker thread: {}", e.what());
-                throw;
-            } catch (...) {
-                LOG_ERROR("JobSystem", "Unknown exception thrown inside worker thread.");
-                throw;
-            }
-        });
-
-        std::future<return_type> res = task->get_future();
-
-        {
-            std::unique_lock<std::mutex> lock(queueMutex);
-
-            ENGINE_ASSERT(!stop, "JobSystem: enqueue called on stopped JobSystem");
-
-            tasks.emplace([task]() { (*task)(); });
-        }
-
-        condition.notify_one();
-        return res;
-    }
-
-
-    inline JobSystem::~JobSystem()
-    {
-        {
-            std::unique_lock<std::mutex> lock(queueMutex);
-            stop = true;
-        }
-
-        condition.notify_all();
-
-        for (std::thread &worker: workers) {
-            worker.join();
-        }
-    }
-} // namespace Engine
+}

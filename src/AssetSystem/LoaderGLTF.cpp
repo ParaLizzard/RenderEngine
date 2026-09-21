@@ -1,6 +1,6 @@
 #include "AssetSystem/LoaderGLTF.h"
 #include "Vulkan/VulkanDevice.h"
-#include "Threading/JobSystem.h"
+#include "Threading/JobSystemOld.h"
 #include <iostream>
 #include <stb_image.h>
 #include <glm/gtc/packing.hpp>
@@ -17,7 +17,7 @@ namespace Engine {
         return res * 0.5f + 0.5f;
     }
 
-    std::future<ParsedGLTF> LoaderGLTF::loadAsync(JobSystem &jobSystem, const std::filesystem::path &filePath)
+    std::future<ParsedGLTF> LoaderGLTF::loadAsync(JobSystemOld &jobSystem, const std::filesystem::path &filePath)
     {
         return jobSystem.enqueue([&jobSystem, filePath]() {
             ParsedGLTF result{};
@@ -60,7 +60,7 @@ namespace Engine {
         }
     }
 
-    void LoaderGLTF::decodeImages(JobSystem &jobSystem,
+    void LoaderGLTF::decodeImages(JobSystemOld &jobSystem,
                                   fastgltf::Asset &asset,
                                   const std::filesystem::path &assetDir,
                                   ParsedGLTF &outData)

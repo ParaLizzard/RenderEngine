@@ -196,7 +196,15 @@ set(SYSTEM_SOURCES
 )
 
 set(THREADING_SOURCES
+        src/Threading/JobSystemOld.h
+        src/Threading/WorkStealingQueue.h
+        src/Threading/JobHandle.h
+        src/Threading/JobSystem.cpp
         src/Threading/JobSystem.h
+        src/Threading/JobSubsystem.cpp
+        src/Threading/JobSubsystem.h
+        src/Threading/TaskGraph.cpp
+        src/Threading/TaskGraph.h
 )
 
 
@@ -218,6 +226,16 @@ set(VULKAN_SOURCES
         src/Vulkan/VulkanBuffer.h
         src/Vulkan/VulkanQueueManager.cpp
         src/Vulkan/VulkanQueueManager.h
+        src/Vulkan/VulkanSynchronization.h
+        src/Vulkan/VulkanSynchronization.cpp
+        src/Vulkan/VulkanBindlessHeap.cpp
+        src/Vulkan/VulkanBindlessHeap.h
+        src/Vulkan/VulkanSamplers.cpp
+        src/Vulkan/VulkanSamplers.h
+        src/Vulkan/VulkanPipeline.cpp
+        src/Vulkan/VulkanPipeline.h
+        src/Vulkan/VulkanPipelineCache.cpp
+        src/Vulkan/VulkanPipelineCache.h
 )
 
 set(RENDERER_SOURCES
