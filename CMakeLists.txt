@@ -294,6 +294,8 @@ set(ASSETSYSTEM_SOURCES
         src/AssetSystem/LoaderGLTF.h
         src/AssetSystem/IBL.cpp
         src/AssetSystem/IBL.h
+        src/AssetSystem/AssetHandle.h
+        src/AssetSystem/AssetMetadata.h
 )
 
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/models" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")

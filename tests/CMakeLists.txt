@@ -51,6 +51,9 @@ set(TEST_SOURCES
         System/WindowSubsystemTest.cpp
         System/InputSubsystemTest.cpp
         
+        # AssetSystem
+        AssetSystem/AssetHandleTest.cpp
+
         # Integration (GPU required)
         Integration/BaselineCaptureTest.cpp
         Integration/PassesTest.cpp
@@ -149,3 +152,25 @@ target_link_libraries(ThreadingTests PRIVATE
 )
 
 gtest_discover_tests(ThreadingTests WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+# ---------------------------------------------------------------------------
+# Step 3.1 — AssetSystemTests Standalone Test Executable
+# ---------------------------------------------------------------------------
+add_executable(AssetSystemTests
+        TestMain.cpp
+        AssetSystem/AssetHandleTest.cpp
+        ${CMAKE_SOURCE_DIR}/src/Core/UUID.cpp
+        ${CMAKE_SOURCE_DIR}/src/Core/Log.cpp
+)
+
+target_include_directories(AssetSystemTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(AssetSystemTests PRIVATE
+        GTest::gtest
+        GTest::gmock
+)
+
+gtest_discover_tests(AssetSystemTests WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
