@@ -296,6 +296,8 @@ set(ASSETSYSTEM_SOURCES
         src/AssetSystem/IBL.h
         src/AssetSystem/AssetHandle.h
         src/AssetSystem/AssetMetadata.h
+        src/AssetSystem/GeometryBufferPool.cpp
+        src/AssetSystem/GeometryBufferPool.h
 )
 
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/models" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
