@@ -14,6 +14,7 @@ namespace Engine {
     class VulkanTexture;
     struct Material;
     class Shader;
+    class AssetManager;
 
     template<typename T>
     struct AssetTraits {
@@ -128,7 +129,7 @@ namespace Engine {
         constexpr bool operator<(const AssetHandle& other) const noexcept { return raw < other.raw; }
 
     private:
-        template<typename U> friend class AssetManager;
+        friend class AssetManager;
         uint64_t raw = 0;
     };
 

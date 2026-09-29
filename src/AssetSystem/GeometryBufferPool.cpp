@@ -3,6 +3,8 @@
 #include "Core/Assert.h"
 #include "Core/EngineConstants.h"
 
+#include "Vulkan/VulkanDevice.h"
+
 namespace Engine
 {
     GeometryBufferPool::GeometryBufferPool(VulkanDevice &device,
@@ -10,6 +12,8 @@ namespace Engine
         size_t maxVertices,
         size_t maxIndices,
         size_t maxMeshlets):
+        device(device),
+        memory(memory),
         maxVertices(maxVertices),
         maxIndices(maxIndices),
         maxMeshlets(maxMeshlets),
@@ -110,5 +114,123 @@ namespace Engine
     void GeometryBufferPool::FreeSubmesh(const SubmeshGPUAllocation &allocation)
     {
         std::lock_guard<std::mutex> lock(allocationMutex);
+    }
+
+    void GeometryBufferPool::UploadSubmesh(
+        const SubmeshGPUAllocation& allocation,
+        std::span<const VertexPositionGPU> positions,
+        std::span<const VertexAttributeGPU> attributes,
+        std::span<const uint32_t> indices,
+        std::span<const MeshletGPU> meshlets,
+        std::span<const uint32_t> meshletVertices,
+        std::span<const uint8_t> meshletTriangles)
+    {
+        VkDeviceSize posSize = positions.size_bytes();
+        VkDeviceSize attrSize = attributes.size_bytes();
+        VkDeviceSize idxSize = indices.size_bytes();
+        VkDeviceSize meshletSize = meshlets.size_bytes();
+        VkDeviceSize vertSize = meshletVertices.size_bytes();
+        VkDeviceSize triSize = meshletTriangles.size_bytes();
+
+        VkDeviceSize totalSize = posSize + attrSize + idxSize + meshletSize + vertSize + triSize;
+        if (totalSize == 0) {
+            return;
+        }
+
+        BufferDesc stgDesc{
+            .debugName = "GeometryUploadStaging",
+            .size = totalSize,
+            .usage = BufferUsage::STAGING,
+            .memoryUsage = MemoryUsage::CPU_TO_GPU
+        };
+        VulkanBuffer staging(device, memory, stgDesc);
+
+        VkDeviceSize currentOffset = 0;
+        VkDeviceSize posOffset = currentOffset;
+        if (posSize > 0) {
+            staging.UpdateData(positions.data(), posSize, currentOffset);
+            currentOffset += posSize;
+        }
+
+        VkDeviceSize attrOffset = currentOffset;
+        if (attrSize > 0) {
+            staging.UpdateData(attributes.data(), attrSize, currentOffset);
+            currentOffset += attrSize;
+        }
+
+        VkDeviceSize idxOffset = currentOffset;
+        if (idxSize > 0) {
+            staging.UpdateData(indices.data(), idxSize, currentOffset);
+            currentOffset += idxSize;
+        }
+
+        VkDeviceSize meshletOffset = currentOffset;
+        if (meshletSize > 0) {
+            staging.UpdateData(meshlets.data(), meshletSize, currentOffset);
+            currentOffset += meshletSize;
+        }
+
+        VkDeviceSize vertOffset = currentOffset;
+        if (vertSize > 0) {
+            staging.UpdateData(meshletVertices.data(), vertSize, currentOffset);
+            currentOffset += vertSize;
+        }
+
+        VkDeviceSize triOffset = currentOffset;
+        if (triSize > 0) {
+            staging.UpdateData(meshletTriangles.data(), triSize, currentOffset);
+            currentOffset += triSize;
+        }
+
+        device.ExecuteImmediate(QueueType::Graphics, [&](VkCommandBuffer cmd) {
+            if (posSize > 0) {
+                VkBufferCopy copy{
+                    .srcOffset = posOffset,
+                    .dstOffset = allocation.vertexOffset * sizeof(VertexPositionGPU),
+                    .size = posSize
+                };
+                vkCmdCopyBuffer(cmd, staging.GetHandle(), positionBuffer->GetHandle(), 1, &copy);
+            }
+            if (attrSize > 0) {
+                VkBufferCopy copy{
+                    .srcOffset = attrOffset,
+                    .dstOffset = allocation.vertexOffset * sizeof(VertexAttributeGPU),
+                    .size = attrSize
+                };
+                vkCmdCopyBuffer(cmd, staging.GetHandle(), attributeBuffer->GetHandle(), 1, &copy);
+            }
+            if (idxSize > 0) {
+                VkBufferCopy copy{
+                    .srcOffset = idxOffset,
+                    .dstOffset = allocation.indexOffset * sizeof(uint32_t),
+                    .size = idxSize
+                };
+                vkCmdCopyBuffer(cmd, staging.GetHandle(), indexBuffer->GetHandle(), 1, &copy);
+            }
+            if (meshletSize > 0) {
+                VkBufferCopy copy{
+                    .srcOffset = meshletOffset,
+                    .dstOffset = allocation.meshletOffset * sizeof(MeshletGPU),
+                    .size = meshletSize
+                };
+                vkCmdCopyBuffer(cmd, staging.GetHandle(), meshletBuffer->GetHandle(), 1, &copy);
+            }
+            if (vertSize > 0) {
+                VkBufferCopy copy{
+                    .srcOffset = vertOffset,
+                    .dstOffset = allocation.meshletVertexOffset * sizeof(uint32_t),
+                    .size = vertSize
+                };
+                vkCmdCopyBuffer(cmd, staging.GetHandle(), meshletVerticesBuffer->GetHandle(), 1, &copy);
+            }
+            if (triSize > 0) {
+                VkBufferCopy copy{
+                    .srcOffset = triOffset,
+                    .dstOffset = allocation.meshletTriangleOffset * sizeof(uint8_t),
+                    .size = triSize
+                };
+                vkCmdCopyBuffer(cmd, staging.GetHandle(), meshletTrianglesBuffer->GetHandle(), 1, &copy);
+            }
+        });
     }
 }

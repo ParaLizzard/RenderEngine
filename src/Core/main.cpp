@@ -1,7 +1,9 @@
+#include "AssetSystem/AssetManager.h"
 #include "Core/Engine.h"
 #include "System/Window/WindowSubsystem.h"
 #include "System/Input/InputSubsystem.h"
 #include "Threading/JobSubsystem.h"
+#include "Vulkan/VulkanRHI.h"
 
 int main() {
     auto& engine = Engine::Engine::Get();
@@ -20,9 +22,10 @@ int main() {
         .fullscreen = false,
         .resizable = true
     });
-
+    registry.Register<Engine::VulkanRHI, Engine::WindowSubsystem>();
     registry.Register<Engine::InputSubsystem, Engine::WindowSubsystem>();
     registry.Register<Engine::JobSubsystem>();
+    registry.Register<Engine::AssetManager, Engine::JobSubsystem, Engine::VulkanRHI>();
 
     engine.Run();
 

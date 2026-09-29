@@ -11,7 +11,7 @@ namespace Engine
     {
         size = desc.size;
 
-        VkBufferCreateInfo bufferInfo;
+        VkBufferCreateInfo bufferInfo{};
         bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         bufferInfo.usage = static_cast<VkBufferUsageFlags>(desc.usage);
         bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -36,6 +36,7 @@ namespace Engine
 
         if (resultInfo.pMappedData != nullptr) {
             mappedData = resultInfo.pMappedData;
+            persistentlyMapped = true;
         }
 
         if (static_cast<uint32_t>(desc.usage) & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
@@ -56,7 +57,7 @@ namespace Engine
 
     VulkanBuffer::~VulkanBuffer()
     {
-        if (mappedData != nullptr) {
+        if (mappedData != nullptr && !persistentlyMapped) {
             vmaUnmapMemory(allocator.GetAllocator(), allocation);
         }
 
@@ -69,6 +70,7 @@ namespace Engine
         size = 0;
         gpuAddress = 0;
         mappedData = nullptr;
+        persistentlyMapped = false;
     }
 
     VulkanBuffer::VulkanBuffer(VulkanBuffer &&other) noexcept
@@ -79,18 +81,20 @@ namespace Engine
    , size(other.size)
    , gpuAddress(other.gpuAddress)
    , mappedData(other.mappedData)
+   , persistentlyMapped(other.persistentlyMapped)
     {
         other.buffer = VK_NULL_HANDLE;
         other.allocation = VK_NULL_HANDLE;
         other.size = 0;
         other.gpuAddress = 0;
         other.mappedData = nullptr;
+        other.persistentlyMapped = false;
     }
 
     VulkanBuffer & VulkanBuffer::operator=(VulkanBuffer &&other) noexcept
     {
         if (this != &other) {
-            if (mappedData != nullptr) {
+            if (mappedData != nullptr && !persistentlyMapped) {
                 vmaUnmapMemory(allocator.GetAllocator(), allocation);
                 mappedData = nullptr;
             }
@@ -105,12 +109,14 @@ namespace Engine
             size = other.size;
             gpuAddress = other.gpuAddress;
             mappedData = other.mappedData;
+            persistentlyMapped = other.persistentlyMapped;
 
             other.buffer = VK_NULL_HANDLE;
             other.allocation = VK_NULL_HANDLE;
             other.size = 0;
             other.gpuAddress = 0;
             other.mappedData = nullptr;
+            other.persistentlyMapped = false;
         }
         return *this;
     }

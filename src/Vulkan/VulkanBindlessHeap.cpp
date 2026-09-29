@@ -29,7 +29,7 @@ namespace Engine
     {
         std::lock_guard<std::mutex> lock(mutex);
 
-        ENGINE_VERIFY(freeSlots.empty(), "ImmutableSamplers was empty");
+        ENGINE_VERIFY(!freeSlots.empty(), "Bindless heap has no free slots available");
 
         uint32_t slot = freeSlots.back();
         freeSlots.pop_back();

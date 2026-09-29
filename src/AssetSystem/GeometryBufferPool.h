@@ -6,6 +6,8 @@
 #include <glm/vec3.hpp>
 #include <mutex>
 
+#include <span>
+
 namespace Engine {
     struct MeshletGPU {
         float centerX, centerY, centerZ, radius;
@@ -49,6 +51,15 @@ namespace Engine {
         SubmeshGPUAllocation AllocateSubmesh(uint32_t vertexCount, uint32_t indexCount, uint32_t meshletCount, uint32_t meshletVertexCount, uint32_t meshletTriangleCount);
         void FreeSubmesh(const SubmeshGPUAllocation& allocation);
 
+        void UploadSubmesh(
+            const SubmeshGPUAllocation& allocation,
+            std::span<const VertexPositionGPU> positions,
+            std::span<const VertexAttributeGPU> attributes,
+            std::span<const uint32_t> indices,
+            std::span<const MeshletGPU> meshlets,
+            std::span<const uint32_t> meshletVertices,
+            std::span<const uint8_t> meshletTriangles);
+
         ENGINE_NODISCARD VkDeviceAddress GetPositionBufferAddress() const noexcept { return positionBuffer->GetDeviceAddress(); }
         ENGINE_NODISCARD VkDeviceAddress GetAttributeBufferAddress() const noexcept { return attributeBuffer->GetDeviceAddress(); }
         ENGINE_NODISCARD VkDeviceAddress GetIndexBufferAddress() const noexcept { return indexBuffer->GetDeviceAddress(); }
@@ -61,6 +72,8 @@ namespace Engine {
         ENGINE_NODISCARD uint32_t GetAllocatedMeshlets() const noexcept { return currentMeshletOffset; }
 
     private:
+        VulkanDevice& device;
+        VulkanMemory& memory;
         std::unique_ptr<VulkanBuffer> positionBuffer;
         std::unique_ptr<VulkanBuffer> attributeBuffer;
         std::unique_ptr<VulkanBuffer> indexBuffer;

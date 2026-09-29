@@ -65,5 +65,6 @@ namespace Engine {
         VkDeviceSize size = 0;
         VkDeviceAddress gpuAddress = 0;
         void* mappedData = nullptr;
+        bool persistentlyMapped = false;
     };
 }

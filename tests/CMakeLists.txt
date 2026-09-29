@@ -15,6 +15,7 @@ set(TEST_SOURCES
         Vulkan/QueueFamilyIndicesTest.cpp
         Vulkan/VulkanDeviceInitTest.cpp
         Vulkan/VulkanMemoryBudgetTest.cpp
+        Vulkan/VulkanTextureTest.cpp
 
         # Renderer
         Renderer/RenderSettingsTest.cpp
@@ -53,6 +54,11 @@ set(TEST_SOURCES
         
         # AssetSystem
         AssetSystem/AssetHandleTest.cpp
+        AssetSystem/GeometryBufferPoolTest.cpp
+        AssetSystem/FastGLTFParserTest.cpp
+        AssetSystem/MeshletClusteringTest.cpp
+        AssetSystem/TextureLoaderTest.cpp
+        AssetSystem/AssetManagerTest.cpp
 
         # Integration (GPU required)
         Integration/BaselineCaptureTest.cpp
@@ -174,3 +180,250 @@ target_link_libraries(AssetSystemTests PRIVATE
 )
 
 gtest_discover_tests(AssetSystemTests WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+# ---------------------------------------------------------------------------
+# Step 3.3.6 — VulkanTextureTest Standalone Test Executable
+# ---------------------------------------------------------------------------
+add_executable(VulkanTextureTest
+        TestMain.cpp
+        Common/VulkanTestContext.cpp
+        Vulkan/VulkanTextureTest.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanDevice.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanMemory.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanTexture.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanSynchronization.cpp
+        ${CMAKE_SOURCE_DIR}/src/Core/Log.cpp
+)
+
+target_include_directories(VulkanTextureTest PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_BINARY_DIR}/_deps/ktx-src/other_include
+)
+
+target_link_libraries(VulkanTextureTest PRIVATE
+        Vulkan::Vulkan
+        GTest::gtest
+        GTest::gmock
+)
+
+gtest_discover_tests(VulkanTextureTest WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+# ---------------------------------------------------------------------------
+# Step 3.5 — TextureLoaderTest Standalone Test Executable
+# ---------------------------------------------------------------------------
+add_executable(TextureLoaderTest
+        TestMain.cpp
+        Common/VulkanTestContext.cpp
+        Common/SyntheticTextureGenerator.cpp
+        AssetSystem/TextureLoaderTest.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanDevice.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanMemory.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanTexture.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanBuffer.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanSynchronization.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanBindlessHeap.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanSamplers.cpp
+        ${CMAKE_SOURCE_DIR}/src/AssetSystem/TextureLoader.cpp
+        ${CMAKE_SOURCE_DIR}/src/Core/Log.cpp
+)
+
+target_include_directories(TextureLoaderTest PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_BINARY_DIR}/_deps/ktx-src/include
+        ${CMAKE_BINARY_DIR}/_deps/ktx-src/other_include
+        ${CMAKE_BINARY_DIR}/_deps/stb-src
+)
+
+target_link_libraries(TextureLoaderTest PRIVATE
+        Vulkan::Vulkan
+        ktx
+        stb
+        GTest::gtest
+        GTest::gmock
+)
+
+gtest_discover_tests(TextureLoaderTest WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+add_executable(AssetManagerTest
+        TestMain.cpp
+        Common/VulkanTestContext.cpp
+        AssetSystem/AssetManagerTest.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanDevice.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanMemory.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanTexture.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanBuffer.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanSynchronization.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanBindlessHeap.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanSamplers.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanPipeline.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanPipelineCache.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanQueueManager.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanSwapchain.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanRHI.cpp
+        ${CMAKE_SOURCE_DIR}/src/Threading/JobSystem.cpp
+        ${CMAKE_SOURCE_DIR}/src/AssetSystem/GeometryBufferPool.cpp
+        ${CMAKE_SOURCE_DIR}/src/AssetSystem/TextureLoader.cpp
+        ${CMAKE_SOURCE_DIR}/src/AssetSystem/GLTFLoader.cpp
+        ${CMAKE_SOURCE_DIR}/src/AssetSystem/Mesh.cpp
+        ${CMAKE_SOURCE_DIR}/src/AssetSystem/AssetManager.cpp
+        ${CMAKE_SOURCE_DIR}/src/Threading/JobSubsystem.cpp
+        ${CMAKE_SOURCE_DIR}/src/Core/SubsystemRegistry.cpp
+        ${CMAKE_SOURCE_DIR}/src/Core/Log.cpp
+)
+
+target_include_directories(AssetManagerTest PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_BINARY_DIR}/_deps/ktx-src/include
+        ${CMAKE_BINARY_DIR}/_deps/ktx-src/other_include
+        ${CMAKE_BINARY_DIR}/_deps/stb-src
+        ${CMAKE_BINARY_DIR}/_deps/fastgltf-src/include
+        ${CMAKE_BINARY_DIR}/_deps/fastgltf-src/deps/simdjson
+        ${CMAKE_BINARY_DIR}/_deps/meshoptimizer-src/src
+)
+
+target_link_libraries(AssetManagerTest PRIVATE
+        Vulkan::Vulkan
+        ktx
+        stb
+        fastgltf::fastgltf
+        meshoptimizer
+        GTest::gtest
+        GTest::gmock
+)
+
+gtest_discover_tests(AssetManagerTest WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+add_executable(VulkanRHITest
+        TestMain.cpp
+        Vulkan/VulkanRHITest.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanDevice.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanMemory.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanTexture.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanBuffer.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanSynchronization.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanBindlessHeap.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanSamplers.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanPipeline.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanPipelineCache.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanQueueManager.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanSwapchain.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanRHI.cpp
+        ${CMAKE_SOURCE_DIR}/src/Threading/JobSystem.cpp
+        ${CMAKE_SOURCE_DIR}/src/Threading/JobSubsystem.cpp
+        ${CMAKE_SOURCE_DIR}/src/AssetSystem/GeometryBufferPool.cpp
+        ${CMAKE_SOURCE_DIR}/src/AssetSystem/TextureLoader.cpp
+        ${CMAKE_SOURCE_DIR}/src/AssetSystem/GLTFLoader.cpp
+        ${CMAKE_SOURCE_DIR}/src/AssetSystem/Mesh.cpp
+        ${CMAKE_SOURCE_DIR}/src/AssetSystem/AssetManager.cpp
+        ${CMAKE_SOURCE_DIR}/src/Core/SubsystemRegistry.cpp
+        ${CMAKE_SOURCE_DIR}/src/Core/Log.cpp
+)
+
+target_include_directories(VulkanRHITest PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_BINARY_DIR}/_deps/ktx-src/include
+        ${CMAKE_BINARY_DIR}/_deps/ktx-src/other_include
+        ${CMAKE_BINARY_DIR}/_deps/stb-src
+        ${CMAKE_BINARY_DIR}/_deps/fastgltf-src/include
+        ${CMAKE_BINARY_DIR}/_deps/fastgltf-src/deps/simdjson
+        ${CMAKE_BINARY_DIR}/_deps/meshoptimizer-src/src
+)
+
+target_link_libraries(VulkanRHITest PRIVATE
+        Vulkan::Vulkan
+        ktx
+        stb
+        fastgltf::fastgltf
+        meshoptimizer
+        GTest::gtest
+        GTest::gmock
+)
+
+gtest_discover_tests(VulkanRHITest WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+add_executable(GeometryBufferPoolTest
+        TestMain.cpp
+        Common/VulkanTestContext.cpp
+        Common/SyntheticMeshGenerator.cpp
+        AssetSystem/GeometryBufferPoolTest.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanDevice.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanMemory.cpp
+        ${CMAKE_SOURCE_DIR}/src/Vulkan/VulkanBuffer.cpp
+        ${CMAKE_SOURCE_DIR}/src/AssetSystem/GeometryBufferPool.cpp
+        ${CMAKE_SOURCE_DIR}/src/Core/Log.cpp
+)
+
+target_include_directories(GeometryBufferPoolTest PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_BINARY_DIR}/_deps/ktx-src/other_include
+)
+
+target_link_libraries(GeometryBufferPoolTest PRIVATE
+        Vulkan::Vulkan
+        GTest::gtest
+        GTest::gmock
+)
+
+gtest_discover_tests(GeometryBufferPoolTest WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+add_executable(FastGLTFParserTest
+        TestMain.cpp
+        AssetSystem/FastGLTFParserTest.cpp
+        ${CMAKE_SOURCE_DIR}/src/AssetSystem/GLTFLoader.cpp
+        ${CMAKE_SOURCE_DIR}/src/Threading/JobSystem.cpp
+        ${CMAKE_SOURCE_DIR}/src/Core/Log.cpp
+)
+
+target_include_directories(FastGLTFParserTest PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_BINARY_DIR}/_deps/fastgltf-src/include
+        ${CMAKE_BINARY_DIR}/_deps/fastgltf-src/deps/simdjson
+        ${CMAKE_BINARY_DIR}/_deps/meshoptimizer-src/src
+)
+
+target_link_libraries(FastGLTFParserTest PRIVATE
+        Vulkan::Vulkan
+        fastgltf::fastgltf
+        meshoptimizer
+        GTest::gtest
+        GTest::gmock
+)
+
+gtest_discover_tests(FastGLTFParserTest WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+add_executable(MeshletClusteringTest
+        TestMain.cpp
+        Common/SyntheticMeshGenerator.cpp
+        AssetSystem/MeshletClusteringTest.cpp
+        ${CMAKE_SOURCE_DIR}/src/AssetSystem/GLTFLoader.cpp
+        ${CMAKE_SOURCE_DIR}/src/Threading/JobSystem.cpp
+        ${CMAKE_SOURCE_DIR}/src/Core/Log.cpp
+)
+
+target_include_directories(MeshletClusteringTest PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_BINARY_DIR}/_deps/fastgltf-src/include
+        ${CMAKE_BINARY_DIR}/_deps/fastgltf-src/deps/simdjson
+        ${CMAKE_BINARY_DIR}/_deps/meshoptimizer-src/src
+)
+
+target_link_libraries(MeshletClusteringTest PRIVATE
+        Vulkan::Vulkan
+        fastgltf::fastgltf
+        meshoptimizer
+        GTest::gtest
+        GTest::gmock
+)
+
+gtest_discover_tests(MeshletClusteringTest WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+
+
+

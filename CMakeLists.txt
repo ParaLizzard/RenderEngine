@@ -236,6 +236,12 @@ set(VULKAN_SOURCES
         src/Vulkan/VulkanPipeline.h
         src/Vulkan/VulkanPipelineCache.cpp
         src/Vulkan/VulkanPipelineCache.h
+        src/Vulkan/VulkanTexture.cpp
+        src/Vulkan/VulkanTexture.h
+        src/Vulkan/VulkanSwapchain.cpp
+        src/Vulkan/VulkanSwapchain.h
+        src/Vulkan/VulkanRHI.cpp
+        src/Vulkan/VulkanRHI.h
 )
 
 set(RENDERER_SOURCES
@@ -286,8 +292,6 @@ set(SCENE_SOURCES
 set(ASSETSYSTEM_SOURCES
         src/AssetSystem/AssetStreamer.cpp
         src/AssetSystem/AssetStreamer.h
-        src/AssetSystem/Texture.cpp
-        src/AssetSystem/Texture.h
         src/AssetSystem/Model.h
         src/AssetSystem/Model.cpp
         src/AssetSystem/LoaderGLTF.cpp
@@ -298,6 +302,15 @@ set(ASSETSYSTEM_SOURCES
         src/AssetSystem/AssetMetadata.h
         src/AssetSystem/GeometryBufferPool.cpp
         src/AssetSystem/GeometryBufferPool.h
+        src/AssetSystem/Mesh.cpp
+        src/AssetSystem/Mesh.h
+        src/AssetSystem/GLTFLoader.cpp
+        src/AssetSystem/GLTFLoader.h
+        src/AssetSystem/Material.h
+        src/AssetSystem/TextureLoader.cpp
+        src/AssetSystem/TextureLoader.h
+        src/AssetSystem/AssetManager.cpp
+        src/AssetSystem/AssetManager.h
 )
 
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/models" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
